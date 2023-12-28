@@ -29,7 +29,7 @@
     --icon-svg-column-#{$row}: #{$i}
 
   align-items: center
-  background-image: url('/assets/img/blender_icons.svg')
+  background-image: url('../../assets/img/blender_icons.svg')
   background-position-x: var(--icon-offset-x)
   background-position-y: var(--icon-offset-y)
   background-repeat: no-repeat
@@ -40,6 +40,14 @@
   width: var(--icon-size)
 
   /* UI. */
+  &.icon-blender-logo
+    --icon-bg-column-x: 25
+    --icon-bg-column-y: var(--icon-svg-column-c)
+
+  &.icon-canvas
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-a)
+  
   &.icon-plus
     --icon-bg-column-x: 6
     --icon-bg-column-y: var(--icon-svg-column-ca)
@@ -162,3 +170,11 @@
   &.icon-editor-properties
     --icon-bg-column-x: 4
     --icon-bg-column-y: var(--icon-svg-column-z)
+
+  &.icon-editor-terminal
+    --icon-bg-column-x: 18
+    --icon-bg-column-y: var(--icon-svg-column-z)
+
+  &.icon-editor-context
+  --icon-bg-column-x: 4
+  --icon-bg-column-y: var(--icon-svg-column-m)

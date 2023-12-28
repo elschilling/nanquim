@@ -9,8 +9,15 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@vue/language-plugin-pug": "^1.8.27",
     "sass": "^1.69.5",
     "vite": "^5.0.8",
     "vite-plugin-pug": "^0.3.2"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "@vueuse/core": "^10.7.1",
+    "vue": "^3.3.13",
+    "vue-pug-plugin": "^2.0.3"
   }
 }

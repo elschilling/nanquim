@@ -12,16 +12,12 @@
   border-radius: 999em
 
 *
-  transition: all 75ms ease-in-out
+  // transition: all 75ms ease-in-out
 
-
-html,
-body
-  height: 100%
-  position: relative
-  width: 100%
 
 html
+  height: 100%
+  box-sizing: border-box
   background-color: var(--web-body-bg-color)
   color: var(--web-body-color)
   font:
@@ -30,11 +26,13 @@ html
   text-rendering: optimizeLegibility
 
 body
+  height: 100%
   margin: 0
   min-width: 1200px
   opacity: 1
   padding: 0
   transition: opacity .5s ease-in-out
+  overflow: hidden
 
   &.loading
     opacity: 0
