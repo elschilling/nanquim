@@ -1,0 +1,88 @@
+::-webkit-scrollbar
+  height: 10px
+  width: 10px
+
+::-webkit-scrollbar-track
+  background-color: rgba(var(--web-body-bg-color), .5)
+  border-radius: 999em
+  margin: 3px
+
+::-webkit-scrollbar-thumb
+  background-color: rgba(var(--web-body-color), .5)
+  border-radius: 999em
+
+*
+  transition: all 75ms ease-in-out
+
+
+html,
+body
+  height: 100%
+  position: relative
+  width: 100%
+
+html
+  background-color: var(--web-body-bg-color)
+  color: var(--web-body-color)
+  font:
+    family: 'Droid Sans'
+    size: var(--font-size)
+  text-rendering: optimizeLegibility
+
+body
+  margin: 0
+  min-width: 1200px
+  opacity: 1
+  padding: 0
+  transition: opacity .5s ease-in-out
+
+  &.loading
+    opacity: 0
+
+h1
+  font-size: 1.8em
+
+h2
+  display: inline-block
+  font-weight: 500
+
+  &+p
+    margin-top: 0
+
+hr
+  background-color: rgba(var(--web-body-color), .2)
+  border: 0
+  height: 1px
+
+a
+  color: var(--web-body-color)
+  opacity: .5
+
+  &:hover
+    opacity: 1
+
+.icon
+  display: inline-block
+  height: 16px
+  width: 16px
+
+.blender-logo
+  display: block
+  height: 16px
+  margin-left: 10px
+  width: 16px
+
+.web-section
+  padding-left: 1rem
+
+  ul
+    display: flex
+    list-style: none
+    margin: 0
+    padding: 0
+
+    > li
+      padding: var(--spacer-xs)
+
+    > li:not(:first-child)
+      margin-left: var(--spacer)

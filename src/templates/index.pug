@@ -1,0 +1,326 @@
+extends layout.pug
+include mixins/_modifiers.pug
+include mixins/_nodes.pug
+
+block content
+  section.ui-section.nodes
+    .editor.modifier-editor
+      .editor-header
+        .wgt.wgt-menu
+          span.icon.icon-editor-properties
+          .icon.icon-dropdown
+
+        //- .layout-row
+          .layout-row.expand
+            .wgt.wgt-label
+              .icon.icon-mesh
+            .wgt.wgt-label Cube
+
+          .layout-row
+            .icon.icon-search
+            .wgt.wgt-text Search
+
+      .layout-row.row
+        .wgt.wgt-menu.expand
+          span Add Modifier
+          .icon.icon-dropdown
+
+      .modifier.active
+        .modifier-header
+          .layout-row
+            .wgt.wgt-tool.no-emboss
+              .icon.icon-collapse
+            .wgt.wgt-regular.no-emboss
+              .icon.icon-mod-node
+
+            .layout-row.expand.align
+              .wgt.wgt-text GeometryNodes
+              .wgt.wgt-regular
+                .icon.icon-restrict-edit-mode
+              .wgt.wgt-regular.active
+                .icon.icon-restrict-screen
+              .wgt.wgt-regular.active
+                .icon.icon-restrict-render
+              .wgt.wgt-menu
+                .icon.icon-dropdown
+            .wgt.wgt-tool.no-emboss
+              .icon.icon-x
+            .wgt.wgt-drag.no-emboss
+              .icon.icon-drag
+
+        //- .modifier-body
+        //-   .wgt-label Settings are in the particle tab
+
+      +mod_triangulate()
+      +mod_decimate()
+
+    .editor.nodes-editor
+      .editor-header
+        .wgt.wgt-menu
+          span.icon.icon-editor-node
+          .icon.icon-dropdown
+
+        .wgt.wgt-menu
+          span Node Graph
+          .icon.icon-dropdown
+
+        .wgt.wgt-pulldown View
+        .wgt.wgt-pulldown Select
+        .wgt.wgt-pulldown Add
+        .wgt.wgt-pulldown Node
+
+        .wgt.wgt-menu
+          span Node Groups
+          .icon.icon-dropdown
+
+        .wgt.wgt-data-block
+          .layout-row
+            .wgt.wgt-menu
+              span.icon.icon-mod-node
+              .icon.icon-dropdown
+            .wgt.wgt-text
+              span GeometryNodes
+            .wgt.wgt-tool
+              .icon.icon-fake-user
+            .wgt.wgt-tool
+              .icon.icon-duplicate
+            .wgt.wgt-tool
+              .icon.icon-x
+
+        .wgt.wgt-tool.no-emboss
+          .icon.icon-pin
+
+      .nodes-grid-bg
+      .nodes-context
+        ul
+          li
+            .wgt.wgt-label
+              .icon.icon-mesh
+            span Suzanne
+          li
+            .icon.icon-angle-right
+          li
+            .wgt.wgt-label
+              .icon.icon-modifier
+            span GeometryNodes
+          li
+            .icon.icon-angle-right
+          li
+            .wgt.wgt-label
+              .icon.icon-mod-node
+            span Geometry Nodes
+
+      .nodes-grid
+        .node.node-cat-input.node-shape-input
+          +node_label Modifier Input
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-output.is-connected
+              .node-entry-socket
+              .node-entry-value Geometry
+
+            .node-entry.socket-type-empty.is-output
+              .node-entry-socket
+              .node-entry-value
+                .icon.icon-plus
+
+        .node.node-cat-attribute.is-active
+          +node_label Active Node
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-both-ways.is-connected.is-connected-from-geometry
+              .node-entry-socket
+              .node-entry-value Geometry
+              .node-entry-socket
+
+            .node-entry.socket-type-attribute
+              .node-entry-socket
+              .node-entry-value Attribute
+
+        .node.node-cat-output.node-shape-output
+          +node_label Modifier Output
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-connected.is-connected-from-geometry
+              .node-entry-socket
+              .node-entry-value Geometry
+
+            .node-entry.socket-type-empty
+              .node-entry-socket
+              .node-entry-value
+                .icon.icon-plus
+
+
+      .nodes-grid
+        .node.node-cat-value.node-shape-input
+          +node_label Value
+
+          .node-body
+            +node_header()
+
+            .node-entry.is-output.socket-type-float
+              .node-entry-socket
+              .node-entry-value Float
+              .node-entry-socket
+
+        .node.node-cat-color
+          +node_label RGB Curves
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-rgba.is-both-ways.is-connected.is-connected-from-float
+              .node-entry-socket
+              .node-entry-value Color
+              .node-entry-socket
+
+        .node.node-cat-vector
+          +node_label Vector
+
+          .node-body
+            +node_header()
+
+            .node-entry.is-both-ways.socket-type-vector.is-connected.is-connected-from-rgba
+              .node-entry-socket
+              .node-entry-value Vector
+              .node-entry-socket
+
+      .nodes-grid
+        .node.node-cat-shader.node-shape-input
+          +node_label Reroute
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-shader.is-output
+              .node-entry-value Shader
+              .node-entry-socket
+
+        .node.node-empty.placeholder-viewer-1.socket-type-shader
+          .node-entry.is-connected.is-connected-from-shader
+          .node-entry-socket.reroute
+
+        .node.node-cat-shader.node-shape-output
+          +node_label Rerouted
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-shader
+              .node-entry-socket
+              .node-entry-value Shader
+
+      .nodes-grid
+        .node.node-cat-geometry
+          +node_label Suzanne
+
+          .node-body
+            +node_header()
+
+            .node-entry.is-both-ways.socket-type-geometry
+              .node-entry-socket
+              .node-entry-value Geometry
+              .node-entry-socket
+
+        .node.node-cat-converter
+          +node_label Incompatible Type
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-float.is-connected.is-both-ways.is-socket-not-compatible
+              .node-entry-socket
+              .node-entry-value Float
+              .node-entry-socket
+
+
+      .nodes-grid
+        .node.node-cat-input.node-shape-input
+          +node_label Modifier Input
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-output.is-connected
+              .node-entry-socket
+              .node-entry-value Geometry
+
+            .node-entry.socket-type-object.is-output
+              .node-entry-socket
+              .node-entry-value Object
+
+            .node-entry.socket-type-empty.is-output
+              .node-entry-socket
+              .node-entry-value
+                .icon.icon-plus
+
+        .node.node-cat-geometry.collapsed
+          +node_label All Socket Types
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-both-ways.is-connected.is-connected-from-geometry
+              .node-entry-socket
+              .node-entry-value Geometry
+              .node-entry-socket
+
+            .node-entry.socket-type-shader
+              .node-entry-socket
+              .node-entry-value Shader
+
+            .node-entry.socket-type-attribute
+              .node-entry-socket
+              .node-entry-value String
+
+            .node-entry.socket-type-boolean
+              .node-entry-socket
+              .node-entry-value Boolean
+
+            .node-entry.socket-type-int
+              .node-entry-socket
+              .node-entry-value Integer
+
+            .node-entry.socket-type-float
+              .node-entry-socket
+              .node-entry-value Float
+
+            .node-entry.socket-type-rgba
+              .node-entry-socket
+              .node-entry-value RGBA
+
+            .node-entry.socket-type-vector
+              .node-entry-socket
+              .node-entry-value Vector
+
+            .node-entry.socket-type-object
+              .node-entry-socket
+              .node-entry-value Object
+
+            .node-entry.socket-type-image
+              .node-entry-socket
+              .node-entry-value Image
+
+        .node.node-cat-output.node-shape-output
+          +node_label Modifier Output
+
+          .node-body
+            +node_header()
+
+            .node-entry.socket-type-geometry.is-connected.is-connected-from-geometry
+              .node-entry-socket
+              .node-entry-value Geometry
+
+            .node-entry.socket-type-empty
+              .node-entry-socket
+              .node-entry-value
+                .icon.icon-plus
+
+
+  include flareon/_scripts.pug

@@ -1,0 +1,82 @@
+// Each widget lives in its own file.
+@import editor
+@import components/modifier
+@import components/node
+@import components/wgt-collapse
+@import components/wgt-data-block
+@import components/wgt-label
+@import components/wgt-menu
+@import components/wgt-number_slider
+@import components/wgt-pulldown
+@import components/wgt-regular
+@import components/wgt-separator
+@import components/wgt-text
+@import components/wgt-tool
+
+
+.wgt
+  align-items: center
+  border: var(--wgt-border-width) solid var(--wgt-border-color)
+  border-radius: var(--wgt-border-radius)
+  box-shadow: var(--wgt-box-shadow)
+  color: var(--wgt-color-inactive)
+  cursor: default
+  display: flex
+  height: var(--wgt-height)
+  justify-content: center
+  position: relative
+  user-select: none
+  white-space: nowrap
+
+  &:hover
+    color: var(--wgt-color)
+
+    .icon
+      opacity: 1
+
+  &.active
+    .icon
+      opacity: 1
+
+  /* Disabled widgets are half transparent and non-clickable. */
+  &.disabled
+    opacity: .5
+    pointer-events: none
+
+  &.no-emboss
+    +no-emboss
+
+  &.expand
+    flex: 1
+
+.layout-row
+  align-items: center
+  display: flex
+  position: relative
+  width: 100%
+
+  .wgt
+    border-radius: unset
+    // height: 100%
+
+    &:first-child
+      border-bottom-left-radius: var(--wgt-border-radius)
+      border-top-left-radius: var(--wgt-border-radius)
+
+    &:last-child
+      border-bottom-right-radius: var(--wgt-border-radius)
+      border-top-right-radius: var(--wgt-border-radius)
+
+  &.expand
+    flex: 1
+
+  &.align
+    .wgt+.wgt
+      border-left-width: 0
+
+  .layout-row
+    height: 100%
+
+  &.row
+    margin: var(--spacer)
+    width: auto
