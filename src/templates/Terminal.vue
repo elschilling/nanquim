@@ -67,7 +67,7 @@ function handleKeyUp(e) {
 <style lang="sass" scoped>
 .terminal
   box-sizing: border-box
-  font-size: var(--font-size-sm)
+  font-size: var(--font-size)
   border-radius: 10px 10px 0 0
   left: 50%
   transform: translate(-50%)

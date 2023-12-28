@@ -62,10 +62,11 @@ export class DrawCommand {
           this.endPoint = { ...e.value }
           this.emitedLog = false
           const command = this.createDrawCall(this.startPoint, this.endPoint)
-          newDrawing.emit(() => command.draw(), false)
+          newDrawing.emit(command, false)
           this.startPoint = { ...this.endPoint }
           this.endPoint = {}
           if (this.runOnce) {
+            store.isDrawing = false
             this.reset()
             resolve()
           } else {

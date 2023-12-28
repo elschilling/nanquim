@@ -1,6 +1,7 @@
-// elements/Circle.js  Circle definition and drawing method
+import { calculateDistance, distanceFromPointToCircle } from '../utils/calculateDistance'
+import { store } from '../store'
 
-import { calculateDistance } from '../utils/calculateDistance'
+// TODO store the radius as this.radius end not endPoint
 
 export class Circle {
   constructor(ctx, startPoint, endPoint) {
@@ -9,12 +10,28 @@ export class Circle {
     this.endPoint = endPoint
   }
 
-  draw() {
+  draw(mouseCoord) {
     const { ctx, startPoint, endPoint } = this
+    const radius = calculateDistance(startPoint, endPoint)
     const context = ctx()
+    if (!store.isDrawing) {
+      if (this.checkHover(mouseCoord, radius)) {
+        context.strokeStyle = store.hoverStyle
+        context.lineWidth = store.hoverLineWidth
+      } else {
+        context.strokeStyle = store.drawStyle
+        context.lineWidth = store.drawLineWidth
+      }
+    }
     context.beginPath()
-    context.arc(startPoint.x, startPoint.y, calculateDistance(startPoint, endPoint), 0, 2 * Math.PI)
+    context.arc(startPoint.x, startPoint.y, radius, 0, 2 * Math.PI)
     context.closePath()
     context.stroke()
+  }
+
+  checkHover(mouseCoord, radius) {
+    const { startPoint, endPoint } = this
+    const distance = distanceFromPointToCircle(mouseCoord, startPoint, radius)
+    return distance <= store.hoverThreshold
   }
 }

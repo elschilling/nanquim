@@ -85,7 +85,7 @@ function cameraTranslate() {
   context.translate(canvas.value.width / 2, canvas.value.height / 2)
   context.scale(cameraZoom, -cameraZoom)
   context.translate(cameraOffset.x, -cameraOffset.y)
-  // clearCanvas(canvas, context)
+  clearCanvas(canvas, context)
 }
 
 function draw() {
@@ -94,9 +94,6 @@ function draw() {
   drawAxis()
   context.lineWidth = 0.5
   drawGrid()
-  context.beginPath()
-  context.arc(0, 0, 40, 0, 2 * Math.PI)
-  context.stroke()
   context.strokeStyle = 'white'
   context.lineWidth = 1
   if (store.isDrawing) {
@@ -105,7 +102,8 @@ function draw() {
       activeDrawing()
     }
   }
-  drawings.forEach((drawingCommand) => drawingCommand())
+  drawings.forEach((drawingCommand) => drawingCommand.draw(coordinates.value))
+  console.log('isDrawing', store.isDrawing)
 
   requestAnimationFrame(draw)
 }
@@ -273,18 +271,12 @@ async function handleClick(e) {
   width: 100%
   height: 100%
 canvas
+  border-radius: 20px
   position: absolute
   box-sizing: border-box
-  // background: --canvas-bg
   overflow: hidden
   min-width: 600px
   width: 100%
   height: 100%
   object-fit: contain
 </style>
-<!-- box-sizing: border-box
-background-color: var(--node-editor-bg)
-position: relative
-display: flex
-flex-flow: column
-flex-grow: 1 -->
