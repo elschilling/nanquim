@@ -1,12 +1,26 @@
 <template lang="pug">
-.canvas-editor
+.editor.canvas-editor
   .editor-header
     .wgt.wgt-menu
-        span.icon.icon-canvas
+        span.icon.icon-editor-svgcad
         .icon.icon-dropdown
   .layout-editor
-    canvas(ref='canvas' @click='handleClick' @contextmenu.prevent='stopDrawing' @mousedown="onPointerDown" @mousemove="onPointerMove" @mouseup="onPointerUp" @wheel="(e) => adjustZoom(e.deltaY*SCROLL_SENSITIVITY)")
-    Terminal(@inputAsk='capturePoint' @stopDrawing='stopDrawing' :coords='coordinates' :ctx='getCanvasContext')
+    //- canvas(ref='canvas' @click='handleClick' @contextmenu.prevent='stopDrawing' @mousedown="onPointerDown" @mousemove="onPointerMove" @mouseup="onPointerUp" @wheel="(e) => adjustZoom(e.deltaY*SCROLL_SENSITIVITY)")
+    svg(id='canvas' viewBox="-50 -50 100 100" ref='svg' stroke='red' stroke-width='.1'
+    @click='handleClick'
+    @contextmenu.prevent='stopDrawing'
+    @mousedown="onPointerDown"
+    @mousemove="onPointerMove"
+    @mouseup="onPointerUp"
+    @wheel.prevent="adjustZoom")
+      //- circle(cx='0' cy='0' r='5')
+      //- circle(cx='0' cy='0' r='4')
+      //- circle(cx='0' cy='0' r='3')
+      //- circle(cx='0' cy='0' r='2')
+      //- circle(cx='0' cy='0' r='1')
+      line(x1="0" y1="-50" x2="0" y2="50" class='axis y-axis')
+      line(x1="-50" y1="0" x2="50" y2="0" class='axis x-axis')
+    Terminal(@inputAsk='capturePoint' @stopDrawing='stopDrawing' :coords='coordinates')
 </template>
 
 <script setup>
@@ -14,8 +28,19 @@
 import { ref, onMounted, reactive } from 'vue'
 import { useEventBus, useMouse, useParentElement } from '@vueuse/core'
 import Terminal from './Terminal.vue'
-import { drawLine } from '../utils/drawLine'
 import { store } from '../store'
+// import { SVG } from '@svgdotjs/svg.js'
+// let draw = SVG().addTo('#canvas')
+// console.log('draw', draw)
+const svg = ref(null)
+let isDragging = false
+let dragStart = { x: 0, y: 0 }
+let viewBox
+let point
+var startClient
+let startGlobal
+let coordGlobal
+let zoomScaleFactor = 1.1
 
 // Local events
 const emit = defineEmits(['coordsUpdated'])
@@ -28,7 +53,6 @@ const newDrawing = useEventBus('newDrawgin')
 let unsubNewDrawing
 
 let unsubStartDrawing
-const canvas = ref(null)
 const coordinates = ref({ x: 0, y: 0 })
 let drawings = []
 let context = reactive({})
@@ -60,185 +84,175 @@ unsubStartDrawing = startDrawing.on((drawCommand) => {
 })
 
 onMounted(() => {
-  context = getCanvasContext()
-  draw()
+  drawGrid(10, spacing)
+  viewBox = svg.value.viewBox.baseVal
+  console.log('viewBox', viewBox)
+  startClient = svg.value.createSVGPoint()
+  startGlobal = svg.value.createSVGPoint()
+  coordGlobal = svg.value.createSVGPoint()
+  point = svg.value.createSVGPoint()
+  // context = getCanvasContext()
+  // draw()
 })
 
-function getCanvasContext() {
-  return canvas.value?.getContext('2d')
-}
+// function getCanvasContext() {
+//   return canvas.value?.getContext('2d')
+// }
 
-let cameraZoom = 1
-let GRID_SIZE = 100
+let spacing = 2
 let MAX_ZOOM = 5
 let MIN_ZOOM = 0.1
-let SCROLL_SENSITIVITY = 0.0005
+let SCROLL_SENSITIVITY = 0.01
 let activeDrawing
 let isCapturingInput = false
 
-function resize() {
-  canvas.value.height = canvas.value.clientHeight
-  canvas.value.width = canvas.value.clientWidth
-}
+// function resize() {
+//   canvas.value.height = canvas.value.clientHeight - 4 // magic number!!!
+//   canvas.value.width = canvas.value.clientWidth
+// }
 
-function cameraTranslate() {
-  context.translate(canvas.value.width / 2, canvas.value.height / 2)
-  context.scale(cameraZoom, -cameraZoom)
-  context.translate(cameraOffset.x, -cameraOffset.y)
-  clearCanvas(canvas, context)
-}
+// function cameraTranslate() {
+//   context.translate(canvas.value.width / 2, canvas.value.height / 2)
+//   context.scale(cameraZoom, -cameraZoom)
+//   context.translate(cameraOffset.x, -cameraOffset.y)
+//   clearCanvas(canvas, context)
+// }
 
-function draw() {
-  resize()
-  cameraTranslate()
-  drawAxis()
-  context.lineWidth = 0.5
-  drawGrid()
-  context.strokeStyle = 'white'
-  context.lineWidth = 1
-  if (store.isDrawing) {
-    if (activeDrawing) {
-      // clearCanvas(canvas, context)
-      activeDrawing()
-    }
-  }
-  drawings.forEach((drawingCommand) => drawingCommand.draw(coordinates.value))
-  console.log('isDrawing', store.isDrawing)
+// function draw() {
+//   resize()
+//   cameraTranslate()
+//   context.strokeStyle = 'white'
+//   context.lineWidth = 1
+//   if (store.isDrawing) {
+//     if (activeDrawing) {
+//       clearCanvas(canvas, context)
+//       activeDrawing()
+//     }
+//   }
+//   drawings.forEach((drawingCommand) => drawingCommand())
+//   drawAxis()
+//   context.lineWidth = 0.5
+//   drawGrid()
 
-  requestAnimationFrame(draw)
-}
+//   // insert new elements here
+
+//   // drawLine(context, -100, 0, 100, 0)
+//   // drawLine(context, 0, -100, 0, 100)
+//   // drawLine(context, -100, -100, 100, 100)
+//   // drawLine(context, 0, -100, 100, 0)
+//   // drawRect(context, 10, 10, 100, 100)
+//   context.beginPath()
+//   context.arc(0, 0, 40, 0, 2 * Math.PI)
+//   context.stroke()
+
+//   requestAnimationFrame(draw)
+// }
 
 function stopDrawing() {
-  clearCanvas(canvas, context)
-  store.isDrawing = false
-  isCapturingInput = false
-  activeDrawing = 0
-  unsubNewDrawing()
+  //   clearCanvas(canvas, context)
+  //   store.isDrawing = false
+  //   isCapturingInput = false
+  //   activeDrawing = 0
+  //   unsubNewDrawing()
 }
 
-function clearCanvas(canvas, context) {
-  context.clearRect(-canvas.value.width / 2, -canvas.value.height / 2, canvas.value.width / 2, canvas.value.height / 2)
-}
+function drawGrid(gridSize, spacing) {
+  const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+  gridGroup.setAttribute('stroke', '#4f4f4f')
+  gridGroup.setAttribute('stroke-width', '.1')
+  gridGroup.setAttribute('vector-effect', 'non-scaling-stroke')
+  gridGroup.setAttribute('class', 'grid')
 
-function drawText(text, x, y, size, font) {
-  context.font = `${size}px ${font}`
-  context.fillText(text, x, y)
-}
-
-function drawAxis() {
-  context.lineWidth = 4
-  // x axis
-  context.strokeStyle = '#597631'
-  drawLine(
-    getCanvasContext,
-    -canvas.value.width / 2 / cameraZoom - cameraOffset.x,
-    0,
-    canvas.value.width / 2 / cameraZoom - cameraOffset.x,
-    0
-  )
-  // y axis
-  context.strokeStyle = '#843d47'
-  drawLine(
-    getCanvasContext,
-    0,
-    -canvas.value.height / 2 / cameraZoom + cameraOffset.y,
-    0,
-    canvas.value.height / 2 / cameraZoom + cameraOffset.y
-  )
-}
-
-function drawGrid() {
-  // let steps = Math.ceil(canvas.value.width / GRID_SIZE / cameraZoom)
-  let steps = 11
-  context.strokeStyle = '#4f4f4f'
-  for (let i = -steps; i < steps; i++) {
-    if (i != 0) {
-      drawLine(getCanvasContext, -steps * GRID_SIZE, i * GRID_SIZE, (steps - 1) * GRID_SIZE, i * GRID_SIZE)
-      drawLine(getCanvasContext, i * GRID_SIZE, -steps * GRID_SIZE, i * GRID_SIZE, (steps - 1) * GRID_SIZE)
+  for (let x = -gridSize; x <= gridSize; x += spacing) {
+    if (x != 0) {
+      const verticalLine = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      verticalLine.setAttribute('x1', -gridSize * spacing)
+      verticalLine.setAttribute('y1', x * spacing)
+      verticalLine.setAttribute('x2', gridSize * spacing)
+      verticalLine.setAttribute('y2', x * spacing)
+      // verticalLine.setAttribute('class', 'grid')
+      gridGroup.appendChild(verticalLine)
+      const horizontalLine = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      horizontalLine.setAttribute('x1', x * spacing)
+      horizontalLine.setAttribute('y1', -gridSize * spacing)
+      horizontalLine.setAttribute('x2', x * spacing)
+      horizontalLine.setAttribute('y2', gridSize * spacing)
+      gridGroup.appendChild(horizontalLine)
     }
   }
+
+  svg.value.appendChild(gridGroup)
 }
 
-let isDragging = false
-let dragStart = { x: 0, y: 0 }
-
-// Gets the relevant location from a mouse or single touch event
-function getEventLocation(e) {
-  if (e.touches && e.touches.length == 1) {
-    return { x: e.touches[0].clientX, y: e.touches[0].clientY }
-  } else if (e.clientX && e.clientY) {
-    return { x: e.clientX, y: e.clientY }
-  }
-}
+// function drawGrid(svg) {
+//   // let steps = Math.ceil(canvas.value.width / GRID_SIZE / cameraZoom)
+//   const gridGroup = svg.group().attr({ class: 'grid' })
+//   let steps = 11
+//   context.strokeStyle = '#4f4f4f'
+//   for (let i = -steps; i < steps; i++) {
+//     if (i != 0) {
+//       const verticalLine = svg.line(-steps * GRID_SIZE, i * GRID_SIZE, (steps - 1) * GRID_SIZE, i * GRID_SIZE).addTo(gridGroup)
+//       // drawLine(getCanvasContext, -steps * GRID_SIZE, i * GRID_SIZE, (steps - 1) * GRID_SIZE, i * GRID_SIZE)
+//       // drawLine(getCanvasContext, i * GRID_SIZE, -steps * GRID_SIZE, i * GRID_SIZE, (steps - 1) * GRID_SIZE)
+//     }
+//   }
+// }
 
 function updateCoordinates() {
-  const coords = {
-    x: Math.round(-(canvas.value.width / 2 - mouse.x.value) / cameraZoom - cameraOffset.x),
-    y: Math.round((canvas.value.height / 2 - mouse.y.value) / cameraZoom + cameraOffset.y),
-  }
-  coordinates.value = coords
-  emit('coordsUpdated', coords)
-  newCoords.emit(coords)
+  coordGlobal.x = mouse.x.value
+  coordGlobal.y = mouse.y.value
+  coordGlobal = coordGlobal.matrixTransform(svg.value.getScreenCTM().inverse())
+  coordinates.value = coordGlobal
+  emit('coordsUpdated', coordGlobal)
+  newCoords.emit(coordGlobal)
 }
 
 function onPointerDown(e) {
   isDragging = true
-  dragStart.x = getEventLocation(e).x / cameraZoom - cameraOffset.x
-  dragStart.y = getEventLocation(e).y / cameraZoom - cameraOffset.y
-}
-
-function onPointerUp(e) {
-  isDragging = false
-  initialPinchDistance = null
-  lastZoom = cameraZoom
+  startClient.x = e.x
+  startClient.y = e.y
+  startGlobal = startClient.matrixTransform(svg.value.getScreenCTM().inverse())
 }
 
 function onPointerMove(e) {
   updateCoordinates()
   if (isDragging) {
-    cameraOffset.x = getEventLocation(e).x / cameraZoom - dragStart.x
-    cameraOffset.y = getEventLocation(e).y / cameraZoom - dragStart.y
+    updateViewBox(e)
   }
 }
 
-function handleTouch(e, singleTouchHandler) {
-  if (e.touches.length == 1) {
-    singleTouchHandler(e)
-  } else if (e.type == 'touchmove' && e.touches.length == 2) {
-    isDragging = false
-    handlePinch(e)
-  }
+function onPointerUp(e) {
+  isDragging = false
 }
 
-let initialPinchDistance = null
-let lastZoom = cameraZoom
+function updateViewBox(e) {
+  point.x = e.x
+  point.y = e.y
 
-function handlePinch(e) {
-  e.preventDefault()
+  var moveGlobal = point.matrixTransform(svg.value.getScreenCTM().inverse())
 
-  let touch1 = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-  let touch2 = { x: e.touches[1].clientX, y: e.touches[1].clientY }
-
-  // This is distance squared, but no need for an expensive sqrt as it's only used in ratio
-  let currentDistance = (touch1.x - touch2.x) ** 2 + (touch1.y - touch2.y) ** 2
-
-  if (initialPinchDistance == null) {
-    initialPinchDistance = currentDistance
-  } else {
-    adjustZoom(null, currentDistance / initialPinchDistance)
-  }
+  viewBox.x -= moveGlobal.x - startGlobal.x
+  viewBox.y -= moveGlobal.y - startGlobal.y
 }
 
-function adjustZoom(zoomAmount, zoomFactor) {
+function adjustZoom(e) {
   if (!isDragging) {
-    if (zoomAmount) {
-      cameraZoom -= zoomAmount
-    } else if (zoomFactor) {
-      cameraZoom = zoomFactor * lastZoom
+    var normalized
+    var delta = e.wheelDelta
+    if (delta) {
+      normalized = delta % 120 == 0 ? delta / 120 : delta / 12
+    } else {
+      delta = e.deltaY || e.detail || 0
+      normalized = -(delta % 3 ? delta * 10 : delta / 3)
     }
-
-    cameraZoom = Math.min(cameraZoom, MAX_ZOOM)
-    cameraZoom = Math.max(cameraZoom, MIN_ZOOM)
+    var scaleDelta = normalized > 0 ? 1 / zoomScaleFactor : zoomScaleFactor
+    point.x = e.clientX
+    point.y = e.clientY
+    var startPoint = point.matrixTransform(svg.value.getScreenCTM().inverse())
+    viewBox.x -= (startPoint.x - viewBox.x) * (scaleDelta - 1)
+    viewBox.y -= (startPoint.y - viewBox.y) * (scaleDelta - 1)
+    viewBox.width *= scaleDelta
+    viewBox.height *= scaleDelta
   }
 }
 
@@ -255,28 +269,41 @@ async function handleClick(e) {
 </script>
 
 <style lang="sass" scoped>
-.canvas-editor
-  display: flex
-  flex-direction: column
-  width: 100%
-  height: 100%
-  border-radius: 20px
-  background: var(--node-editor-bg)
 .editor-header
   border-top-left-radius: 20px
   border-top-right-radius: 20px
-.layout-editor
+.canvas-editor
+  cursor: crosshair
+  border-radius: 20px
+  box-sizing: border-box
+  background-color: var(--node-editor-bg)
   position: relative
+  display: flex
+  flex-flow: column
+  flex-grow: 1
+.layout-editor
   box-sizing: border-box
   width: 100%
   height: 100%
-canvas
-  border-radius: 20px
+  display: block
+svg
   position: absolute
   box-sizing: border-box
+  background: var(--canvas-bg)
   overflow: hidden
   min-width: 600px
   width: 100%
   height: 100%
-  object-fit: contain
+
+.axis
+  vector-effect: non-scaling-stroke
+  stroke-width: 2
+.x-axis
+  stroke: #597631
+.y-axis
+  stroke: #843d47
+.grid
+  stroke-width: 2
+  stroke: blue
+  // vector-effect: non-scaling-stroke
 </style>

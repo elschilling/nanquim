@@ -116,7 +116,7 @@ main
   flex: 1
   display: flex
 .viewport
-  display: relative
+  display: flex
   border-right: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
   border-radius: 20px
   flex: 1
