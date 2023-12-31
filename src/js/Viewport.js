@@ -16,11 +16,11 @@ function Viewport(editor) {
   let middleClickCount = 0
   let isCapturingInput = false
 
-  signals.inputAsked.add(() => {
-    isCapturingInput = true
+  signals.clearSelection.add(() => {
+    clearSelection(svg)
   })
   document.addEventListener('contextmenu', handleRightClick)
-
+  let canvas = document.getElementById('canvas')
   svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick)
   drawGrid(svg, GRID_SIZE, GRID_SPACING)
   drawAxis(svg, GRID_SIZE)
@@ -44,6 +44,13 @@ function Viewport(editor) {
       }
       lastMiddleClickTime = currentTime
     }
+  }
+
+  function zoomToFit(canvas) {
+    const bbox = canvas.bbox()
+    // canvas.rect(bbox.width, bbox.height).stroke({ color: 'yellow', width: 0.2 }).fill({ opacity: 0.4 }).move(bbox.x, bbox.y)
+    // console.log('bbox', bbox)
+    canvas.animate(300).viewbox(bbox)
   }
 
   function drawAxis(svg, size) {
@@ -82,25 +89,51 @@ function Viewport(editor) {
   }
   function checkHover() {
     if (!editor.isDrawing) {
+      svg.off('click')
+      console.log('isDrawing', editor.isDrawing)
       svg.children().each((el) => {
-        let distance
-        if (el.type === 'line') {
-          let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
-          let p2 = { x: el.node.x2.baseVal.value, y: el.node.y2.baseVal.value }
-          distance = distanceFromPointToLine(coordinates, p1, p2)
-        } else if (el.type === 'circle') {
-          distance = distanceFromPointToCircle(
-            coordinates,
-            { x: el.node.cx.baseVal.value, y: el.node.cy.baseVal.value },
-            el.node.r.baseVal.value
-          )
-        } else if (el.type === 'rect') {
-          distance = distancePointToRectangleStroke(coordinates, el.node)
+        if (!el.hasClass('grid') && !el.hasClass('axis')) {
+          let distance
+          if (el.type === 'line') {
+            let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
+            let p2 = { x: el.node.x2.baseVal.value, y: el.node.y2.baseVal.value }
+            distance = distanceFromPointToLine(coordinates, p1, p2)
+          } else if (el.type === 'circle') {
+            distance = distanceFromPointToCircle(
+              coordinates,
+              { x: el.node.cx.baseVal.value, y: el.node.cy.baseVal.value },
+              el.node.r.baseVal.value
+            )
+          } else if (el.type === 'rect') {
+            distance = distancePointToRectangleStroke(coordinates, el.node)
+          }
+          if (distance < hoverTreshold) {
+            el.addClass('elementHover')
+            // el.selectize({ deepSelect: true })
+            // canvas.addEventListener('click', (e) => handleClick(e, el))
+            svg.off('click').click((e) => handleClick(e, el))
+            // el.on('click', () => console.log('handle line click'))
+          } else {
+            el.removeClass('elementHover')
+
+            // el.selectize(false, { deepSelect: true })
+            // console.log('el.attr', el.attr)
+          }
         }
-        if (distance < hoverTreshold) {
-          el.addClass('elementHover')
-        } else {
-          el.removeClass('elementHover')
+        function handleClick(e, el) {
+          svg.off('click')
+          e.stopImmediatePropagation()
+          console.log('e', e)
+          console.log('el', el)
+          if (el.attr('selected') === 'true') {
+            el.selectize(false, { deepSelect: true })
+            el.attr('selected', false)
+            el.removeClass('elementSelected')
+          } else {
+            el.selectize({ deepSelect: true })
+            el.attr('selected', true)
+            el.addClass('elementSelected')
+          }
         }
       })
     }
@@ -110,6 +143,18 @@ function Viewport(editor) {
 function handleRightClick(e) {
   e.preventDefault()
   editor.svg.fire('cancelDrawing', e)
+}
+
+function clearSelection(svg) {
+  svg.children().each((el) => {
+    if (!el.hasClass('grid') && !el.hasClass('axis')) {
+      if (el.attr('selected') === 'true') {
+        el.selectize(false, { deepSelect: true })
+        el.attr('selected', false)
+        el.removeClass('elementSelected')
+      }
+    }
+  })
 }
 
 export { Viewport }

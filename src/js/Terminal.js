@@ -15,21 +15,10 @@ function Terminal(editor) {
     node.textContent = e.msg
     terminalLog.appendChild(node)
     terminalLog.scrollTop = terminalLog.scrollHeight
-    if (e.inputAsk) {
-      signals.inputAsked.dispatch()
-      // emit('inputAsk')
+    if (e.clearSelection) {
+      signals.clearSelection.dispatch()
     }
   })
-
-  //   newTerminalLog.on((e) => {
-  //     const node = document.createElement(e.type)
-  //     node.textContent = e.msg
-  //     terminalLog.value.appendChild(node)
-  //     terminalLog.value.scrollTop = terminalLog.value.scrollHeight
-  //     if (e.inputAsk) {
-  //       emit('inputAsk')
-  //     }
-  //   })
 
   document.addEventListener('keydown', handleInput)
   document.addEventListener('keyup', handleKeyUp)
@@ -56,6 +45,7 @@ function Terminal(editor) {
     } else if (e.code === 'Escape') {
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
+      signals.clearSelection.dispatch()
       // emit('stopDrawing')
     }
   }

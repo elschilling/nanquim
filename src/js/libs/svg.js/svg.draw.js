@@ -158,7 +158,9 @@
       }
     },
     point: function point(e) {
-      if (e) var p = this.transformPoint(e.clientX, e.clientY)
+      if (e) {
+        var p = this.transformPoint(e.clientX, e.clientY)
+      }
       if (this.el.type.indexOf('poly') > -1) {
         // Add the new Point to the point-array
         this.arr = this.el.array().valueOf()
@@ -320,8 +322,8 @@
         {
           key: 'transformPoint',
           value: function transformPoint(x, y) {
-            this.p.x = x - (this.offset.x - window.pageXOffset)
-            this.p.y = y - (this.offset.y - window.pageYOffset)
+            this.p.x = x - (this.offset.x - window.scrollX)
+            this.p.y = y - (this.offset.y - window.scrollY)
             return this.p.matrixTransform(this.m)
           },
         },
@@ -335,15 +337,15 @@
 
             // we save the current scrolling-offset here
             this.offset = {
-              x: window.pageXOffset,
-              y: window.pageYOffset,
+              x: window.scrollX,
+              y: window.scrollY,
             }
 
             // we want to snap in screen-coords, so we have to scale the snapToGrid accordingly
             this.options.snapToGrid *= Math.sqrt(this.m.a * this.m.a + this.m.b * this.m.b)
 
             // save the startpoint
-            this.startPoint = this.snapToGrid(this.transformPoint(event.clientX, event.clientY))
+            this.startPoint = this.snapToGrid(this.transformPoint(event.x, event.y))
 
             // the plugin may do some initial work
             if (this.init) {

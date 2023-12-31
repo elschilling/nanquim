@@ -10,7 +10,7 @@ class DrawLineCommand extends Command {
   }
 
   execute() {
-    this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'DRAW ' + this.name.toUpperCase() + ' ' })
+    this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'DRAW ' + this.name.toUpperCase() + ' ', clearSelection: true })
     this.editor.setIsDrawing(true)
     this.draw()
   }
@@ -21,7 +21,7 @@ class DrawLineCommand extends Command {
     })
     if (this.isDrawing) {
       let drawing = this.svg
-      let line = drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false })
+      let line = drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, snapToGrid: 0.1 })
       line.on('drawstop', (e) => {
         line.off()
         line = null

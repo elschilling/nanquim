@@ -1,4 +1,5 @@
 import './styles/main.sass'
+import './js/libs/svg.js/svg.select.css'
 
 import { Editor } from './js/Editor'
 import { Viewport } from './js/Viewport'
