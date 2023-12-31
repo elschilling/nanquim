@@ -6,10 +6,9 @@
 * @copyright Ulrich-Matthias Schäfer
 * @license MIT
 *
-* BUILT: Fri Dec 29 2023 14:27:17 GMT-0300 (Brasilia Standard Time)
+* BUILT: Fri Dec 29 2023 12:06:24 GMT-0300 (Brasilia Standard Time)
 */;
 (function (svg_js) {
-  console.log('svg_js',svg_js)
   'use strict';
 
   function _classCallCheck(instance, Constructor) {

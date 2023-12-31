@@ -1,0 +1,47 @@
+main
+    include src/templates/NavBar
+    section.screen
+        .viewport
+            include src/templates/Canvas
+        .sidepanel-resize(@mousedown='resizePanel')
+        .sidepanel(ref='sidepanel')
+            .outliner(ref='outliner')
+                .editor-header
+                    .wgt.wgt-menu
+                        span.icon.icon-editor-properties
+                        .icon.icon-dropdown
+            .outliner-resize(@mousedown='resizeOutliner')
+            .properties
+                .editor-header
+                    .wgt.wgt-menu
+                        span.icon.icon-editor-properties
+                        .icon.icon-dropdown
+
+                .layout-row.row
+                    .wgt.wgt-menu.expand
+                        span Add Modifier
+                        .icon.icon-dropdown
+
+                .modifier.active
+                    .modifier-header
+                        .layout-row
+                            .wgt.wgt-tool.no-emboss
+                                .icon.icon-collapse
+                            .wgt.wgt-regular.no-emboss
+                                .icon.icon-mod-node
+
+                            .layout-row.expand.align
+                                .wgt.wgt-text GeometryNodes
+                                .wgt.wgt-regular
+                                .icon.icon-restrict-edit-mode
+                                .wgt.wgt-regular.active
+                                    .icon.icon-restrict-screen
+                                .wgt.wgt-regular.active
+                                    .icon.icon-restrict-render
+                                .wgt.wgt-menu
+                                    .icon.icon-dropdown
+                            .wgt.wgt-tool.no-emboss
+                                .icon.icon-x
+                            .wgt.wgt-drag.no-emboss
+                                .icon.icon-drag
+    include src/templates/StatusBar

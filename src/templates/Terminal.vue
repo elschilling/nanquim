@@ -57,21 +57,19 @@ function handleKeyUp(e) {
     }
     // If no matching command or alias found
     console.log('Command not found')
-  } else if (e.code === 'Escape') {
-    store.isDrawing = false
-    emit('stopDrawing')
   }
 }
 </script>
 
 <style lang="sass" scoped>
 .terminal
+  z-index: 5
   box-sizing: border-box
   font-size: var(--font-size)
   border-radius: 10px 10px 0 0
   left: 50%
   transform: translate(-50%)
-  background: rgba(.2,.2,.2,.5)
+  background: rgba(.2,.2,.2,.9)
   position: absolute
   bottom: 0
   width: 600px

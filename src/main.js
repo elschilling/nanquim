@@ -1,8 +1,15 @@
-import { createApp } from 'vue'
 import './styles/main.sass'
-import App from './App.vue'
 
-let app = createApp(App)
-// app.config.globalProperties.$commands = commands
+import { Editor } from './js/Editor'
+import { Viewport } from './js/Viewport'
+import { Terminal } from './js/Terminal'
+import { StatusBar } from './js/StatusBar'
 
-app.mount('#app')
+const editor = new Editor()
+const viewport = new Viewport(editor)
+// editor.addObserver(viewport)
+const signals = editor.signals
+const terminal = new Terminal(editor)
+const statusbar = new StatusBar(editor)
+
+window.editor = editor

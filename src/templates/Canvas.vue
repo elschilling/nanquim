@@ -20,45 +20,29 @@
       //- circle(cx='0' cy='0' r='1')
       line(x1="0" y1="-5000000" x2="0" y2="5000000" class='axis y-axis')
       line(x1="-5000000" y1="0" x2="5000000" y2="0" class='axis x-axis')
-    //- Terminal(@inputAsk='capturePoint' @stopDrawing='stopDrawing' :coords='coordinates')
+    Terminal(@inputAsk='capturePoint' @stopDrawing='stopDrawing' :coords='coordinates' :ctx='getCanvas')
 </template>
 
 <script setup>
-import { ref, onMounted, reactive } from 'vue'
-import { useEventBus, useParentElement } from '@vueuse/core'
+import { ref, onMounted } from 'vue'
+import { useEventBus } from '@vueuse/core'
 import Terminal from './Terminal.vue'
 import { store } from '../store'
 import { SVG } from '@svgdotjs/svg.js'
 import '@svgdotjs/svg.panzoom.js'
-// import '../utils/svg.js/svg'
+import '@svgdotjs/svg.draggable.js'
+// import '../utils/svg.draw'
+// import '../utils/svg.panzoom.js'
+
+import '@svgdotjs/svg.draw.js'
 // import '../utils/svg.draw'
 
-function zoomToFit(canvas, padding = 10) {
-  console.log('canvas', canvas.node.children[0])
+console.log('SVG', SVG)
 
+function zoomToFit(canvas) {
   const bbox = canvas.bbox()
-  console.log('bbox', bbox)
   canvas.rect(bbox.width, bbox.height).stroke({ color: 'yellow', width: 0.2 }).fill({ opacity: 0.4 }).move(bbox.x, bbox.y)
-
-  const rbox = canvas.rbox()
-  console.log('rbox', rbox)
-  // canvas.rect(rbox.width, rbox.height).stroke({ color: 'blue', width: 0.2 }).fill({ opacity: 0.4 }).move(rbox.x, rbox.y)
-
-  let p = canvas.point({ x: -100, y: 0 })
-  // canvas.animate(300).zoom(zoomLevel)
-
-  console.log('zoomLevel', zoomLevel)
-  console.log('viewbox', viewbox)
-  // console.log('p', p)
-
-  // const newViewBox = {
-  //   x: -bbox.x,
-  //   y: -bbox.y,
-  //   width: bbox.width,
-  //   height: bbox.height,
-  // }
-  // console.log('viewboxSize', viewboxSize)
-  // canvas.viewbox(-viewboxSize * 0.3 + ' ' + -viewboxSize / 1.5 + ' ' + viewboxSize * 2 + ' ' + viewboxSize / 2)
+  console.log('bbox', bbox)
   canvas.animate(300).viewbox(bbox)
 }
 
@@ -91,20 +75,21 @@ let viewbox
 let viewboxSize = 10
 const coordinates = ref({ x: 0, y: 0 })
 let zoomFactor = 0.1
-let zoomLevel
 let lastMiddleClickTime = 0
 let middleClickCount = 0
 let GRID_SIZE = 20
 let GRID_SPACING = 1
-
+let isCapturingInput = false
 // Local events
 const emit = defineEmits(['coordsUpdated'])
 
 // Global events
 const newCoords = useEventBus('newCoords')
-// const newPoint = useEventBus('newPoint')
-// const startDrawing = useEventBus('startDrawing')
-// const newDrawing = useEventBus('newDrawgin')
+const newPoint = useEventBus('newPoint')
+const startDrawing = useEventBus('startDrawing')
+const newDrawing = useEventBus('newDrawing')
+let unsubStartDrawing
+let unsubNewDrawing
 
 onMounted(() => {
   canvas = SVG()
@@ -114,14 +99,19 @@ onMounted(() => {
     .panZoom({ zoomFactor, panButton: 1 })
     .mousemove(updateCoordinates)
     .mousedown(handleClick)
+  console.log('canvas', canvas)
+  // .rect()
+  // .draw()
   // .scale(1, -1)
   viewbox = canvas.viewbox()
-  console.log('draw', canvas)
   drawGrid(canvas, GRID_SIZE, GRID_SPACING)
   drawAxis(canvas, GRID_SIZE)
   canvas.rect(2, 5).move(3, -5)
   canvas.rect(2, 5).move(3, 0)
-  canvas.rect(15, 15).move(-0.5, -0.5).fill({ color: 'teal', opacity: 0.5 }).stroke({ color: 'orange', width: 0.1 })
+  // let rectan = SVG().addTo('#canvas').rect().draw().attr('stroke-width', 5).attr('fill', 'none')
+  let rect = canvas.rect(15, 15).move(-0.5, -0.5).fill({ color: 'teal', opacity: 0.5 }).stroke({ color: 'orange', width: 0.1 })
+  rect.draggable()
+  // canvas.rect().draw()
   canvas.rect(1, 1).move(4.5, -0.5).fill({ color: 'teal', opacity: 0.5 }).stroke({ color: 'orange', width: 0.1 })
   canvas.rect(1, 1).move(-4.5, -0.5).fill({ color: 'teal', opacity: 0.5 }).stroke({ color: 'orange', width: 0.1 })
   canvas.text('svgcad').font({ size: 1 }).fill({ color: 'white' })
@@ -154,6 +144,26 @@ function drawGrid(canvas, gridSize, spacing) {
   }
 }
 
+function getCanvas() {
+  return canvas
+}
+
+unsubStartDrawing = startDrawing.on((drawCommand) => {
+  if (unsubNewDrawing) unsubNewDrawing()
+  store.isDrawing = true
+  console.log('start drawin', drawCommand)
+  drawCommand()
+  unsubNewDrawing = newDrawing.on((drawingCommand, drawingMode) => {
+    console.log('drawingMode', drawingMode)
+    if (drawingMode) {
+      activeDrawing = drawingCommand
+    } else {
+      drawings.push(drawingCommand)
+      activeDrawing = null
+    }
+  })
+})
+
 function updateCoordinates(e) {
   coordinates.value = canvas.point(e.pageX, e.pageY)
   // TODO GRID SNAP TO AVOID THIS
@@ -164,21 +174,6 @@ function updateCoordinates(e) {
 }
 
 function handleClick(e) {
-  console.log('canvas width', getComputedStyle(canvas.node.parentElement).width)
-  console.log('canvas height', getComputedStyle(canvas.node.parentElement).height)
-  const originalWidth = parseFloat(getComputedStyle(canvas.node.parentElement).width)
-  const originalHeight = parseFloat(getComputedStyle(canvas.node.parentElement).height)
-  console.log('viewbox', viewbox)
-  const zoomX = originalWidth / viewbox.width
-  const zoomY = originalHeight / viewbox.height
-  console.log('zoomX', zoomX)
-  console.log('zoomY', zoomY)
-  // zoomLevel = (zoomX + zoomY) / 2
-  zoomLevel = zoomX
-  console.log('zoomLevel', zoomLevel)
-  console.log('viewbox', canvas.viewbox())
-  // zoomLevel = viewboxSize / canvas.viewbox().height
-  console.log('zoomLvl', zoomLevel)
   if (e.button === 1) {
     const currentTime = new Date().getTime()
     const timeDiff = currentTime - lastMiddleClickTime
@@ -193,7 +188,25 @@ function handleClick(e) {
       middleClickCount = 1
     }
     lastMiddleClickTime = currentTime
+  } else if (isCapturingInput) {
+    console.log('emit new point')
+    isCapturingInput = false
+    console.log('isCapturingInput', isCapturingInput)
+    newPoint.emit(coordinates)
   }
+}
+
+function capturePoint() {
+  isCapturingInput = true
+  console.log('isCapturingInput', isCapturingInput)
+}
+
+function stopDrawing() {
+  // clearCanvas(canvas, context)
+  store.isDrawing = false
+  isCapturingInput = false
+  // activeDrawing = 0
+  // unsubNewDrawing()
 }
 </script>
 

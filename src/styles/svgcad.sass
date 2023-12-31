@@ -1,0 +1,155 @@
+.web-section
+    display: flex
+    align-items: center
+    border-bottom: var(--editor-border-width) solid var(--editor-border-color)
+    background: var(--editor-border-color)
+    a
+        &:link
+            text-decoration: none
+
+.statusbar
+    background: var(--editor-border-color)
+    border-top: var(--editor-border-width) solid var(--editor-border-color)
+    display: flex
+    justify-content: right
+
+main
+    height: 100%
+    display: flex
+    flex-direction: column
+.screen
+    background: var(--editor-border-color)
+    flex: 1
+    display: flex
+.viewport
+    display: flex
+    border-right: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
+    border-radius: 20px
+    flex: 1
+    background: #444
+    width: 70%
+.sidepanel
+    border-left: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
+    border-radius: 20px
+    // background: var(--editor-header-bg)
+    min-width: 200px
+    display: flex
+    flex-direction: column
+.sidepanel-resize
+    width: var(--editor-border-width)
+    cursor: col-resize
+    // background: blue
+    top: 0
+    bottom: 0
+.outliner
+    border-bottom: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
+    border-radius: 20px
+    background: var(--editor-header-bg)
+    height: 40%
+.outliner-resize
+    height: var(--editor-border-width)
+    left: 0
+    right: 0
+    // background: green
+    cursor: row-resize
+.properties
+    flex: 1
+    border-top: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
+    border-radius: 20px
+    background: var(--editor-header-bg)
+
+.editor-header
+    border-top-left-radius: 20px
+    border-top-right-radius: 20px
+
+.editor-header
+    border-top-left-radius: 20px
+    border-top-right-radius: 20px
+.canvas-editor
+    border-radius: 20px
+    box-sizing: border-box
+    background-color: var(--node-editor-bg)
+    position: relative
+    display: flex
+    flex-flow: column
+    flex-grow: 1
+.layout-editor
+    position: relative
+    box-sizing: border-box
+    flex: 1
+    min-width: 600px
+    width: 100%
+    height: 100%
+.canvas
+    // preserveAspectRatio:
+    cursor: crosshair
+    position: absolute
+    min-width: 600px
+    width: 100%
+    height: 100%
+
+.axis
+    vector-effect: non-scaling-stroke
+    stroke-width: 1
+.x-axis
+    stroke: #597631
+.y-axis
+    stroke: #843d47
+.grid
+    stroke: #4f4f4f
+
+.terminal
+  z-index: 5
+  box-sizing: border-box
+  font-size: var(--font-size)
+  border-radius: 10px 10px 0 0
+  left: 50%
+  transform: translate(-50%)
+  background: rgba(.2,.2,.2,.8)
+  position: absolute
+  bottom: 0
+  width: 600px
+  height: 90px
+.terminal-log
+    display: flex
+    flex-direction: column
+    width: 100%
+    height: 90px
+    box-sizing: border-box
+    position: absolute
+    top: 0px
+    padding: 10px 20px 20px 20px
+    overflow: scroll
+.terminal-input
+  box-sizing: border-box
+  border-radius: 5px
+  padding: 4px
+  display: flex
+  align-items: center
+  width: 100%
+  height: 20px
+  position: absolute
+  bottom: 0
+  background: rgb(10,10,10)
+.align-right
+  position: absolute
+  right: 0
+.terminal-input-field
+  box-sizing: border-box
+  margin-left: 10px
+  width: 92%
+  color: white
+  background: rgba(0,0,0,0)
+  border: 0
+  outline: none
+.newDrawing
+    // vector-effect: non-scaling-stroke
+    stroke: white
+    stroke-width: .2
+    stroke-linecap: round
+    fill: transparent
+    // &:hover
+    //     stroke: red
+.elementHover
+    stroke: orange
+    stroke-width: .4    
