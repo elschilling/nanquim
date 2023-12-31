@@ -102,10 +102,8 @@
     // When deepSelect is enabled and the element is a line/polyline/polygon, draw only points for moving
     if (this.options.deepSelect && ['line', 'polyline', 'polygon'].indexOf(this.el.type) !== -1) {
       this.selectPoints(value)
-      console.log('SELECTPOINTS')
     } else {
       this.selectRect(value)
-      console.log('SELECTRECT')
     }
 
     this.observe()
@@ -220,10 +218,10 @@
     var _this = this,
       bbox = this.el.bbox()
 
-    this.rectSelection.set.get(0).attr({
-      width: bbox.width,
-      height: bbox.height,
-    })
+    // this.rectSelection.set.get(0).attr({
+    //   width: bbox.width,
+    //   height: bbox.height,
+    // })
 
     // set.get(1) is always in the upper left corner. no need to move it
     if (this.options.points.length) {
@@ -248,7 +246,6 @@
     this.rectSelection.isSelected = value
 
     // when set is already p
-    console.log('this.parent', this.parent)
     this.rectSelection.set = this.rectSelection.set // || this.parent.set()
 
     // helperFunction to create a mouse-down function which triggers the event specified in `eventName`
@@ -265,62 +262,62 @@
     }
 
     // create the selection-rectangle and add the css-class
-    console.log('this.rectSelection', this.rectSelection)
-    if (!this.rectSelection.set.get(0)) {
-      this.rectSelection.set.add(this.nested.rect(bbox.width, bbox.height).addClass(this.options.classRect))
-    }
+    // console.log('this.rectSelection', this.rectSelection)
+    // if (!this.rectSelection.set.get(0)) {
+    //   this.rectSelection.set.add(this.nested.rect(bbox.width, bbox.height).addClass(this.options.classRect))
+    // }
 
     // Draw Points at the edges, if enabled
-    if (this.options.points.length && this.rectSelection.set.length() < 2) {
-      var ename = 'touchstart',
-        mname = 'mousedown'
+    // if (this.options.points.length && this.rectSelection.set.length() < 2) {
+    //   var ename = 'touchstart',
+    //     mname = 'mousedown'
 
-      this.options.points.map(function (point, index) {
-        var coords = _this.pointCoords(point, bbox)
+    //   this.options.points.map(function (point, index) {
+    //     var coords = _this.pointCoords(point, bbox)
 
-        var pointElement = _this
-          .drawPoint(coords.x, coords.y)
-          .attr('class', _this.options.classPoints + '_' + point)
-          .on(mname, getMoseDownFunc(point))
-          .on(ename, getMoseDownFunc(point))
-        _this.rectSelection.set.add(pointElement)
-      })
+    //     var pointElement = _this
+    //       .drawPoint(coords.x, coords.y)
+    //       .attr('class', _this.options.classPoints + '_' + point)
+    //       .on(mname, getMoseDownFunc(point))
+    //       .on(ename, getMoseDownFunc(point))
+    //     _this.rectSelection.set.add(pointElement)
+    //   })
 
-      this.rectSelection.set.each(function () {
-        this.addClass(_this.options.classPoints)
-      })
-    }
+    //   this.rectSelection.set.each(function () {
+    //     this.addClass(_this.options.classPoints)
+    //   })
+    // }
 
     // draw rotationPint, if enabled
-    if (
-      this.options.rotationPoint &&
-      ((this.options.points && !this.rectSelection.set.get(9)) || (!this.options.points && !this.rectSelection.set.get(1)))
-    ) {
-      var curriedEvent = function (ev) {
-        ev = ev || window.event
-        ev.preventDefault ? ev.preventDefault() : (ev.returnValue = false)
-        ev.stopPropagation()
+    // if (
+    //   this.options.rotationPoint &&
+    //   ((this.options.points && !this.rectSelection.set.get(9)) || (!this.options.points && !this.rectSelection.set.get(1)))
+    // ) {
+    //   var curriedEvent = function (ev) {
+    //     ev = ev || window.event
+    //     ev.preventDefault ? ev.preventDefault() : (ev.returnValue = false)
+    //     ev.stopPropagation()
 
-        var x = ev.pageX || ev.touches[0].pageX
-        var y = ev.pageY || ev.touches[0].pageY
-        _this.el.fire('rot', { x: x, y: y, event: ev })
-      }
+    //     var x = ev.pageX || ev.touches[0].pageX
+    //     var y = ev.pageY || ev.touches[0].pageY
+    //     _this.el.fire('rot', { x: x, y: y, event: ev })
+    //   }
 
-      var pointElement = this.drawPoint(bbox.width / 2, 20)
-        .attr('class', this.options.classPoints + '_rot')
-        .on('touchstart', curriedEvent)
-        .on('mousedown', curriedEvent)
-      this.rectSelection.set.add(pointElement)
-    }
+    //   var pointElement = this.drawPoint(bbox.width / 2, 20)
+    //     .attr('class', this.options.classPoints + '_rot')
+    //     .on('touchstart', curriedEvent)
+    //     .on('mousedown', curriedEvent)
+    //   this.rectSelection.set.add(pointElement)
+    // }
   }
 
   SelectHandler.prototype.handler = function () {
     var bbox = this.el.bbox()
     this.nested.matrix(new SVG.Matrix(this.el).translate(bbox.x, bbox.y))
 
-    if (this.rectSelection.isSelected) {
-      this.updateRectSelection()
-    }
+    // if (this.rectSelection.isSelected) {
+    //   this.updateRectSelection()
+    // }
 
     if (this.pointSelection.isSelected) {
       this.updatePointSelection()

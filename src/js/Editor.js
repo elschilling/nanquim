@@ -12,6 +12,7 @@ function Editor() {
   this.canvas = document.getElementById('canvas')
   this.svg = SVG().addTo('#canvas')
   this.isDrawing = false
+  this.elementIndex = 0
 }
 
 Editor.prototype = {

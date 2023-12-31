@@ -1,13 +1,12 @@
 import { distanceFromPointToLine, distanceFromPointToCircle, distancePointToRectangleStroke } from '../utils/calculateDistance'
 
 function Viewport(editor) {
-  function update(isDrawing) {
-    console.log('isDrawing', isDrawing)
-  }
   const signals = editor.signals
   const svg = editor.svg
 
   let hoverTreshold = 0.5
+  let hoveredElements = []
+  let isSelecting = false
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
   let GRID_SIZE = 20
@@ -21,35 +20,20 @@ function Viewport(editor) {
   })
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
-  svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick)
+  // svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick).click(handleRectSelection)
+  svg
+    .addClass('canvas')
+    .mousemove(handleMove)
+    .mousedown(handleMousedown)
+    // .mouseup(handleClick)
+    // .click(handleClick)
+    .panZoom({ zoomFactor, panButton: 1 })
   drawGrid(svg, GRID_SIZE, GRID_SPACING)
   drawAxis(svg, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
-  // svg.line(5, -5, 10, 10).stroke({ color: 'white', width: 0.1 })
-  // svg.circle(5).stroke({ color: 'white', width: 0.1 }).move(-2.5, -2.5)
-
-  function handleClick(e) {
-    if (e.button === 1) {
-      const currentTime = new Date().getTime()
-      const timeDiff = currentTime - lastMiddleClickTime
-      if (timeDiff < 300) {
-        middleClickCount++
-        if (middleClickCount === 2) {
-          console.log('double midle click detected!!!')
-          zoomToFit(svg, 1)
-          middleClickCount = 0
-        }
-      } else {
-        middleClickCount = 1
-      }
-      lastMiddleClickTime = currentTime
-    }
-  }
 
   function zoomToFit(canvas) {
     const bbox = canvas.bbox()
-    // canvas.rect(bbox.width, bbox.height).stroke({ color: 'yellow', width: 0.2 }).fill({ opacity: 0.4 }).move(bbox.x, bbox.y)
-    // console.log('bbox', bbox)
     canvas.animate(300).viewbox(bbox)
   }
 
@@ -83,14 +67,12 @@ function Viewport(editor) {
   function updateCoordinates(e) {
     coordinates = svg.point(e.pageX, e.pageY)
     // TODO GRID SNAP TO AVOID THIS
-    coordinates.x = Math.round(coordinates.x)
-    coordinates.y = Math.round(coordinates.y)
+    coordinates.x = coordinates.x
+    coordinates.y = coordinates.y
     editor.signals.updatedCoordinates.dispatch(coordinates)
   }
   function checkHover() {
     if (!editor.isDrawing) {
-      svg.off('click')
-      console.log('isDrawing', editor.isDrawing)
       svg.children().each((el) => {
         if (!el.hasClass('grid') && !el.hasClass('axis')) {
           let distance
@@ -108,35 +90,108 @@ function Viewport(editor) {
             distance = distancePointToRectangleStroke(coordinates, el.node)
           }
           if (distance < hoverTreshold) {
-            el.addClass('elementHover')
-            // el.selectize({ deepSelect: true })
-            // canvas.addEventListener('click', (e) => handleClick(e, el))
-            svg.off('click').click((e) => handleClick(e, el))
-            // el.on('click', () => console.log('handle line click'))
+            if (!(hoveredElements.length > 0)) {
+              el.addClass('elementHover')
+              hoveredElements = [el]
+            }
           } else {
             el.removeClass('elementHover')
-
-            // el.selectize(false, { deepSelect: true })
-            // console.log('el.attr', el.attr)
-          }
-        }
-        function handleClick(e, el) {
-          svg.off('click')
-          e.stopImmediatePropagation()
-          console.log('e', e)
-          console.log('el', el)
-          if (el.attr('selected') === 'true') {
-            el.selectize(false, { deepSelect: true })
-            el.attr('selected', false)
-            el.removeClass('elementSelected')
-          } else {
-            el.selectize({ deepSelect: true })
-            el.attr('selected', true)
-            el.addClass('elementSelected')
+            hoveredElements = hoveredElements.filter((item) => item !== el)
           }
         }
       })
     }
+  }
+  function handleMousedown(e) {
+    if (e.button === 1) {
+      // check middle click
+      handleMiddleClick()
+    } else {
+      if (hoveredElements.length > 0) toogleSelect(hoveredElements[0])
+      else handleRectSelection(e)
+    }
+  }
+  function handleRectSelection(e) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    if (!editor.isDrawing) {
+      editor.isDrawing = true
+      svg.click(null)
+      svg
+        .rect()
+        .addClass('selectionRectangle')
+        .draw()
+        .on('drawupdate', (e) => {
+          const rect = {}
+          rect.x = e.target.x.baseVal.value
+          rect.y = e.target.y.baseVal.value
+          rect.width = e.target.width.baseVal.value
+          rect.height = e.target.height.baseVal.value
+          if (!(rect.x + rect.width >= coordinates.x)) e.srcElement.classList.add('selectionRectangleRight')
+          else {
+            e.target.classList.remove('selectionRectangleRight')
+            findElementsWithinRect(svg, rect)
+          }
+        })
+        .on('drawstop', (e) => {
+          e.target.remove()
+          editor.isDrawing = false
+          selectHovered()
+        })
+    }
+  }
+  function findElementsWithinRect(svg, rect) {
+    svg.children().each((el) => {
+      if (!el.hasClass('grid') && !el.hasClass('axis') && !el.hasClass('selectionRectangle')) {
+        const bbox = el.bbox()
+
+        // Check if the element's bounding box intersects or is contained within the selection rectangle
+        const intersects =
+          bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
+        if (intersects) {
+          el.addClass('elementHover')
+          if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
+            hoveredElements.push(el)
+          }
+        } else {
+          el.removeClass('elementHover')
+          hoveredElements = hoveredElements.filter((item) => item !== el)
+        }
+      }
+    })
+  }
+
+  function selectHovered() {
+    hoveredElements.forEach((el) => {
+      el.selectize({ deepSelect: true })
+      el.attr('selected', true)
+      el.addClass('elementSelected')
+    })
+  }
+  function toogleSelect(el) {
+    if (el.attr('selected') === 'true') {
+      el.selectize(false, { deepSelect: true })
+      el.attr('selected', false)
+      el.removeClass('elementSelected')
+    } else {
+      el.selectize({ deepSelect: true })
+      el.attr('selected', true)
+      el.addClass('elementSelected')
+    }
+  }
+  function handleMiddleClick() {
+    const currentTime = new Date().getTime()
+    const timeDiff = currentTime - lastMiddleClickTime
+    if (timeDiff < 300) {
+      middleClickCount++
+      if (middleClickCount === 2) {
+        zoomToFit(svg, 1)
+        middleClickCount = 0
+      }
+    } else {
+      middleClickCount = 1
+    }
+    lastMiddleClickTime = currentTime
   }
 }
 

@@ -24,6 +24,7 @@ class DrawCircleCommand extends Command {
     this.editor.svg
       .circle()
       .addClass('newDrawing')
+      .attr('id', this.editor.elementIndex++)
       .fill('transparent')
       .draw()
       .on('drawstop', () => this.editor.setIsDrawing(false))

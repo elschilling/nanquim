@@ -22,7 +22,9 @@ class DrawLineCommand extends Command {
     if (this.isDrawing) {
       let drawing = this.svg
       let line = drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, snapToGrid: 0.1 })
+
       line.on('drawstop', (e) => {
+        line.attr('id', this.editor.elementIndex++)
         line.off()
         line = null
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint

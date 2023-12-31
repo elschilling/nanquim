@@ -22,6 +22,7 @@ class DrawRectangleCommand extends Command {
     this.editor.svg
       .rect()
       .addClass('newDrawing')
+      .attr('id', this.editor.elementIndex++)
       .draw()
       .on('drawstop', () => this.editor.setIsDrawing(false))
   }
