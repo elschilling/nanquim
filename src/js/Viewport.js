@@ -33,8 +33,7 @@ function Viewport(editor) {
   svg.animate(300).viewbox(svg.bbox())
 
   function zoomToFit(canvas) {
-    const bbox = canvas.bbox()
-    canvas.animate(300).viewbox(bbox)
+    canvas.animate(300).viewbox(canvas.bbox())
   }
 
   function drawAxis(svg, size) {
@@ -185,7 +184,7 @@ function Viewport(editor) {
     if (timeDiff < 300) {
       middleClickCount++
       if (middleClickCount === 2) {
-        zoomToFit(svg, 1)
+        zoomToFit(svg)
         middleClickCount = 0
       }
     } else {

@@ -3,27 +3,15 @@
     .wgt.wgt-menu
         span.icon.icon-editor-svgcad
         .icon.icon-dropdown
+    .layout-row
+      .align-buttons-center
+        .wgt.wgt-menu
+          .icon.icon-snap-off
+        .wgt.wgt-menu
+          .icon.icon-snap-options
+          .icon.icon-dropdown
+      .wgt.wgt-menu.align-buttons-right
+        .icon.icon-overlay
+        .icon.icon-dropdown
   .layout-editor#canvas
-    //- canvas(ref='canvas' @click='handleClick' @contextmenu.prevent='stopDrawing' @mousedown="onPointerDown" @mousemove="onPointerMove" @mouseup="onPointerUp" @wheel="(e) => adjustZoom(e.deltaY*SCROLL_SENSITIVITY)")
-    //- svg(id='canvas' viewBox="-10 -10 20 20" ref='svg'
-    //- @click='handleClick'
-    //- @contextmenu.prevent='stopDrawing'
-    //- @mousedown="onPointerDown"
-    //- @mousemove="onPointerMove"
-    //- @mouseup="onPointerUp"
-    //- @wheel.prevent="adjustZoom")
-      //- circle(cx='0' cy='0' r='5')
-      //- circle(cx='0' cy='0' r='4')
-      //- circle(cx='0' cy='0' r='3')
-      //- circle(cx='0' cy='0' r='2')
-      //- circle(cx='0' cy='0' r='1')
-      line(x1="0" y1="-5000000" x2="0" y2="5000000" class='axis y-axis')
-      line(x1="-5000000" y1="0" x2="5000000" y2="0" class='axis x-axis')
-    //- Terminal(@inputAsk='capturePoint' @stopDrawing='stopDrawing' :coords='coordinates' :ctx='getCanvas')
     include Terminal
-
-//- script(src='svg.js')
-//- script(src='svg.draw.js')
-//- script.
-//-     let drawing = SVG().addTo('#canvas').size('500','500').addClass('canvas')
-//-     drawing.rect().draw()

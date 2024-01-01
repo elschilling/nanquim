@@ -1,0 +1,11 @@
+script.
+  $('.js-toggle-viewer').on('click', function(){
+    let node = $(this).closest('.node');
+
+    if ($(node).hasClass('is-viewer')){
+      console.log('si');
+      toggleNodeViewer(node);
+    } else {
+      setNodeViewer(node);
+    }
+  });

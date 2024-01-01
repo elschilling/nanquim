@@ -1,0 +1,51 @@
+main
+    include NavBar
+    section.screen
+        .viewport
+            include Canvas
+        .sidepanel-resize(onmousedown='resizePanel(event)')
+        .sidepanel
+            include Outliner
+            .outliner-resize(onmousedown='resizeOutliner(event)')
+            include Properties
+    include StatusBar
+
+script.
+    let sidepanel = document.getElementsByClassName('sidepanel')[0]
+    let outliner = document.getElementsByClassName('outliner')[0]
+    const resizePanel = (e) => {      
+        isResizingPanel = true
+        startX = e.x
+        startWidth = parseInt(getComputedStyle(sidepanel, '').width)
+        sidepanel.parentNode.addEventListener('mousemove', (ex) => resizeSidepanel(ex, sidepanel))
+        sidepanel.parentNode.addEventListener('mouseup', () => stopResizePanel())
+     }
+    const resizeSidepanel = (e, panel) => {
+        if (isResizingPanel) {
+            let dx = -e.x + startX
+            panel.style.width = startWidth + dx + 'px'
+        }
+    }
+    const stopResizeOutliner = () => {  
+        isResizingOutliner = false
+        outliner.parentNode.removeEventListener('mousemove', resizeOut)
+        outliner.parentNode.removeEventListener('mouseup', stopResizeOutliner)
+    }
+    const stopResizePanel = () => {
+        isResizingPanel = false
+        sidepanel.parentNode.removeEventListener('mousemove', resizeSidepanel)
+        sidepanel.parentNode.removeEventListener('mouseup', stopResizePanel)
+    }
+    const resizeOutliner = (e) => {
+        isResizingOutliner = true
+        startY = e.y
+        startHeight = parseInt(getComputedStyle(outliner, '').height)
+        outliner.parentNode.addEventListener('mousemove', (ex) => resizeOut(ex, outliner))
+        outliner.parentNode.addEventListener('mouseup', () => stopResizeOutliner())
+    }
+    const resizeOut = (e, panel) => {
+        if (isResizingOutliner) {
+            let dy = -e.y + startY
+            panel.style.height = startHeight - dy + 'px'
+        }
+    }
