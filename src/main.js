@@ -4,13 +4,14 @@ import './js/libs/svg.js/svg.select.css'
 import { Editor } from './js/Editor'
 import { Viewport } from './js/Viewport'
 import { Outliner } from './js/Outliner'
+import { Properties } from './js/Properties'
 import { Terminal } from './js/Terminal'
 import { StatusBar } from './js/StatusBar'
 
 const editor = new Editor()
 const viewport = new Viewport(editor)
 const outliner = new Outliner(editor)
-// const signals = editor.signals
+const properties = new Properties(editor)
 const terminal = new Terminal(editor)
 const statusbar = new StatusBar(editor)
 

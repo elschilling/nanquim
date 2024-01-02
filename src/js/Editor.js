@@ -10,6 +10,7 @@ function Editor() {
     terminalLogged: new Signal(),
     clearSelection: new Signal(),
     toogledSelect: new Signal(),
+    updatedProperties: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')

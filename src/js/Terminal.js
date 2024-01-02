@@ -46,7 +46,8 @@ function Terminal(editor) {
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
       signals.clearSelection.dispatch()
-      // emit('stopDrawing')
+      editor.selected = []
+      signals.updatedProperties.dispatch()
     }
   }
 }
