@@ -7,8 +7,11 @@ class Command {
     this.name = ''
     this.editor = editor
     this.isDrawing = true
+    this.signals = editor.signals
   }
-
+  updatedOutliner() {
+    this.signals.updatedOutliner.dispatch()
+  }
   // toJSON() {
 
   // 	const output = {};

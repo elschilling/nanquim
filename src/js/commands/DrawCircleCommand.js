@@ -27,7 +27,10 @@ class DrawCircleCommand extends Command {
       .attr('id', this.editor.elementIndex++)
       .fill('transparent')
       .draw()
-      .on('drawstop', () => this.editor.setIsDrawing(false))
+      .on('drawstop', () => {
+        this.updatedOutliner()
+        this.editor.setIsDrawing(false)
+      })
   }
 }
 

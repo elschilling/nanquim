@@ -5,8 +5,8 @@ class DrawLineCommand extends Command {
     super(editor)
     this.type = 'DrawLineCommand'
     this.name = 'Line'
-    this.draw = this.draw.bind(this)
-    this.svg = this.editor.svg
+    // this.draw = this.draw.bind(this)
+    this.drawing = this.editor.drawing
   }
 
   execute() {
@@ -20,21 +20,21 @@ class DrawLineCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let drawing = this.svg
-      let line = drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, snapToGrid: 0.1 })
+      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, snapToGrid: 0.1 })
 
       line.on('drawstop', (e) => {
         line.attr('id', this.editor.elementIndex++)
         line.off()
         line = null
+        this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
-      drawing.on('cancelDrawing', (e) => {
+      this.editor.svg.on('cancelDrawing', (e) => {
         if (line) {
           line.off()
           line.draw('cancel')
           this.isDrawing = false
-          this.editor.setIsDrawing(false)
+          console.log('cancel')
         }
       })
     }

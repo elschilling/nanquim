@@ -24,7 +24,10 @@ class DrawRectangleCommand extends Command {
       .addClass('newDrawing')
       .attr('id', this.editor.elementIndex++)
       .draw()
-      .on('drawstop', () => this.editor.setIsDrawing(false))
+      .on('drawstop', () => {
+        this.updatedOutliner()
+        this.editor.setIsDrawing(false)
+      })
   }
 }
 

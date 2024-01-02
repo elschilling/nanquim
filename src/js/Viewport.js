@@ -3,6 +3,7 @@ import { distanceFromPointToLine, distanceFromPointToCircle, distancePointToRect
 function Viewport(editor) {
   const signals = editor.signals
   const svg = editor.svg
+  const drawing = editor.drawing
 
   let hoverTreshold = 0.5
   let hoveredElements = []
@@ -16,7 +17,7 @@ function Viewport(editor) {
   let isCapturingInput = false
 
   signals.clearSelection.add(() => {
-    clearSelection(svg)
+    clearSelection(drawing)
   })
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
@@ -28,8 +29,8 @@ function Viewport(editor) {
     // .mouseup(handleClick)
     // .click(handleClick)
     .panZoom({ zoomFactor, panButton: 1 })
-  drawGrid(svg, GRID_SIZE, GRID_SPACING)
-  drawAxis(svg, GRID_SIZE)
+  drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
+  drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
 
   function zoomToFit(canvas) {
@@ -72,31 +73,30 @@ function Viewport(editor) {
   }
   function checkHover() {
     if (!editor.isDrawing) {
-      svg.children().each((el) => {
-        if (!el.hasClass('grid') && !el.hasClass('axis')) {
-          let distance
-          if (el.type === 'line') {
-            let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
-            let p2 = { x: el.node.x2.baseVal.value, y: el.node.y2.baseVal.value }
-            distance = distanceFromPointToLine(coordinates, p1, p2)
-          } else if (el.type === 'circle') {
-            distance = distanceFromPointToCircle(
-              coordinates,
-              { x: el.node.cx.baseVal.value, y: el.node.cy.baseVal.value },
-              el.node.r.baseVal.value
-            )
-          } else if (el.type === 'rect') {
-            distance = distancePointToRectangleStroke(coordinates, el.node)
+      drawing.children().each((el) => {
+        console.log('el', el)
+        let distance
+        if (el.type === 'line') {
+          let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
+          let p2 = { x: el.node.x2.baseVal.value, y: el.node.y2.baseVal.value }
+          distance = distanceFromPointToLine(coordinates, p1, p2)
+        } else if (el.type === 'circle') {
+          distance = distanceFromPointToCircle(
+            coordinates,
+            { x: el.node.cx.baseVal.value, y: el.node.cy.baseVal.value },
+            el.node.r.baseVal.value
+          )
+        } else if (el.type === 'rect') {
+          distance = distancePointToRectangleStroke(coordinates, el.node)
+        }
+        if (distance < hoverTreshold) {
+          if (!(hoveredElements.length > 0)) {
+            el.addClass('elementHover')
+            hoveredElements = [el]
           }
-          if (distance < hoverTreshold) {
-            if (!(hoveredElements.length > 0)) {
-              el.addClass('elementHover')
-              hoveredElements = [el]
-            }
-          } else {
-            el.removeClass('elementHover')
-            hoveredElements = hoveredElements.filter((item) => item !== el)
-          }
+        } else {
+          el.removeClass('elementHover')
+          hoveredElements = hoveredElements.filter((item) => item !== el)
         }
       })
     }
