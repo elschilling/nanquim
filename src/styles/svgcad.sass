@@ -52,7 +52,9 @@ main
 .outliner
     border-bottom: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
     border-radius: 20px
-    background: var(--editor-header-bg)
+    display: flex
+    flex-direction: column
+    // background: var(--editor-header-bg)
     height: 40%
 .outliner-resize
     height: var(--editor-border-width)
@@ -182,3 +184,55 @@ main
     fill-opacity: .2
 .selectionRectangleRight
     stroke-dasharray: 4
+
+.outliner-root
+    padding-left: 0px
+    margin: 0
+    width: 100%
+    list-style-type: none
+    box-sizing: border-box
+    // padding: 10px 0px 0px 0px
+    // background: #282828
+    li
+        cursor: default
+        text-indent: 10px
+        line-height: 22px
+
+        // box-sizing: 
+        // padding: 20px
+        padding-left: 0px
+        box-sizing: border-box
+        
+.outliner-list  
+    padding: 0
+    li
+        cursor: pointer
+        display: flex
+        flex-direction: row
+        align-items: center
+        padding: 0px 20px
+        height: 22px
+        list-style-type: none
+        text-indent: 0
+        background: #282828
+    li:nth-child(odd)
+        background: #2b2b2b
+    li
+        &:hover
+            background: #464646
+
+
+.outliner-container
+    overflow-y: auto
+    flex: 1
+    background: linear-gradient(to bottom,#282828,#282828 50%,#2b2b2b 50%,#2b2b2b)
+    background-size: 100% 44px
+    height: 100%
+    border-radius: 0 0 20px 20px
+    display: flex
+    align-items: flex-start
+
+.outliner-selected
+    background: #334d80  !important
+    &:hover
+        background: #4d6490 !important

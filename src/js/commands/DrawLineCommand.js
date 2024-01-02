@@ -33,8 +33,8 @@ class DrawLineCommand extends Command {
         if (line) {
           line.off()
           line.draw('cancel')
-          this.isDrawing = false
-          console.log('cancel')
+          // this.isDrawing = false
+          this.editor.setIsDrawing(false)
         }
       })
     }

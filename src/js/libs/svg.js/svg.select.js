@@ -96,6 +96,7 @@
     })
 
     this.parent = this.el.parent()
+    this.parent = this.el.root().children()[0].children()[0] // select #Handlers group
     this.nested = this.nested || this.parent.group()
     this.nested.matrix(new SVG.Matrix(this.el).translate(bbox.x, bbox.y))
 
@@ -117,11 +118,9 @@
     if (this.pointSelection.set) {
       return this
     }
-    // console.log('this', this.pare)
     // Create our set of elements
     // this.pointSelection.set = this.parent.set()
     this.pointSelection.set = new SVG.List()
-    // console.log('this', this)
     // draw the points and mark the element as selected
     this.drawPoints()
 
@@ -173,7 +172,6 @@
   // The function to draw single point
   SelectHandler.prototype.drawPoint = function (cx, cy) {
     var pointType = this.options.pointType
-
     switch (pointType) {
       case 'circle':
         return this.drawCircle(cx, cy)

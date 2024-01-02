@@ -3,15 +3,13 @@
         .wgt.wgt-menu
             span.icon.icon-outliner
             .icon.icon-dropdown
-    .layout-row
-        ul#svg-tree
+    .layout-row.outliner-container
+        ul.outliner-root
             li
-                | SVG
-                ul
-                    li
-                        | Collection
-                        ul
-                            li
-                                | Rect
-                            li
-                                | Circle
+                | SVG Drawing
+                ul#drawing-tree.outliner-list
+                    //-     ul
+                    //-         li
+                    //-             | Rect
+                    //-         li
+                    //-             | Circle

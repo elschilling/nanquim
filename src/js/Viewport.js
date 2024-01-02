@@ -16,9 +16,9 @@ function Viewport(editor) {
   let middleClickCount = 0
   let isCapturingInput = false
 
-  signals.clearSelection.add(() => {
-    clearSelection(drawing)
-  })
+  // signals.clearSelection.add(() => {
+  //   clearSelection(drawing)
+  // })
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
   // svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick).click(handleRectSelection)
@@ -74,7 +74,6 @@ function Viewport(editor) {
   function checkHover() {
     if (!editor.isDrawing) {
       drawing.children().each((el) => {
-        console.log('el', el)
         let distance
         if (el.type === 'line') {
           let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
@@ -106,7 +105,7 @@ function Viewport(editor) {
       // check middle click
       handleMiddleClick()
     } else {
-      if (hoveredElements.length > 0) toogleSelect(hoveredElements[0])
+      if (hoveredElements.length > 0) signals.toogledSelect.dispatch(hoveredElements[0])
       else handleRectSelection(e)
     }
   }
@@ -140,31 +139,31 @@ function Viewport(editor) {
     }
   }
   function findElementsWithinRect(svg, rect) {
-    svg.children().each((el) => {
-      if (!el.hasClass('grid') && !el.hasClass('axis') && !el.hasClass('selectionRectangle')) {
-        const bbox = el.bbox()
+    drawing.children().each((el) => {
+      const bbox = el.bbox()
 
-        // Check if the element's bounding box intersects or is contained within the selection rectangle
-        const intersects =
-          bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
-        if (intersects) {
-          el.addClass('elementHover')
-          if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
-            hoveredElements.push(el)
-          }
-        } else {
-          el.removeClass('elementHover')
-          hoveredElements = hoveredElements.filter((item) => item !== el)
+      // Check if the element's bounding box intersects or is contained within the selection rectangle
+      const intersects =
+        bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
+      if (intersects) {
+        el.addClass('elementHover')
+        if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
+          hoveredElements.push(el)
         }
+      } else {
+        el.removeClass('elementHover')
+        hoveredElements = hoveredElements.filter((item) => item !== el)
       }
     })
   }
 
   function selectHovered() {
     hoveredElements.forEach((el) => {
-      el.selectize({ deepSelect: true })
-      el.attr('selected', true)
-      el.addClass('elementSelected')
+      editor.selected.push(el)
+      editor.signals.updatedSelection.dispatch()
+      // el.selectize({ deepSelect: true })
+      // el.attr('selected', true)
+      // el.addClass('elementSelected')
     })
   }
   function toogleSelect(el) {

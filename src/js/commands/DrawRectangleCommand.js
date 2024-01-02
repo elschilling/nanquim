@@ -6,7 +6,7 @@ class DrawRectangleCommand extends Command {
     this.type = 'DrawRectangleCommand'
     this.name = 'Rectangle'
     this.draw = this.draw.bind(this)
-    this.svg = this.editor.svg
+    this.drawing = this.editor.drawing
   }
 
   execute() {
@@ -19,7 +19,7 @@ class DrawRectangleCommand extends Command {
     this.draw()
   }
   draw() {
-    this.editor.svg
+    this.drawing
       .rect()
       .addClass('newDrawing')
       .attr('id', this.editor.elementIndex++)

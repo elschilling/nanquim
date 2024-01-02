@@ -5,8 +5,8 @@ class DrawCircleCommand extends Command {
     super(editor)
     this.type = 'DrawCircleCommand'
     this.name = 'Circle'
-    this.draw = this.draw.bind(this)
-    this.svg = this.editor.svg
+    // this.draw = this.draw.bind(this)
+    this.drawing = this.editor.drawing
   }
 
   execute() {
@@ -21,7 +21,7 @@ class DrawCircleCommand extends Command {
     this.draw()
   }
   draw() {
-    this.editor.svg
+    this.drawing
       .circle()
       .addClass('newDrawing')
       .attr('id', this.editor.elementIndex++)
