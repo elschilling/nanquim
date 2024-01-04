@@ -1,4 +1,5 @@
 import { History as _History } from './History'
+import { DXFLoader } from '../utils/DXFloader'
 
 function Editor() {
   const Signal = signals.Signal
@@ -24,6 +25,7 @@ function Editor() {
   this.isDrawing = false
   this.elementIndex = 0
   this.selected = []
+  this.loader = new DXFLoader(this)
 }
 
 Editor.prototype = {

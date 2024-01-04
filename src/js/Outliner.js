@@ -5,13 +5,16 @@ function Outliner(editor) {
 
   signals.updatedOutliner.add(() => {
     drawingTree.innerHTML = ''
-    editor.drawing.children().each((el) => {
-      const li = document.createElement('li')
-      li.id = 'li' + el.node.id
-      li.textContent = el.node.nodeName
-      li.addEventListener('click', () => signals.toogledSelect.dispatch(el))
-      drawingTree.appendChild(li)
-    })
+    childElements(editor.drawing, drawingTree)
+    // editor.drawing.children().each((el) => {
+    //   const li = document.createElement('li')
+    //   li.id = 'li' + el.node.id
+    //   li.textContent = el.node.nodeName
+    //   li.addEventListener('click', () => signals.toogledSelect.dispatch(el))
+    //   drawingTree.appendChild(li)
+    //   console.log('el', el)
+    //   if ((el.type = 'g')) childElements(el, drawingTree)
+    // })
   })
 
   signals.updatedSelection.add(() => {
@@ -22,6 +25,7 @@ function Outliner(editor) {
       el.addClass('elementSelected')
       li.classList.add('outliner-selected')
     })
+    signals.updatedProperties.dispatch()
   })
 
   signals.clearSelection.add(() => {
@@ -42,6 +46,30 @@ function Outliner(editor) {
     }
     editor.signals.updatedSelection.dispatch()
   })
+}
+
+function childElements(group, parent) {
+  console.log('group', group)
+  const ul = document.createElement('ul')
+  const li = document.createElement('li')
+  li.id = 'li' + group.node.id
+  li.textContent = group.node.nodeName + ' ' + group.node.id
+  li.addEventListener('click', () => signals.toogledSelect.dispatch(group))
+  ul.appendChild(li)
+  group.children().each((child) => {
+    console.log('child', child)
+    if (child.type === 'g') childElements(child, ul)
+    else {
+      const childUl = document.createElement('ul')
+      const li = document.createElement('li')
+      li.id = 'li' + child.node.id
+      li.textContent = child.node.nodeName
+      li.addEventListener('click', () => signals.toogledSelect.dispatch(child))
+      childUl.appendChild(li)
+      ul.appendChild(childUl)
+    }
+  })
+  parent.appendChild(ul)
 }
 
 export { Outliner }

@@ -1,4 +1,5 @@
 .web-section
+    position: relative
     display: flex
     align-items: center
     border-bottom: var(--editor-border-width) solid var(--editor-border-color)
@@ -203,29 +204,28 @@ main
         
 .outliner-list  
     padding: 0
+    ul
+        // margin-left: 10px
     li
         cursor: pointer
         display: flex
         flex-direction: row
-        align-items: center
-        padding: 0px 20px
-        height: 22px
-        list-style-type: none
-        text-indent: 0
-        background: #282828
-    li:nth-child(odd)
-        background: #2b2b2b
+        // align-items: center
+        // padding: 0px 20px
+        // height: 22px
+        // list-style-type: none
+        // text-indent: 0
     li
         &:hover
             background: #464646
 
 
 .outliner-container
-    overflow-y: auto
+    overflow-y: scroll
     flex: 1
     background: linear-gradient(to bottom,#282828,#282828 50%,#2b2b2b 50%,#2b2b2b)
     background-size: 100% 44px
-    height: 100%
+    background-attachment: local
     border-radius: 0 0 20px 20px
     display: flex
     align-items: flex-start
@@ -265,3 +265,25 @@ main
     padding: 10px
     border-radius: 5px
     background-color: #3d3d3d
+
+.dropdown-menu
+    transition: opacity .5s
+    border-radius: 7px
+    // display: none
+    opacity: 0
+    position: absolute
+    left: 30px
+    top: 30px
+    background: var(--editor-border-color)
+    ul
+        display: block
+        padding: 5px
+    li
+        padding: 10px !important
+        margin-left: 0 !important
+        &:hover
+            border-radius: 7px
+            background: var(--editor-header-bg)
+.show-menu
+    opacity: 1
+    z-index: 10

@@ -19,6 +19,7 @@
     "@svgdotjs/svg.draw.js": "github:plungingChode/svg.draw.js",
     "@svgdotjs/svg.js": "^3.2.0",
     "@svgdotjs/svg.panzoom.js": "^2.1.2",
+    "dxf": "^5.1.0",
     "signals": "^1.0.0"
   }
 }

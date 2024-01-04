@@ -2,7 +2,17 @@ section.web-section
   .icon.icon-blender-logo
   ul
     li
-      a(href="#") File
+      a.navbar-menus(onclick='menuFile()') File
+      .dropdown-menu
+        ul
+          li(onclick='fileInput.click()') 
+            | Open SVG
+          li
+            | Save SVG
+          li(onclick='fileInput.click()')
+            | Import DXF
+          li
+            | Export DXF
     li
       a(href="#") Preferences
     li
