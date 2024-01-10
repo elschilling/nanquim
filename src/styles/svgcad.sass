@@ -286,6 +286,42 @@ main
         &:hover
             border-radius: 7px
             background: var(--editor-header-bg)
+
+.overlay-menu
+    border-top: 30px
+    padding: 20px
+    transition: opacity .5s
+    border-radius: 7px
+    // display: none
+    opacity: 0
+    position: absolute
+    top: 35px
+    right: -19px
+    background: var(--editor-border-color)
+    ul
+        display: block
+        padding: 5px
+    li
+        padding: 10px !important
+        margin-left: 0 !important
+        &:hover
+            border-radius: 7px
+            background: var(--editor-header-bg)
+
 .show-menu
     opacity: 1
+    // display: inline
     z-index: 10
+
+
+/* Flip the vertical axis in <g> to emulate cartesian. */
+svg.cartesian
+  transform: scaleY(-1)
+
+/* Re-flip all <text> element descendants to their original side up. */
+svg.cartesian text
+  transform: scaleY(-1)
+
+.is-active
+    background-color: var(--accent-color)
+    opacity: 1

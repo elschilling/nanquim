@@ -24,6 +24,7 @@ function Viewport(editor) {
   // svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick).click(handleRectSelection)
   svg
     .addClass('canvas')
+    .addClass('cartesian')
     .mousemove(handleMove)
     .mousedown(handleMousedown)
     // .mouseup(handleClick)
@@ -32,6 +33,7 @@ function Viewport(editor) {
   drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
+  svg.text('test')
 
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
@@ -209,5 +211,31 @@ function clearSelection(svg) {
     }
   })
 }
+function menuOverlay() {
+  let overlayMenu = document.getElementsByClassName('overlay-menu')[0]
+  overlayMenu.classList.toggle('show-menu')
+  setTimeout(() => checkMouseOverMenu(), 1000)
+  function checkMouseOverMenu() {
+    window.addEventListener('mousemove', mouseMoveListener)
+  }
 
+  function mouseMoveListener(event) {
+    if (event.target != overlayMenu) {
+      overlayMenu.classList.remove('show-menu')
+      window.removeEventListener('mousemove', mouseMoveListener)
+    }
+  }
+}
+function handleToogleOverlay(event) {
+  let overlayButton = document.getElementsByClassName('icon-overlay')[0]
+  if (overlayButton.classList.contains('is-active')) {
+    overlayButton.classList.remove('is-active')
+    editor.overlays.hide()
+  } else {
+    overlayButton.classList.add('is-active')
+    editor.overlays.show()
+  }
+}
+window.handleToogleOverlay = handleToogleOverlay
+window.menuOverlay = menuOverlay
 export { Viewport }

@@ -11,7 +11,11 @@
           .icon.icon-snap-options
           .icon.icon-dropdown
       .wgt.wgt-menu.align-buttons-right
-        .icon.icon-overlay
-        .icon.icon-dropdown
+        .icon.icon-overlay.is-active(onclick='handleToogleOverlay()')
+        .icon.icon-dropdown(onclick='menuOverlay()')
+        .overlay-menu
+          | Grid
+          | Axis
+
   .layout-editor#canvas
     include Terminal
