@@ -26,6 +26,7 @@ function Editor() {
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)
+  this.orthomode = true
 }
 
 Editor.prototype = {

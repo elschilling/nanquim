@@ -49,7 +49,7 @@ function Outliner(editor) {
 }
 
 function childElements(group, parent) {
-  console.log('group', group)
+  // console.log('group', group)
   const ul = document.createElement('ul')
   const li = document.createElement('li')
   li.id = 'li' + group.node.id
@@ -57,7 +57,7 @@ function childElements(group, parent) {
   li.addEventListener('click', () => signals.toogledSelect.dispatch(group))
   ul.appendChild(li)
   group.children().each((child) => {
-    console.log('child', child)
+    // console.log('child', child)
     if (child.type === 'g') childElements(child, ul)
     else {
       const childUl = document.createElement('ul')

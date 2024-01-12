@@ -20,9 +20,14 @@ class DrawLineCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, snapToGrid: 0.1 })
-
+      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho })
+      line.on('drawstart', (e) => {
+        console.log('drawstart e', e)
+        console.log('startPoint', e.detail.startPoint)
+        startPoint = e.detail.startPoint
+      })
       line.on('drawstop', (e) => {
+        console.log('drawstop e', e)
         line.attr('id', this.editor.elementIndex++)
         line.off()
         line = null
@@ -35,6 +40,14 @@ class DrawLineCommand extends Command {
           line.draw('cancel')
           // this.isDrawing = false
           this.editor.setIsDrawing(false)
+        }
+      })
+      this.editor.svg.on('orthoChange', () => {
+        console.log('redraw')
+        if (line) {
+          // line.off()
+          line.draw('cancel')
+          this.draw(startPoint)
         }
       })
     }

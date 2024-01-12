@@ -33,7 +33,7 @@ function Viewport(editor) {
   drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
-  svg.text('test')
+  // svg.text('test')
 
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())

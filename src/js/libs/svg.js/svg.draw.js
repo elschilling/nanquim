@@ -124,6 +124,7 @@
       this.set = []
       if (this.options.startPoint) {
         var p = this.options.startPoint
+        this.startPoint = this.options.startPoint
       } else {
         var p = this.startPoint
       }
@@ -145,6 +146,17 @@
       this.arr.pop()
       if (e) {
         var p = this.transformPoint(e.clientX, e.clientY)
+        // console.log('startPoint', this.startPoint)
+        // console.log('p', p)
+        if (this.options.ortho) {
+          if (Math.abs(p.x - this.startPoint.x) > Math.abs(p.y - this.startPoint.y)) {
+            // console.log('lock x')
+            p.y = this.startPoint.y
+          } else {
+            p.x = this.startPoint.x
+            // console.log('lock y')
+          }
+        }
         this.arr.push(this.snapToGrid([p.x, p.y]))
       }
       this.el.plot(this.arr)
@@ -357,6 +369,7 @@
               event: event,
               p: this.p,
               m: this.m,
+              startPoint: this.startPoint,
             })
 
             // We need to bind the update-function to the mousemove event to keep track of the cursor
@@ -528,6 +541,7 @@
     // Snaps to a grid of `snapToGrid` px
     drawCircles: true, // Draw little circles around line/polyline/polygon points
     startPoint: null,
+    ortho: false,
   }
   // Container for all types not specified here
   PaintHandler.plugins = {}

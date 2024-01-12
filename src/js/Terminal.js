@@ -28,6 +28,7 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
+    // console.log(e)
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
       const typedCommand = terminalInput.value.trim().toLowerCase()
 
@@ -48,6 +49,10 @@ function Terminal(editor) {
       signals.clearSelection.dispatch()
       editor.selected = []
       signals.updatedProperties.dispatch()
+    } else if (e.code === 'F8') {
+      editor.ortho = !editor.ortho
+      editor.svg.fire('orthoChange')
+      console.log(editor.ortho)
     }
   }
 }
