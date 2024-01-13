@@ -23,7 +23,7 @@ function Outliner(editor) {
       const li = document.getElementById('li' + el.node.id)
       el.selectize({ deepSelect: true })
       el.addClass('elementSelected')
-      li.classList.add('outliner-selected')
+      // li.classList.add('outliner-selected')
     })
     signals.updatedProperties.dispatch()
   })

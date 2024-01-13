@@ -1,14 +1,14 @@
-import * as Commands from './commands/Commands.js'
+// import * as Commands from './commands/Commands.js'
 
 class History {
   constructor(editor) {
     this.editor = editor
     this.undos = []
     this.redos = []
-    this.lastCmdTime = Date.now()
+    // this.lastCmdTime = Date.now()
     this.idCounter = 0
 
-    this.historyDisabled = false
+    // this.historyDisabled = false
     // this.config = editor.config
 
     // signals
@@ -24,8 +24,8 @@ class History {
     // })
   }
 
-  execute(cmd, optionalName) {
-    const lastCmd = this.undos[this.undos.length - 1]
+  execute(cmd) {
+    // const lastCmd = this.undos[this.undos.length - 1]
     // const timeDifference = Date.now() - this.lastCmdTime
 
     // const isUpdatableCmd =
@@ -48,78 +48,76 @@ class History {
     // } else {
     //   // the command is not updatable and is added as a new part of the history
 
-    //   this.undos.push(cmd)
-    //   cmd.id = ++this.idCounter
-    // }
-
     this.undos.push(cmd)
     cmd.id = ++this.idCounter
+    // }
 
-    cmd.name = optionalName !== undefined ? optionalName : cmd.name
+    // cmd.name = optionalName !== undefined ? optionalName : cmd.name
     cmd.execute()
-    cmd.inMemory = true
+    // cmd.inMemory = true
 
     // if (this.config.getKey('settings/history')) {
     //   cmd.json = cmd.toJSON() // serialize the cmd immediately after execution and append the json to the cmd
     // }
 
-    this.lastCmdTime = Date.now()
+    // this.lastCmdTime = Date.now()
 
     // clearing all the redo-commands
 
     this.redos = []
     // this.editor.signals.historyChanged.dispatch(cmd)
+    console.log('history', this.undos)
   }
 
-  //   undo() {
+  undo() {
   //     if (this.historyDisabled) {
   //       alert('Undo/Redo disabled while scene is playing.')
   //       return
   //     }
 
-  //     let cmd = undefined
+    let cmd = undefined
 
-  //     if (this.undos.length > 0) {
-  //       cmd = this.undos.pop()
+    if (this.undos.length > 0) {
+      cmd = this.undos.pop()
 
   //       if (cmd.inMemory === false) {
   //         cmd.fromJSON(cmd.json)
   //       }
-  //     }
+    }
 
-  //     if (cmd !== undefined) {
-  //       cmd.undo()
-  //       this.redos.push(cmd)
+    if (cmd !== undefined) {
+      cmd.undo()
+      this.redos.push(cmd)
   //       this.editor.signals.historyChanged.dispatch(cmd)
-  //     }
+    }
 
-  //     return cmd
-  //   }
+    return cmd
+  }
 
-  //   redo() {
+  redo() {
   //     if (this.historyDisabled) {
   //       alert('Undo/Redo disabled while scene is playing.')
   //       return
   //     }
 
-  //     let cmd = undefined
+    let cmd = undefined
 
-  //     if (this.redos.length > 0) {
-  //       cmd = this.redos.pop()
+    if (this.redos.length > 0) {
+      cmd = this.redos.pop()
 
   //       if (cmd.inMemory === false) {
   //         cmd.fromJSON(cmd.json)
   //       }
-  //     }
+    }
 
-  //     if (cmd !== undefined) {
-  //       cmd.execute()
-  //       this.undos.push(cmd)
+    if (cmd !== undefined) {
+      cmd.execute()
+      this.undos.push(cmd)
   //       this.editor.signals.historyChanged.dispatch(cmd)
-  //     }
+    }
 
-  //     return cmd
-  //   }
+    return cmd
+  }
 
   //   toJSON() {
   //     const history = {}

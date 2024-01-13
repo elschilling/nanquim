@@ -1,4 +1,5 @@
 import commands from './commands/_commands'
+import { RemoveElementCommand } from './commands/RemoveElementCommand'
 
 function Terminal(editor) {
   const signals = editor.signals
@@ -28,7 +29,7 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
-    // console.log(e)
+    console.log(e)
     if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
       const typedCommand = terminalInput.value.trim().toLowerCase()
 
@@ -53,6 +54,15 @@ function Terminal(editor) {
       handleToogleOrtho()
       // editor.ortho = !editor.ortho
       // console.log(editor.ortho)
+    } else if (e.code === 'Delete') {
+      const element = editor.selected[0]
+      if (element === null) return
+      signals.clearSelection.dispatch()
+      editor.selected = []
+      editor.execute(new RemoveElementCommand(editor, element))
+    } else if (e.code === 'KeyZ' && e.ctrlKey) {
+      if (e.shiftKey) editor.redo()
+      else editor.undo()
     }
   }
 }

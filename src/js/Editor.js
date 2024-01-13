@@ -30,12 +30,36 @@ function Editor() {
 }
 
 Editor.prototype = {
-  execute: function (cmd, optionalName) {
-    this.history.execute(cmd, optionalName)
-  },
   setIsDrawing: function (value) {
     this.isDrawing = value
   },
+
+  addElement: function(element, parent) {
+    console.log('addElement', element)
+    console.log('addElement parent', parent)
+    // parent.put(element)
+    element.putIn(parent)
+    // element[0].remove()
+  },
+
+  removeElement: function(element) {
+    console.log('removeElement', element)
+    element.remove()
+    // element[0].remove()
+  },
+
+  execute: function (cmd) {
+    this.history.execute(cmd)
+  },
+
+  undo: function () {
+    this.history.undo()
+  },
+
+  redo: function () {
+    this.history.redo()
+  },
+
 }
 
 export { Editor }
