@@ -22,12 +22,9 @@ class DrawLineCommand extends Command {
     if (this.isDrawing) {
       let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho })
       line.on('drawstart', (e) => {
-        console.log('drawstart e', e)
-        console.log('startPoint', e.detail.startPoint)
         startPoint = e.detail.startPoint
       })
       line.on('drawstop', (e) => {
-        console.log('drawstop e', e)
         line.attr('id', this.editor.elementIndex++)
         line.off()
         line = null
@@ -38,14 +35,11 @@ class DrawLineCommand extends Command {
         if (line) {
           line.off()
           line.draw('cancel')
-          // this.isDrawing = false
           this.editor.setIsDrawing(false)
         }
       })
       this.editor.svg.on('orthoChange', () => {
-        console.log('redraw')
         if (line) {
-          // line.off()
           line.draw('cancel')
           this.draw(startPoint)
         }

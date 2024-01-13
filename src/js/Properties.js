@@ -6,7 +6,7 @@ function Properties(editor) {
   signals.updatedProperties.add(() => {
     if (editor.selected.length > 0) {
       const active = editor.selected[editor.selected.length - 1].node
-      console.log(active)
+      // console.log(active)
       propertiesPanel.innerHTML = ''
       let p = document.createElement('p')
       p.textContent = 'Name: ' + active.nodeName

@@ -146,15 +146,11 @@
       this.arr.pop()
       if (e) {
         var p = this.transformPoint(e.clientX, e.clientY)
-        // console.log('startPoint', this.startPoint)
-        // console.log('p', p)
         if (this.options.ortho) {
           if (Math.abs(p.x - this.startPoint.x) > Math.abs(p.y - this.startPoint.y)) {
-            // console.log('lock x')
             p.y = this.startPoint.y
           } else {
             p.x = this.startPoint.x
-            // console.log('lock y')
           }
         }
         this.arr.push(this.snapToGrid([p.x, p.y]))
