@@ -77,7 +77,7 @@ export const process = (tuples) => {
           entity.attachementPoint = value
           break
         case 210:
-          entity.extrudeDirection = entity.extrudeDirection || {}
+          entity.extrudeDirection = entity.extrudeDiion || {}
           entity.extrudeDirection.x = value
           break
         case 220:

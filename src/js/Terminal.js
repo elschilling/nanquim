@@ -50,9 +50,9 @@ function Terminal(editor) {
       editor.selected = []
       signals.updatedProperties.dispatch()
     } else if (e.code === 'F8') {
-      editor.ortho = !editor.ortho
-      editor.svg.fire('orthoChange')
-      console.log(editor.ortho)
+      handleToogleOrtho()
+      // editor.ortho = !editor.ortho
+      // console.log(editor.ortho)
     }
   }
 }

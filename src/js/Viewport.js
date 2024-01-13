@@ -211,6 +211,7 @@ function clearSelection(svg) {
     }
   })
 }
+
 function menuOverlay() {
   let overlayMenu = document.getElementsByClassName('overlay-menu')[0]
   overlayMenu.classList.toggle('show-menu')
@@ -226,7 +227,8 @@ function menuOverlay() {
     }
   }
 }
-function handleToogleOverlay(event) {
+
+function handleToogleOverlay() {
   let overlayButton = document.getElementsByClassName('icon-overlay')[0]
   if (overlayButton.classList.contains('is-active')) {
     overlayButton.classList.remove('is-active')
@@ -236,6 +238,21 @@ function handleToogleOverlay(event) {
     editor.overlays.show()
   }
 }
+
+function handleToogleOrtho() {
+  let orthoButton = document.getElementsByClassName('icon-orthomode')[0]
+  if (orthoButton.classList.contains('is-active')) {
+    orthoButton.classList.remove('is-active')
+    editor.ortho = false
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Ortho OFF' })
+  } else {
+    orthoButton.classList.add('is-active')
+    editor.ortho = true
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Ortho ON' })
+  }
+  editor.svg.fire('orthoChange')
+}
 window.handleToogleOverlay = handleToogleOverlay
+window.handleToogleOrtho = handleToogleOrtho
 window.menuOverlay = menuOverlay
 export { Viewport }

@@ -31,17 +31,21 @@ class DrawLineCommand extends Command {
         this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
+      this.editor.svg.on('orthoChange', () => {
+        if (line) {
+          console.log('line', line)
+          line.off()
+          line.draw('cancel')
+          line = null
+          this.draw(startPoint)
+        }
+      })
       this.editor.svg.on('cancelDrawing', (e) => {
         if (line) {
           line.off()
           line.draw('cancel')
+          line = null
           this.editor.setIsDrawing(false)
-        }
-      })
-      this.editor.svg.on('orthoChange', () => {
-        if (line) {
-          line.draw('cancel')
-          this.draw(startPoint)
         }
       })
     }
