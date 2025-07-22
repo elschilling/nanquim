@@ -1,5 +1,5 @@
 import './styles/main.sass'
-import './js/libs/svg.js/svg.select.css'
+// import './js/libs/svg.js/svg.select.css'
 
 import { Editor } from './js/Editor'
 import { Navbar } from './js/Navbar'

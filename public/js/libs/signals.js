@@ -442,4 +442,4 @@
         global['signals'] = signals;
     }
 
-}(this));
+}(window));

@@ -3,7 +3,7 @@
 
 var _commander = _interopRequireDefault(require("commander"));
 var _fs = _interopRequireDefault(require("fs"));
-var _ = require("./");
+var _ = require(".");
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
 _commander["default"].version(require('../package.json').version).description('Converts a dxf file to a svg file.').arguments('<dxfFile> [svgFile]').option('-v --verbose', 'Verbose output').action(function (dxfFile, svgFile, options) {
   var parsed = (0, _.parseString)(_fs["default"].readFileSync(dxfFile, 'utf-8'));

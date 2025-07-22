@@ -2,7 +2,7 @@
 import commander from 'commander'
 import fs from 'fs'
 
-import { denormalise, groupEntitiesByLayer, parseString, toSVG } from './'
+import { denormalise, groupEntitiesByLayer, parseString, toSVG } from '.'
 
 commander
   .version(require('../package.json').version)
