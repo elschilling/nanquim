@@ -4,20 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-dependencies:
-  '@svgdotjs/svg.draggable.js':
-    specifier: ^3.0.3
-    version: 3.0.3
-  '@svgdotjs/svg.draw.js':
-    specifier: github:plungingChode/svg.draw.js
-    version: github.com/plungingChode/svg.draw.js/b8eea21d44cbe2a2894f0980e03bcfd1eb36c202
-  '@svgdotjs/svg.js':
-    specifier: ^3.2.0
-    version: 3.2.0
-  '@svgdotjs/svg.panzoom.js':
-    specifier: ^2.1.2
-    version: 2.1.2
-
 devDependencies:
   '@vue/language-plugin-pug':
     specifier: ^1.8.27
@@ -371,23 +357,6 @@ packages:
     requiresBuild: true
     dev: true
     optional: true
-
-  /@svgdotjs/svg.draggable.js@3.0.3:
-    resolution: {integrity: sha512-gvktGsIe/hhU3hX7VJaB8maOV3dKLwQHtjUJN+B/4EahPBI8QWPLt3uuCUeP7sRujaOtrckZxLFhZUeQ5nK4Qw==}
-    engines: {node: '>= 0.8.0'}
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.0
-    dev: false
-
-  /@svgdotjs/svg.js@3.2.0:
-    resolution: {integrity: sha512-Tr8p+QVP7y+QT1GBlq1Tt57IvedVH8zCPoYxdHLX0Oof3a/PqnC/tXAkVufv1JQJfsDHlH/UrjcDfgxSofqSNA==}
-    dev: false
-
-  /@svgdotjs/svg.panzoom.js@2.1.2:
-    resolution: {integrity: sha512-0Nzo2TRlTebW3pzfAPtHx8Ye7Y3kuMEkK7hwVJi0SgQUB/vstjg7fvCJxB++EqsuDEetP0/SC+4CpLMVm6Lh2g==}
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.0
-    dev: false
 
   /@volar/language-core@1.11.1:
     resolution: {integrity: sha512-dOcNn3i9GgZAcJt43wuaEykSluAuOkQgzni1cuxLxTV0nJKanQztp7FxyswdRILaKH+P2XZMPRp2S4MV/pElCw==}
@@ -1016,12 +985,3 @@ packages:
       assert-never: 1.2.1
       babel-walk: 3.0.0-canary-5
     dev: true
-
-  github.com/plungingChode/svg.draw.js/b8eea21d44cbe2a2894f0980e03bcfd1eb36c202:
-    resolution: {tarball: https://codeload.github.com/plungingChode/svg.draw.js/tar.gz/b8eea21d44cbe2a2894f0980e03bcfd1eb36c202}
-    name: '@svgdotjs/svg.draw.js'
-    version: 3.0.0
-    engines: {node: '>= 0.8.0'}
-    dependencies:
-      '@svgdotjs/svg.js': 3.2.0
-    dev: false
