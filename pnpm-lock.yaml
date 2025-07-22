@@ -8,6 +8,9 @@ dependencies:
   lodash:
     specifier: ^4.17.21
     version: 4.17.21
+  vecks:
+    specifier: ^3.9.2
+    version: 3.9.2
 
 devDependencies:
   '@vue/language-plugin-pug':
@@ -877,6 +880,10 @@ packages:
   /token-stream@1.0.0:
     resolution: {integrity: sha512-VSsyNPPW74RpHwR8Fc21uubwHY7wMDeJLys2IX5zJNih+OnAnaifKHo+1LHT7DAdloQ7apeaaWg8l7qnf/TnEg==}
     dev: true
+
+  /vecks@3.9.2:
+    resolution: {integrity: sha512-ubOo1KoOrPu3llYmlE4SH60JWcR+YDaObP+1Kzpbcl09dKIf0fbBweW8Xyg+6Nk2Rrnyit6Jxw9bx2LOYpMQMA==}
+    dev: false
 
   /vite-plugin-pug@0.3.2:
     resolution: {integrity: sha512-Wqqdd8v7Hk+p+pJyVX+RzhRv6PN6yps17zNjx0Wx6P2/sd4KemWLIHAclNxq0sTKjlzxERWXaQn2E7kY71zeSg==}

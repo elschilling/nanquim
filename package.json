@@ -15,6 +15,7 @@
     "vite-plugin-pug": "^0.3.2"
   },
   "dependencies": {
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "vecks": "^3.9.2"
   }
 }
