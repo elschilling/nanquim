@@ -153,6 +153,13 @@
             p.x = this.startPoint.x
           }
         }
+        if (this.options.length) {
+          console.log('svgdraw length', this.options.length)
+          var dist = Math.sqrt(Math.pow(p.x - this.startPoint.x, 2) + Math.pow(p.y - this.startPoint.y, 2));
+
+          p.x = this.startPoint.x + (p.x - this.startPoint.x) / dist * this.options.length;
+          p.y = this.startPoint.y + (p.y - this.startPoint.y) / dist * this.options.length;
+        }
         this.arr.push(this.snapToGrid([p.x, p.y]))
       }
       this.el.plot(this.arr)
@@ -538,6 +545,7 @@
     drawCircles: true, // Draw little circles around line/polyline/polygon points
     startPoint: null,
     ortho: false,
+    length: null,
   }
   // Container for all types not specified here
   PaintHandler.plugins = {}

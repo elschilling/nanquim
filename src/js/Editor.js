@@ -27,6 +27,7 @@ function Editor() {
   this.selected = []
   this.loader = new DXFLoader(this)
   this.orthomode = true
+  this.length = null
 }
 
 Editor.prototype = {
@@ -34,7 +35,7 @@ Editor.prototype = {
     this.isDrawing = value
   },
 
-  addElement: function(element, parent) {
+  addElement: function (element, parent) {
     console.log('addElement', element)
     console.log('addElement parent', parent)
     // parent.put(element)
@@ -42,7 +43,7 @@ Editor.prototype = {
     // element[0].remove()
   },
 
-  removeElement: function(element) {
+  removeElement: function (element) {
     console.log('removeElement', element)
     element.remove()
     // element[0].remove()
@@ -59,7 +60,6 @@ Editor.prototype = {
   redo: function () {
     this.history.redo()
   },
-
 }
 
 export { Editor }

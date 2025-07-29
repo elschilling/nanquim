@@ -1,6 +1,10 @@
 import commands from './commands/_commands'
 import { RemoveElementCommand } from './commands/RemoveElementCommand'
 
+function isNumericString(str) {
+  return /^\d+(\.\d+)?$/.test(str)
+}
+
 function Terminal(editor) {
   const signals = editor.signals
 
@@ -29,8 +33,8 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
-    console.log(e)
-    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+    // console.log(e)
+    if ((!editor.isDrawing && e.code === 'Space') || e.code === 'Enter' || e.code === 'NumpadEnter') {
       const typedCommand = terminalInput.value.trim().toLowerCase()
 
       for (const [command, { execute, aliases }] of Object.entries(commands)) {
@@ -52,8 +56,6 @@ function Terminal(editor) {
       signals.updatedProperties.dispatch()
     } else if (e.code === 'F8') {
       handleToogleOrtho()
-      // editor.ortho = !editor.ortho
-      // console.log(editor.ortho)
     } else if (e.code === 'Delete') {
       const element = editor.selected[0]
       if (element === null) return
@@ -63,6 +65,15 @@ function Terminal(editor) {
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()
       else editor.undo()
+    } else if (editor.isDrawing) {
+      if (isNumericString(terminalInput.value.trim())) {
+        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+          console.log('editor.isDrawing true')
+          editor.length = terminalInput.value
+          editor.svg.fire('valueInput')
+          terminalText.value = ''
+        }
+      }
     }
   }
 }

@@ -15,26 +15,36 @@ class DrawLineCommand extends Command {
     this.editor.setIsDrawing(true)
     this.draw()
   }
-  draw(startPoint) {
+  draw(startPoint, length) {
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho })
+      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
       line.on('drawstart', (e) => {
         startPoint = e.detail.startPoint
       })
       line.on('drawstop', (e) => {
         line.attr('id', this.editor.elementIndex++)
         line.attr('name', 'Line')
-        console.log('drawstop', this.editor.elementIndex)
+        // console.log('drawstop', this.editor.elementIndex)
         line.off()
         this.editor.history.undos.push(new AddElementCommand(editor, line))
         // this.editor.execute(new AddElementCommand(editor, line))
         line = null
-        // this.updatedOutliner()
+        this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
+      })
+      this.editor.svg.on('valueInput', (e) => {
+        console.log(e.detail)
+        if (line) {
+          console.log('length line')
+          line.off()
+          line.draw('cancel')
+          line = null
+          this.draw(startPoint, this.editor.length)
+        }
       })
       this.editor.svg.on('orthoChange', () => {
         if (line) {
@@ -42,7 +52,7 @@ class DrawLineCommand extends Command {
           line.off()
           line.draw('cancel')
           line = null
-          this.draw(startPoint)
+          this.draw(startPoint, this.editor.length)
         }
       })
       this.editor.svg.on('cancelDrawing', (e) => {
