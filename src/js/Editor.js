@@ -20,6 +20,8 @@ function Editor() {
   this.overlays.attr('id', 'Overlays')
   this.handlers = this.overlays.group()
   this.handlers.attr('id', 'Handlers')
+  this.snap = this.svg.group()
+  this.snap.attr('id', 'Snap')
   this.drawing = this.svg.group()
   this.drawing.attr('id', 'Collection')
   this.isDrawing = false
@@ -28,6 +30,7 @@ function Editor() {
   this.loader = new DXFLoader(this)
   this.orthomode = true
   this.length = null
+  this.snapPoint = null
 }
 
 Editor.prototype = {

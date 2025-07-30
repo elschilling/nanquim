@@ -1,4 +1,9 @@
-import { distanceFromPointToLine, distanceFromPointToCircle, distancePointToRectangleStroke } from '../utils/calculateDistance'
+import {
+  calculateDistance,
+  distanceFromPointToLine,
+  distanceFromPointToCircle,
+  distancePointToRectangleStroke,
+} from '../utils/calculateDistance'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -14,7 +19,8 @@ function Viewport(editor) {
   let GRID_SPACING = 1
   let lastMiddleClickTime = 0
   let middleClickCount = 0
-  let isCapturingInput = false
+  let snapTolerance = 50
+  // let isCapturingInput = false
 
   // signals.clearSelection.add(() => {
   //   clearSelection(drawing)
@@ -63,14 +69,15 @@ function Viewport(editor) {
     }
   }
   function handleMove(e) {
-    updateCoordinates(e)
+    clearSnap()
+    if (editor.isDrawing) {
+      checkSnap({ x: e.pageX, y: e.pageY })
+    }
+    coordinates = svg.point(e.pageX, e.pageY)
+    updateCoordinates(coordinates)
     checkHover()
   }
-  function updateCoordinates(e) {
-    coordinates = svg.point(e.pageX, e.pageY)
-    // TODO GRID SNAP TO AVOID THIS
-    coordinates.x = coordinates.x
-    coordinates.y = coordinates.y
+  function updateCoordinates(coordinates) {
     editor.signals.updatedCoordinates.dispatch(coordinates)
   }
   function checkHover() {
@@ -193,6 +200,59 @@ function Viewport(editor) {
     }
     lastMiddleClickTime = currentTime
   }
+
+  function checkSnap(coordinates) {
+    let targets = []
+    // let snapCandidates = svg.find('rect, circle, line, polygon')
+    let snapCandidates = svg.find('.newDrawing')
+    snapCandidates.pop()
+    console.log('snapCandidates', snapCandidates)
+    snapCandidates.forEach((el) => {
+      if (el.type === 'line') {
+        el.array().forEach((pointArr) => {
+          let worldPoint = { x: pointArr[0], y: pointArr[1] }
+          let screenPoint = worldToScreen(worldPoint, editor.svg)
+          targets.push(screenPoint)
+        })
+      }
+    })
+    let closest
+    let minDistance = Infinity
+    for (let target of targets) {
+      const distance = calculateDistance(coordinates, target)
+      if (distance < snapTolerance && distance < minDistance) {
+        minDistance = distance
+        closest = target
+        console.log('distance', distance)
+      }
+    }
+    const currentZoom = editor.svg.zoom()
+    if (closest) {
+      let closestWorld = svg.point(closest.x, closest.y)
+      drawSnap(closestWorld, currentZoom, editor.snap)
+      editor.snapPoint = closestWorld
+    } else {
+      editor.snapPoint = null
+    }
+  }
+}
+
+function drawSnap(point, zoom, svg) {
+  const snapSquareScreenSize = 20
+  const currentZoom = zoom && zoom ? zoom : 1
+  const snapSquareWorldSize = snapSquareScreenSize / currentZoom
+  const strokeWorldUnits = 1 / currentZoom
+  svg
+    .rect(snapSquareWorldSize, snapSquareWorldSize)
+    .center(point.x, point.y)
+    .fill('none')
+    .stroke({ color: 'blue', width: strokeWorldUnits })
+}
+
+function clearSnap() {
+  if (editor.snap) {
+    editor.snap.clear()
+  }
 }
 
 function handleRightClick(e) {
@@ -252,6 +312,23 @@ function handleToogleOrtho() {
   }
   editor.svg.fire('orthoChange')
 }
+
+/**
+ * Converts a point from SVG world coordinates to screen coordinates using svg.js helpers.
+ * @param {object} worldPoint - The point in world space { x, y }.
+ * @param {SVG.Svg} svgCanvas - The main svg.js canvas element.
+ * @returns {object} The converted point in screen space { x, y }.
+ */
+function worldToScreen(worldPoint, svgCanvas) {
+  // Get the screen transformation matrix from the canvas
+  const matrix = svgCanvas.screenCTM()
+
+  // Create an svg.js point and apply the transformation
+  const screenPoint = new SVG.Point(worldPoint).transform(matrix)
+
+  return { x: screenPoint.x, y: screenPoint.y }
+}
+
 window.handleToogleOverlay = handleToogleOverlay
 window.handleToogleOrtho = handleToogleOrtho
 window.menuOverlay = menuOverlay

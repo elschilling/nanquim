@@ -145,7 +145,12 @@
       this.arr = this.el.array().valueOf()
       this.arr.pop()
       if (e) {
-        var p = this.transformPoint(e.clientX, e.clientY)
+        var p;
+        if (window.editor && window.editor.snapPoint) {
+          p = window.editor.snapPoint;
+        } else {
+          p = this.transformPoint(e.clientX, e.clientY);
+        }
         if (this.options.ortho) {
           if (Math.abs(p.x - this.startPoint.x) > Math.abs(p.y - this.startPoint.y)) {
             p.y = this.startPoint.y
@@ -154,13 +159,13 @@
           }
         }
         if (this.options.length) {
-          console.log('svgdraw length', this.options.length)
-          var dist = Math.sqrt(Math.pow(p.x - this.startPoint.x, 2) + Math.pow(p.y - this.startPoint.y, 2));
+          var dist = Math.sqrt(Math.pow(p.x - this.startPoint.x, 2) + Math.pow(p.y - this.startPoint.y, 2))
 
-          p.x = this.startPoint.x + (p.x - this.startPoint.x) / dist * this.options.length;
-          p.y = this.startPoint.y + (p.y - this.startPoint.y) / dist * this.options.length;
+          p.x = this.startPoint.x + ((p.x - this.startPoint.x) / dist) * this.options.length
+          p.y = this.startPoint.y + ((p.y - this.startPoint.y) / dist) * this.options.length
         }
-        this.arr.push(this.snapToGrid([p.x, p.y]))
+        // this.arr.push(this.snapToGrid([p.x, p.y]))
+        this.arr.push([p.x, p.y])
       }
       this.el.plot(this.arr)
       if (this.options.drawCircles) {
@@ -360,7 +365,11 @@
             this.options.snapToGrid *= Math.sqrt(this.m.a * this.m.a + this.m.b * this.m.b)
 
             // save the startpoint
-            this.startPoint = this.snapToGrid(this.transformPoint(event.x, event.y))
+            if (window.editor && window.editor.snapPoint) {
+              this.startPoint = window.editor.snapPoint;
+            } else {
+              this.startPoint = this.snapToGrid(this.transformPoint(event.x, event.y));
+            }
 
             // the plugin may do some initial work
             if (this.init) {
@@ -445,8 +454,10 @@
             this.m = this.el.node.getScreenCTM().inverse()
 
             // Call the calc-function which calculates the new position and size
+            if (window.editor.snapPoint) {
+              this.p = this.transformPoint(window.editor.snapPoint.x, window.editor.snapPoint.y)
+            }
             this.calc(event)
-
             // Fire the `drawupdate`-event
             this.el.fire('drawupdate', {
               event: event,
