@@ -12,7 +12,6 @@ function Viewport(editor) {
 
   let hoverTreshold = 0.5
   let hoveredElements = []
-  let isSelecting = false
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
   let GRID_SIZE = 20
@@ -20,14 +19,9 @@ function Viewport(editor) {
   let lastMiddleClickTime = 0
   let middleClickCount = 0
   let snapTolerance = 50
-  // let isCapturingInput = false
 
-  // signals.clearSelection.add(() => {
-  //   clearSelection(drawing)
-  // })
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
-  // svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick).click(handleRectSelection)
   svg
     .addClass('canvas')
     .addClass('cartesian')
@@ -39,7 +33,6 @@ function Viewport(editor) {
   drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
-  // svg.text('test')
 
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
@@ -134,8 +127,9 @@ function Viewport(editor) {
           rect.y = e.target.y.baseVal.value
           rect.width = e.target.width.baseVal.value
           rect.height = e.target.height.baseVal.value
-          if (!(rect.x + rect.width >= coordinates.x)) e.srcElement.classList.add('selectionRectangleRight')
-          else {
+          if (!(rect.x + rect.width >= coordinates.x)) {
+            e.srcElement.classList.add('selectionRectangleRight')
+          } else {
             e.target.classList.remove('selectionRectangleRight')
             findElementsWithinRect(svg, rect)
           }
@@ -203,11 +197,11 @@ function Viewport(editor) {
 
   function checkSnap(coordinates) {
     let targets = []
-    // let snapCandidates = svg.find('rect, circle, line, polygon')
     let snapCandidates = svg.find('.newDrawing')
     snapCandidates.pop()
-    console.log('snapCandidates', snapCandidates)
+    // console.log('snapCandidates', snapCandidates)
     snapCandidates.forEach((el) => {
+      // TO DO: Add other types
       if (el.type === 'line') {
         el.array().forEach((pointArr) => {
           let worldPoint = { x: pointArr[0], y: pointArr[1] }
@@ -223,7 +217,7 @@ function Viewport(editor) {
       if (distance < snapTolerance && distance < minDistance) {
         minDistance = distance
         closest = target
-        console.log('distance', distance)
+        // console.log('distance', distance)
       }
     }
     const currentZoom = editor.svg.zoom()
