@@ -4,6 +4,7 @@ import {
   distanceFromPointToCircle,
   distancePointToRectangleStroke,
 } from '../utils/calculateDistance'
+import { isLineIntersectingRect, isCircleIntersectingRect } from '../utils/intersection'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -129,9 +130,10 @@ function Viewport(editor) {
           rect.height = e.target.height.baseVal.value
           if (!(rect.x + rect.width >= coordinates.x)) {
             e.srcElement.classList.add('selectionRectangleRight')
+            findElements(svg, rect, 'intersect')
           } else {
             e.target.classList.remove('selectionRectangleRight')
-            findElementsWithinRect(svg, rect)
+            findElements(svg, rect, 'inside')
           }
         })
         .on('drawstop', (e) => {
@@ -141,14 +143,35 @@ function Viewport(editor) {
         })
     }
   }
-  function findElementsWithinRect(svg, rect) {
+  function findElements(svg, rect, selectionMode) {
     drawing.children().each((el) => {
       const bbox = el.bbox()
 
-      // Check if the element's bounding box intersects or is contained within the selection rectangle
-      const intersects =
-        bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
-      if (intersects) {
+      let isInsideOrIntersecting = false
+      if (selectionMode === 'intersect') {
+        // Check if the element's bounding box is completely inside the selection rectangle
+        isInsideOrIntersecting =
+          bbox.x >= rect.x && bbox.y >= rect.y && bbox.x + bbox.width <= rect.x + rect.width && bbox.y + bbox.height <= rect.y + rect.height
+      } else if (selectionMode === 'inside') {
+        if (el.type === 'line') {
+          const line = {
+            x1: el.node.x1.baseVal.value,
+            y1: el.node.y1.baseVal.value,
+            x2: el.node.x2.baseVal.value,
+            y2: el.node.y2.baseVal.value,
+          }
+          isInsideOrIntersecting = isLineIntersectingRect(line, rect)
+        } else if (el.type === 'circle') {
+          const circle = { cx: el.node.cx.baseVal.value, cy: el.node.cy.baseVal.value, r: el.node.r.baseVal.value }
+          isInsideOrIntersecting = isCircleIntersectingRect(circle, rect)
+        } else {
+          // Fallback to bounding box for other element types
+          isInsideOrIntersecting =
+            bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
+        }
+      }
+
+      if (isInsideOrIntersecting) {
         el.addClass('elementHover')
         if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
           hoveredElements.push(el)
