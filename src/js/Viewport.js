@@ -20,6 +20,12 @@ function Viewport(editor) {
   let lastMiddleClickTime = 0
   let middleClickCount = 0
   let snapTolerance = 50
+  let ghostElements = []
+  let basePoint = null
+  let initialTransforms = new Map()
+
+  signals.ghostingStarted.add(onGhostingStarted)
+  signals.ghostingStopped.add(onGhostingStopped)
 
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
@@ -34,6 +40,24 @@ function Viewport(editor) {
   drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
+
+  function onGhostingStarted(elements, point) {
+    ghostElements = elements
+    basePoint = point
+    ghostElements.forEach((el) => {
+      initialTransforms.set(el, el.transform())
+    })
+  }
+
+  function onGhostingStopped() {
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    basePoint = null
+    initialTransforms.clear()
+  }
 
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
@@ -64,10 +88,18 @@ function Viewport(editor) {
   }
   function handleMove(e) {
     clearSnap()
-    if (editor.isDrawing) {
+    if (editor.isDrawing || editor.isInteracting) {
       checkSnap({ x: e.pageX, y: e.pageY })
     }
     coordinates = svg.point(e.pageX, e.pageY)
+    if (ghostElements.length > 0) {
+      const dx = coordinates.x - basePoint.x
+      const dy = coordinates.y - basePoint.y
+      ghostElements.forEach((el) => {
+        const initial = initialTransforms.get(el)
+        el.transform(initial).translate(dx, dy)
+      })
+    }
     updateCoordinates(coordinates)
     checkHover()
   }
@@ -104,6 +136,16 @@ function Viewport(editor) {
     }
   }
   function handleMousedown(e) {
+    if (editor.isInteracting) {
+      const point = svg.point(e.pageX, e.pageY)
+      if (editor.snapPoint) {
+        signals.pointCaptured.dispatch(editor.snapPoint)
+      } else {
+        signals.pointCaptured.dispatch(point)
+      }
+      return
+    }
+
     if (e.button === 1) {
       // check middle click
       handleMiddleClick()
@@ -116,6 +158,7 @@ function Viewport(editor) {
     e.preventDefault()
     e.stopImmediatePropagation()
     if (!editor.isDrawing) {
+      const startX = coordinates.x
       editor.isDrawing = true
       svg.click(null)
       svg
@@ -128,7 +171,7 @@ function Viewport(editor) {
           rect.y = e.target.y.baseVal.value
           rect.width = e.target.width.baseVal.value
           rect.height = e.target.height.baseVal.value
-          if (!(rect.x + rect.width >= coordinates.x)) {
+          if (coordinates.x < startX) {
             e.srcElement.classList.add('selectionRectangleRight')
             findElements(svg, rect, 'intersect')
           } else {
@@ -221,7 +264,9 @@ function Viewport(editor) {
   function checkSnap(coordinates) {
     let targets = []
     let snapCandidates = svg.find('.newDrawing')
-    snapCandidates.pop()
+    if (editor.isDrawing) {
+      snapCandidates.pop()
+    }
     // console.log('snapCandidates', snapCandidates)
     snapCandidates.forEach((el) => {
       // TO DO: Add other types

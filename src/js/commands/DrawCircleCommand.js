@@ -5,17 +5,14 @@ class DrawCircleCommand extends Command {
     super(editor)
     this.type = 'DrawCircleCommand'
     this.name = 'Circle'
-    // this.draw = this.draw.bind(this)
     this.drawing = this.editor.drawing
   }
 
   execute() {
-    // const svg = this.editor.svg
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'DRAW ' + this.name.toUpperCase() + ' ' })
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
-      inputAsk: true,
     })
     this.editor.setIsDrawing(true)
     this.draw()

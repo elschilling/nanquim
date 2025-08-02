@@ -34,7 +34,11 @@ function Terminal(editor) {
 
   function handleKeyUp(e) {
     // console.log(e)
-    if ((!editor.isDrawing && e.code === 'Space') || e.code === 'Enter' || e.code === 'NumpadEnter') {
+    if (
+      (!editor.isDrawing && !editor.isInteracting && e.code === 'Space') ||
+      (!editor.isDrawing && !editor.isInteracting && e.code === 'Enter') ||
+      e.code === 'NumpadEnter'
+    ) {
       const typedCommand = terminalInput.value.trim().toLowerCase()
 
       for (const [command, { execute, aliases }] of Object.entries(commands)) {

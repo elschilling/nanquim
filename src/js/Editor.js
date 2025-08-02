@@ -12,6 +12,9 @@ function Editor() {
     clearSelection: new Signal(),
     toogledSelect: new Signal(),
     updatedProperties: new Signal(),
+    pointCaptured: new Signal(),
+    ghostingStarted: new Signal(),
+    ghostingStopped: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -25,6 +28,7 @@ function Editor() {
   this.drawing = this.svg.group()
   this.drawing.attr('id', 'Collection')
   this.isDrawing = false
+  this.isInteracting = false
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)
