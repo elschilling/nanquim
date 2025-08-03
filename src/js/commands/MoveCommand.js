@@ -132,8 +132,29 @@ class MoveCommand extends Command {
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
     this.editor.isInteracting = false
+    this.selectedElements = this.editor.selected
     this.editor.signals.clearSelection.dispatch()
     this.editor.selected = []
+    this.editor.execute(this)
+  }
+
+  undo() {
+    this.selectedElements.forEach((element, index) => {
+      const originalPos = this.originalPositions[index]
+
+      if (originalPos.type === 'line') {
+        // For lines, translate all points
+        element.plot(originalPos.points)
+      } else if (originalPos.type === 'center') {
+        // For circles/ellipses, move center
+        element.center(originalPos.cx, originalPos.cy)
+      } else {
+        // For other elements, move position
+        element.move(originalPos.x, originalPos.y)
+      }
+    })
+
+    this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })
   }
 }
 
