@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { calculateDeltaFromBasepoint } from '../utils/calculateDistance'
 
 class MoveCommand extends Command {
   constructor(editor) {
@@ -58,9 +59,28 @@ class MoveCommand extends Command {
   onSecondPoint(point) {
     this.editor.signals.ghostingStopped.dispatch()
     const secondPoint = point
-    const dx = secondPoint.x - this.basePoint.x
-    const dy = secondPoint.y - this.basePoint.y
+    let dx = secondPoint.x - this.basePoint.x
+    let dy = secondPoint.y - this.basePoint.y
+    if (this.editor.distance) {
+      if (this.editor.ortho) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
+        } else {
+          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, editor.distance))
+        }
+      } else {
+        ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, editor.distance))
+      }
+    }
+    if (editor.ortho) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        dy = 0
+      } else {
+        dx = 0
+      }
+    }
     this.moveElements(dx, dy)
+    this.editor.distance = null
   }
 
   // Helper method to get consistent position data for any element type

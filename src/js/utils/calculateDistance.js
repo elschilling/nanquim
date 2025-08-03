@@ -63,9 +63,22 @@ export function distancePointToRectangleStroke(point, rect) {
   return Math.min(dx1, dx2, dy1, dy2)
 }
 
-// Example usage:
-// const point = { x: 5, y: 5 }
-// const rectangle = { x: 2, y: 2, width: 8, height: 6 }
+export function calculateDeltaFromBasepoint(basePoint, mouse, distance) {
+  // Step 1: Calculate the direction vector
+  const directionX = mouse.x - basePoint.x
+  const directionY = mouse.y - basePoint.y
 
-// const distance = distancePointToRectangleStroke(point, rectangle)
-// console.log('Distance to rectangle stroke:', distance)
+  // Step 2: Calculate the length of the direction vector
+  const length = Math.sqrt(directionX * directionX + directionY * directionY)
+
+  // Step 3: Handle the edge case where mouse is exactly on base point
+  if (length === 0) {
+    return { deltaX: 0, deltaY: 0 }
+  }
+
+  // Step 4: Normalize the direction vector and scale by distance
+  const dx = (directionX / length) * distance
+  const dy = (directionY / length) * distance
+
+  return { dx, dy }
+}

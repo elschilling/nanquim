@@ -1,5 +1,5 @@
 import { History as _History } from './History'
-import { DXFLoader } from '../utils/DXFloader'
+import { DXFLoader } from './utils/DXFloader'
 
 function Editor() {
   const Signal = signals.Signal
@@ -34,6 +34,7 @@ function Editor() {
   this.loader = new DXFLoader(this)
   this.orthomode = true
   this.length = null
+  this.distance = null
   this.snapPoint = null
 }
 

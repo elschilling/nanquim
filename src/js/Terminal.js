@@ -72,9 +72,17 @@ function Terminal(editor) {
     } else if (editor.isDrawing) {
       if (isNumericString(terminalInput.value.trim())) {
         if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-          console.log('editor.isDrawing true')
           editor.length = terminalInput.value
           editor.svg.fire('valueInput')
+          terminalText.value = ''
+        }
+      }
+    } else if (editor.isInteracting) {
+      if (isNumericString(terminalInput.value.trim())) {
+        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+          console.log('distance input', terminalInput.value)
+          editor.distance = terminalInput.value
+          // signal distance input
           terminalText.value = ''
         }
       }

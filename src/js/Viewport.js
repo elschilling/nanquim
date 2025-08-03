@@ -3,8 +3,9 @@ import {
   distanceFromPointToLine,
   distanceFromPointToCircle,
   distancePointToRectangleStroke,
-} from '../utils/calculateDistance'
-import { isLineIntersectingRect, isCircleIntersectingRect } from '../utils/intersection'
+  calculateDeltaFromBasepoint,
+} from './utils/calculateDistance'
+import { isLineIntersectingRect, isCircleIntersectingRect } from './utils/intersection'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -93,8 +94,26 @@ function Viewport(editor) {
     }
     coordinates = svg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
-      const dx = coordinates.x - basePoint.x
-      const dy = coordinates.y - basePoint.y
+      let dx = coordinates.x - basePoint.x
+      let dy = coordinates.y - basePoint.y
+      if (editor.distance) {
+        if (editor.ortho) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+          } else {
+            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+          }
+        } else {
+          ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+        }
+      }
+      if (editor.ortho) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          dy = 0
+        } else {
+          dx = 0
+        }
+      }
       ghostElements.forEach((el) => {
         const initial = initialTransforms.get(el)
         el.transform(initial).translate(dx, dy)
