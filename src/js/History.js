@@ -111,7 +111,11 @@ class History {
     }
 
     if (cmd !== undefined) {
-      cmd.execute()
+      if (typeof cmd.redo === 'function') {
+        cmd.redo()
+      } else {
+        cmd.execute()
+      }
       this.undos.push(cmd)
   //       this.editor.signals.historyChanged.dispatch(cmd)
     }

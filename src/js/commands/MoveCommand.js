@@ -114,6 +114,8 @@ class MoveCommand extends Command {
 
   // Method 2: Alternative using direct position manipulation (if transform doesn't work)
   moveElements(dx, dy) {
+    this.dx = dx
+    this.dy = dy
     this.editor.selected.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
 
@@ -155,6 +157,25 @@ class MoveCommand extends Command {
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })
+  }
+
+  redo() {
+    this.selectedElements.forEach((element, index) => {
+      const originalPos = this.originalPositions[index]
+
+      if (originalPos.type === 'line') {
+        // For lines, translate all points
+        const newPoints = originalPos.points.map((point) => [point[0] + this.dx, point[1] + this.dy])
+        element.plot(newPoints)
+      } else if (originalPos.type === 'center') {
+        // For circles/ellipses, move center
+        element.center(originalPos.cx + this.dx, originalPos.cy + this.dy)
+      } else {
+        // For other elements, move position
+        element.move(originalPos.x + this.dx, originalPos.y + this.dy)
+      }
+    })
+    this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Elements moved again.' })
   }
 }
 
