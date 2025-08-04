@@ -138,6 +138,7 @@ class MoveCommand extends Command {
     this.editor.signals.clearSelection.dispatch()
     this.editor.selected = []
     this.editor.execute(this)
+    this.editor.lastCommand = this
   }
 
   undo() {

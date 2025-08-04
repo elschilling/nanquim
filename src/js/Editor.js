@@ -29,6 +29,7 @@ function Editor() {
   this.drawing.attr('id', 'Collection')
   this.isDrawing = false
   this.isInteracting = false
+  this.isSnapping = false
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)
@@ -36,6 +37,7 @@ function Editor() {
   this.length = null
   this.distance = null
   this.snapPoint = null
+  this.lastCommand = null
 }
 
 Editor.prototype = {

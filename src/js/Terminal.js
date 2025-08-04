@@ -34,7 +34,12 @@ function Terminal(editor) {
 
   function handleKeyUp(e) {
     // console.log(e)
-    if (
+    if (!editor.isDrawing && !editor.isInteracting && e.code === 'Space' && terminalInput.value.trim() === '') {
+      // const lastCommand = editor.history.undos[editor.history.undos.length - 1]
+      if (editor.lastCommand) {
+        editor.lastCommand.execute()
+      }
+    } else if (
       (!editor.isDrawing && !editor.isInteracting && e.code === 'Space') ||
       (!editor.isDrawing && !editor.isInteracting && e.code === 'Enter') ||
       e.code === 'NumpadEnter'
@@ -60,6 +65,8 @@ function Terminal(editor) {
       signals.updatedProperties.dispatch()
     } else if (e.code === 'F8') {
       handleToogleOrtho()
+    } else if (e.code === 'F9') {
+      handleToogleSnap()
     } else if (e.code === 'Delete') {
       const element = editor.selected[0]
       if (element === null) return

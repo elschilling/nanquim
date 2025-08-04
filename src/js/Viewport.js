@@ -89,8 +89,10 @@ function Viewport(editor) {
   }
   function handleMove(e) {
     clearSnap()
-    if (editor.isDrawing || editor.isInteracting) {
-      checkSnap({ x: e.pageX, y: e.pageY })
+    if (editor.isSnapping) {
+      if (editor.isDrawing || editor.isInteracting) {
+        checkSnap({ x: e.pageX, y: e.pageY })
+      }
     }
     coordinates = svg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
@@ -394,6 +396,19 @@ function handleToogleOrtho() {
   editor.svg.fire('orthoChange')
 }
 
+function handleToogleSnap() {
+  let snapButton = document.getElementsByClassName('icon-snap-off')[0]
+  if (snapButton.classList.contains('is-active')) {
+    snapButton.classList.remove('is-active')
+    editor.isSnapping = false
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap OFF' })
+  } else {
+    snapButton.classList.add('is-active')
+    editor.isSnapping = true
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap ON' })
+  }
+}
+
 /**
  * Converts a point from SVG world coordinates to screen coordinates using svg.js helpers.
  * @param {object} worldPoint - The point in world space { x, y }.
@@ -412,5 +427,6 @@ function worldToScreen(worldPoint, svgCanvas) {
 
 window.handleToogleOverlay = handleToogleOverlay
 window.handleToogleOrtho = handleToogleOrtho
+window.handleToogleSnap = handleToogleSnap
 window.menuOverlay = menuOverlay
 export { Viewport }

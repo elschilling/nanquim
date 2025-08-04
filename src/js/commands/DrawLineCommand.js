@@ -31,6 +31,7 @@ class DrawLineCommand extends Command {
         // console.log('drawstop', this.editor.elementIndex)
         line.off()
         this.editor.history.undos.push(new AddElementCommand(editor, line))
+        this.editor.lastCommand = this
         // this.editor.execute(new AddElementCommand(editor, line))
         line = null
         this.updatedOutliner()
