@@ -89,7 +89,7 @@ function Terminal(editor) {
         if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
           console.log('distance input', terminalInput.value)
           editor.distance = terminalInput.value
-          // signal distance input
+          editor.signals.inputValue.dispatch()
           terminalText.value = ''
         }
       }

@@ -72,3 +72,49 @@ export function isCircleIntersectingRect(circle, rect) {
 
     return (cornerDistanceSq <= Math.pow(circle.r, 2));
 }
+
+export function isPolygonIntersectingRect(polygon, rect) {
+  // 1. Check if any vertex of the polygon is inside the rectangle
+  for (const vertex of polygon) {
+    if (vertex.x >= rect.x && vertex.x <= rect.x + rect.width &&
+        vertex.y >= rect.y && vertex.y <= rect.y + rect.height) {
+      return true;
+    }
+  }
+
+  // 2. Check if any edge of the polygon intersects with the rectangle's edges
+  const rectVertices = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height },
+  ];
+
+  for (let i = 0; i < polygon.length; i++) {
+    const p1 = polygon[i];
+    const q1 = polygon[(i + 1) % polygon.length]; // Next vertex, wraps around
+
+    for (let j = 0; j < rectVertices.length; j++) {
+      const p2 = rectVertices[j];
+      const q2 = rectVertices[(j + 1) % rectVertices.length];
+      if (doLineSegmentsIntersect(p1, q1, p2, q2)) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Check if the rectangle is completely inside the polygon (point in polygon test)
+  // Using a point from the rectangle (e.g., the center) is sufficient if no intersections were found
+  const rectCenter = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+
+    const intersect = ((yi > rectCenter.y) !== (yj > rectCenter.y)) &&
+      (rectCenter.x < (xj - xi) * (rectCenter.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+}

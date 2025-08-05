@@ -13,8 +13,11 @@ function Editor() {
     toogledSelect: new Signal(),
     updatedProperties: new Signal(),
     pointCaptured: new Signal(),
-    ghostingStarted: new Signal(),
-    ghostingStopped: new Signal(),
+    moveGhostingStarted: new Signal(),
+    moveGhostingStopped: new Signal(),
+    rotateGhostingStarted: new Signal(),
+    rotateGhostingStopped: new Signal(),
+    inputValue: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')

@@ -2,6 +2,7 @@ import { drawLineCommand } from './DrawLineCommand'
 import { drawCircleCommand } from './DrawCircleCommand'
 import { drawRectangleCommand } from './DrawRectangleCommand'
 import { moveCommand } from './MoveCommand'
+import { rotateCommand } from './RotateCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -20,6 +21,10 @@ const commands = {
   MOVE: {
     execute: moveCommand,
     aliases: ['m'],
+  },
+  ROTATE: {
+    execute: rotateCommand,
+    aliases: ['r'],
   },
   // Add more commands and functions as needed
 }

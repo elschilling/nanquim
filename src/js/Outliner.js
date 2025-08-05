@@ -21,7 +21,7 @@ function Outliner(editor) {
     signals.clearSelection.dispatch()
     editor.selected.forEach((el) => {
       const li = document.getElementById('li' + el.node.id)
-      el.selectize({ deepSelect: true })
+      // el.selectize({ deepSelect: true })
       el.addClass('elementSelected')
       // li.classList.add('outliner-selected')
     })
@@ -33,7 +33,7 @@ function Outliner(editor) {
       li.classList.remove('outliner-selected')
     }
     editor.drawing.children().each((el) => {
-      el.selectize(false, { deepSelect: true })
+      // el.selectize(false, { deepSelect: true })
       el.removeClass('elementSelected')
     })
   })

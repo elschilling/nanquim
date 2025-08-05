@@ -27,7 +27,7 @@ class MoveCommand extends Command {
       this.onSelectionConfirmed()
     } else if (event.key === 'Escape') {
       this.cleanup()
-      this.editor.signals.ghostingStopped.dispatch()
+      this.editor.signals.moveGhostingStopped.dispatch()
       this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
     }
   }
@@ -52,12 +52,12 @@ class MoveCommand extends Command {
     this.basePoint = point
     this.editor.signals.terminalLogged.dispatch({ msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point or enter a distance.' })
-    this.editor.signals.ghostingStarted.dispatch(this.editor.selected, this.basePoint)
+    this.editor.signals.moveGhostingStarted.dispatch(this.editor.selected, this.basePoint)
     this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
   }
 
   onSecondPoint(point) {
-    this.editor.signals.ghostingStopped.dispatch()
+    this.editor.signals.moveGhostingStopped.dispatch()
     const secondPoint = point
     let dx = secondPoint.x - this.basePoint.x
     let dy = secondPoint.y - this.basePoint.y
@@ -109,7 +109,7 @@ class MoveCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
-    this.editor.signals.ghostingStopped.dispatch()
+    this.editor.signals.moveGhostingStopped.dispatch()
   }
 
   // Method 2: Alternative using direct position manipulation (if transform doesn't work)

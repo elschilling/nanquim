@@ -5,7 +5,7 @@ import {
   distancePointToRectangleStroke,
   calculateDeltaFromBasepoint,
 } from './utils/calculateDistance'
-import { isLineIntersectingRect, isCircleIntersectingRect } from './utils/intersection'
+import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -24,9 +24,16 @@ function Viewport(editor) {
   let ghostElements = []
   let basePoint = null
   let initialTransforms = new Map()
+  let isGhostingMove = false
+  let isGhostingRotate = false
+  let centerPoint = null
+  let referencePoint = null
 
-  signals.ghostingStarted.add(onGhostingStarted)
-  signals.ghostingStopped.add(onGhostingStopped)
+  signals.moveGhostingStarted.add(onMoveGhostingStarted)
+  signals.moveGhostingStopped.add(onMoveGhostingStopped)
+
+  signals.rotateGhostingStarted.add(onRotateGhostingStarted)
+  signals.rotateGhostingStopped.add(onRotateGhostingStopped)
 
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
@@ -42,7 +49,8 @@ function Viewport(editor) {
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
 
-  function onGhostingStarted(elements, point) {
+  function onMoveGhostingStarted(elements, point) {
+    isGhostingMove = true
     ghostElements = elements
     basePoint = point
     ghostElements.forEach((el) => {
@@ -50,13 +58,36 @@ function Viewport(editor) {
     })
   }
 
-  function onGhostingStopped() {
+  function onMoveGhostingStopped() {
+    isGhostingMove = false
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
       el.transform(initial)
     })
     ghostElements = []
     basePoint = null
+    initialTransforms.clear()
+  }
+
+  function onRotateGhostingStarted(elements, cPoint, rPoint) {
+    isGhostingRotate = true
+    ghostElements = elements
+    centerPoint = cPoint
+    referencePoint = rPoint
+    ghostElements.forEach((el) => {
+      initialTransforms.set(el, el.transform())
+    })
+  }
+
+  function onRotateGhostingStopped() {
+    isGhostingRotate = false
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    centerPoint = null
+    referencePoint = null
     initialTransforms.clear()
   }
 
@@ -96,30 +127,43 @@ function Viewport(editor) {
     }
     coordinates = svg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
-      let dx = coordinates.x - basePoint.x
-      let dy = coordinates.y - basePoint.y
-      if (editor.distance) {
+      if (isGhostingMove) {
+        let dx = coordinates.x - basePoint.x
+        let dy = coordinates.y - basePoint.y
+        if (editor.distance) {
+          if (editor.ortho) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+            } else {
+              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+            }
+          } else {
+            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+          }
+        }
         if (editor.ortho) {
           if (Math.abs(dx) > Math.abs(dy)) {
-            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+            dy = 0
           } else {
-            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+            dx = 0
           }
-        } else {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
         }
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial).translate(dx, dy)
+        })
       }
-      if (editor.ortho) {
-        if (Math.abs(dx) > Math.abs(dy)) {
-          dy = 0
-        } else {
-          dx = 0
+      if (isGhostingRotate) {
+        let rotationAngle = calculateRotationAngle(centerPoint, referencePoint, coordinates)
+        if (editor.distance) {
+          rotationAngle = editor.distance
         }
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial)
+          el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+        })
       }
-      ghostElements.forEach((el) => {
-        const initial = initialTransforms.get(el)
-        el.transform(initial).translate(dx, dy)
-      })
     }
     updateCoordinates(coordinates)
     checkHover()
@@ -194,10 +238,10 @@ function Viewport(editor) {
           rect.height = e.target.height.baseVal.value
           if (coordinates.x < startX) {
             e.srcElement.classList.add('selectionRectangleRight')
-            findElements(svg, rect, 'intersect')
+            findElements(rect, 'intersect')
           } else {
             e.target.classList.remove('selectionRectangleRight')
-            findElements(svg, rect, 'inside')
+            findElements(rect, 'inside')
           }
         })
         .on('drawstop', (e) => {
@@ -207,7 +251,8 @@ function Viewport(editor) {
         })
     }
   }
-  function findElements(svg, rect, selectionMode) {
+
+  function findElements(rect, selectionMode) {
     drawing.children().each((el) => {
       const bbox = el.bbox()
 
@@ -228,6 +273,9 @@ function Viewport(editor) {
         } else if (el.type === 'circle') {
           const circle = { cx: el.node.cx.baseVal.value, cy: el.node.cy.baseVal.value, r: el.node.r.baseVal.value }
           isInsideOrIntersecting = isCircleIntersectingRect(circle, rect)
+        } else if (el.type === 'polygon') {
+          const polygon = el.array().map((point) => ({ x: point[0], y: point[1] }))
+          isInsideOrIntersecting = isPolygonIntersectingRect(polygon, rect)
         } else {
           // Fallback to bounding box for other element types
           isInsideOrIntersecting =
@@ -237,7 +285,9 @@ function Viewport(editor) {
 
       if (isInsideOrIntersecting) {
         el.addClass('elementHover')
-        if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
+
+        // Check if element is already in hoveredElements using direct reference comparison
+        if (!hoveredElements.includes(el)) {
           hoveredElements.push(el)
         }
       } else {
@@ -248,23 +298,22 @@ function Viewport(editor) {
   }
 
   function selectHovered() {
+    console.log('hovered', hoveredElements)
     hoveredElements.forEach((el) => {
-      editor.selected.push(el)
-      editor.signals.updatedSelection.dispatch()
-      // el.selectize({ deepSelect: true })
-      // el.attr('selected', true)
-      // el.addClass('elementSelected')
+      console.log('selected', editor.selected)
+
+      // Check if element is already selected before adding it
+      if (!editor.selected.includes(el)) {
+        editor.selected.push(el)
+        console.log('Added element to selection:', el.type)
+      } else {
+        console.log('Element already selected, skipping:', el.type)
+      }
     })
-  }
-  function toogleSelect(el) {
-    if (el.attr('selected') === 'true') {
-      el.selectize(false, { deepSelect: true })
-      el.attr('selected', false)
-      el.removeClass('elementSelected')
-    } else {
-      el.selectize({ deepSelect: true })
-      el.attr('selected', true)
-      el.addClass('elementSelected')
+
+    // Only dispatch the signal once after all elements are processed
+    if (hoveredElements.length > 0) {
+      editor.signals.updatedSelection.dispatch()
     }
   }
   function handleMiddleClick() {
@@ -423,6 +472,17 @@ function worldToScreen(worldPoint, svgCanvas) {
   const screenPoint = new SVG.Point(worldPoint).transform(matrix)
 
   return { x: screenPoint.x, y: screenPoint.y }
+}
+function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
+  const vec1 = { x: referencePoint.x - centerPoint.x, y: referencePoint.y - centerPoint.y }
+  const vec2 = { x: targetPoint.x - centerPoint.x, y: targetPoint.y - centerPoint.y }
+
+  // Use atan2 of the cross product and dot product to get the signed angle
+  const dot = vec1.x * vec2.x + vec1.y * vec2.y
+  const cross = vec1.x * vec2.y - vec1.y * vec2.x
+  const angleRad = Math.atan2(cross, dot)
+  const angleDegrees = angleRad * (180 / Math.PI)
+  return angleDegrees
 }
 
 window.handleToogleOverlay = handleToogleOverlay
