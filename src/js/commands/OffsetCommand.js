@@ -115,10 +115,10 @@ class OffsetCommand extends Command {
     this.editor.signals.offsetGhostingStopped.dispatch()
     this.selectedElement = null
     this.editor.isInteracting = false
+    this.editor.selectSingleElement = false
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element.` })
 
     // Allow multiple offsets with same distance
-    this.selectedElement = null
     this.startSelection()
   }
 
@@ -137,6 +137,7 @@ class OffsetCommand extends Command {
     this.editor.isInteracting = false
     this.editor.selectSingleElement = false
     this.editor.distance = null
+    this.selectedElement = null
   }
 
   undo() {}
