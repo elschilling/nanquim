@@ -118,6 +118,7 @@ class OffsetCommand extends Command {
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element.` })
 
     // Allow multiple offsets with same distance
+    this.selectedElement = null
     this.startSelection()
   }
 

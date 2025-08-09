@@ -29,6 +29,7 @@ function Viewport(editor) {
   let isGhostingRotate = false
   let isGhostingOffset = false
   let offsetGhostClone = null
+  let offsetDistance = null
   let centerPoint = null
   let referencePoint = null
 
@@ -100,10 +101,12 @@ function Viewport(editor) {
   function onOffsetGhostingStarted(element, distance) {
     // Create clone ghosts in overlays and track initial transforms
     console.log('ghost started. ghost element:', element)
-    initialTransforms.set(element, element[0].transform())
+    const el = element[0]
+    initialTransforms.set(el, el.transform())
     console.log('initial transforms', initialTransforms)
-    ghostElements = element[0]
+    ghostElements = el
     isGhostingOffset = true
+    offsetDistance = distance
   }
 
   function onOffsetGhostingStopped() {
@@ -113,6 +116,7 @@ function Viewport(editor) {
     // ghostElements.remove()
     ghostElements = []
     offsetGhostClone = null
+    offsetDistance = null
   }
 
   function zoomToFit(canvas) {
@@ -402,9 +406,10 @@ function Viewport(editor) {
         offsetGhostClone = ghostElements.clone()
         offsetGhostClone.putIn(editor.drawing)
       }
-      offsetGhostClone.transform({})
+
       // For circles/rects, resize instead of translate
       if (ghostElements.type === 'circle') {
+        offsetGhostClone.transform({}) // Reset transform
         const cx = ghostElements.cx()
         const cy = ghostElements.cy()
         const r = ghostElements.radius ? ghostElements.radius() : ghostElements.attr('r')
@@ -412,11 +417,12 @@ function Viewport(editor) {
         const dy = point.y - cy
         const dist = Math.hypot(dx, dy)
         const inward = dist < (typeof r === 'number' ? r : parseFloat(r))
-        const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -editor.distance : editor.distance))
+        const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -offsetDistance : offsetDistance))
         offsetGhostClone.center(cx, cy)
         if (offsetGhostClone.radius) offsetGhostClone.radius(newR)
         else offsetGhostClone.attr('r', newR)
       } else if (ghostElements.type === 'rect') {
+        offsetGhostClone.transform({}) // Reset transform
         const x = ghostElements.x()
         const y = ghostElements.y()
         const w = ghostElements.width()
@@ -424,7 +430,7 @@ function Viewport(editor) {
         const cx = x + w / 2
         const cy = y + h / 2
         const inside = point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h
-        const delta = inside ? -editor.distance : editor.distance
+        const delta = inside ? -offsetDistance : offsetDistance
         const newW = Math.max(0, w + 2 * delta)
         const newH = Math.max(0, h + 2 * delta)
         const newX = cx - newW / 2
@@ -432,15 +438,12 @@ function Viewport(editor) {
         offsetGhostClone.size(newW, newH)
         offsetGhostClone.move(newX, newY)
       } else {
+        const initial = initialTransforms.get(ghostElements)
+        offsetGhostClone.transform(initial || {}) // Reset to initial
         // Compute offset direction relative to the selected element and click position
-        const { dx, dy } = computeOffsetVector(ghostElements, point, editor.distance)
+        const { dx, dy } = computeOffsetVector(ghostElements, point, offsetDistance)
         console.log('dx, dy', dx, dy)
-        try {
-          applyOffsetToElement(clone, dx, dy)
-        } catch (e) {
-          const t = offsetGhostClone.transform ? offsetGhostClone.transform() : {}
-          if (offsetGhostClone.transform) offsetGhostClone.transform(t).translate(dx, dy)
-        }
+        offsetGhostClone.translate(dx, dy)
       }
     }
   }
