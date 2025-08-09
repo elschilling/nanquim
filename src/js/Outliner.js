@@ -40,7 +40,11 @@ function Outliner(editor) {
 
   signals.toogledSelect.add((el) => {
     if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
-      editor.selected.push(el)
+      if (editor.selectSingleElement) {
+        editor.selected = [el]
+      } else {
+        editor.selected.push(el)
+      }
     } else {
       editor.selected = editor.selected.filter((item) => item !== el)
     }

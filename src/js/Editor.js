@@ -17,6 +17,8 @@ function Editor() {
     moveGhostingStopped: new Signal(),
     rotateGhostingStarted: new Signal(),
     rotateGhostingStopped: new Signal(),
+    offsetGhostingStarted: new Signal(),
+    offsetGhostingStopped: new Signal(),
     inputValue: new Signal(),
   }
   this.history = new _History(this)
@@ -32,6 +34,7 @@ function Editor() {
   this.drawing.attr('id', 'Collection')
   this.isDrawing = false
   this.isInteracting = false
+  this.selectSingleElement = false
   this.isSnapping = false
   this.elementIndex = 0
   this.selected = []
@@ -39,6 +42,8 @@ function Editor() {
   this.orthomode = true
   this.length = null
   this.distance = null
+  this.offsetDX = null
+  this.offsetDY = null
   this.snapPoint = null
   this.lastCommand = null
 }
