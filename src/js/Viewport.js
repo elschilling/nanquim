@@ -6,6 +6,7 @@ import {
   calculateDeltaFromBasepoint,
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
+import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -27,8 +28,7 @@ function Viewport(editor) {
   let isGhostingMove = false
   let isGhostingRotate = false
   let isGhostingOffset = false
-  let offsetOriginalElements = []
-  let offsetDistance = 0
+  let offsetGhostClone = null
   let centerPoint = null
   let referencePoint = null
 
@@ -97,186 +97,22 @@ function Viewport(editor) {
     initialTransforms.clear()
   }
 
-  // Compute perpendicular offset vector for a given element towards mouse by a distance
-  function computeOffsetVector(originalElement, mouse, distance) {
-    try {
-      if (!originalElement) return { dx: 0, dy: 0 }
-
-      // svg.js element exposes .type
-      const type =
-        originalElement.type || (originalElement.node && originalElement.node.tagName && originalElement.node.tagName.toLowerCase()) || ''
-
-      // Helper to normalize vector
-      const normalize = (vx, vy) => {
-        const len = Math.hypot(vx, vy) || 1
-        return { x: vx / len, y: vy / len }
-      }
-
-      // Helper to compute sign based on which side of perpendicular mouse is
-      const signForPerp = (center, perp) => {
-        const toMouseX = mouse.x - center.x
-        const toMouseY = mouse.y - center.y
-        const proj = toMouseX * perp.x + toMouseY * perp.y
-        return proj >= 0 ? 1 : -1
-      }
-
-      if (type === 'line') {
-        const x1 = originalElement.node.x1.baseVal.value
-        const y1 = originalElement.node.y1.baseVal.value
-        const x2 = originalElement.node.x2.baseVal.value
-        const y2 = originalElement.node.y2.baseVal.value
-        const dir = normalize(x2 - x1, y2 - y1)
-        // Perpendicular vector (rotate 90deg)
-        const perp = { x: -dir.y, y: dir.x }
-        const center = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 }
-        const s = signForPerp(center, perp)
-        return { dx: perp.x * distance * s, dy: perp.y * distance * s }
-      }
-
-      if (type === 'rect') {
-        const x = originalElement.x()
-        const y = originalElement.y()
-        const w = originalElement.width()
-        const h = originalElement.height()
-        const center = { x: x + w / 2, y: y + h / 2 }
-        // Prefer axis with larger delta to mouse
-        const dxm = mouse.x - center.x
-        const dym = mouse.y - center.y
-        if (Math.abs(dym) >= Math.abs(dxm)) {
-          const s = dym >= 0 ? 1 : -1
-          return { dx: 0, dy: distance * s }
-        } else {
-          const s = dxm >= 0 ? 1 : -1
-          return { dx: distance * s, dy: 0 }
-        }
-      }
-
-      if (type === 'circle' || type === 'ellipse') {
-        const cx = originalElement.cx()
-        const cy = originalElement.cy()
-        const dir = normalize(mouse.x - cx, mouse.y - cy)
-        const s = 1 // outward by default
-        return { dx: dir.x * distance * s, dy: dir.y * distance * s }
-      }
-
-      // Default: vertical offset based on mouse.y
-      let cx = 0
-      let cy = 0
-      if (originalElement.bbox) {
-        const b = originalElement.bbox()
-        cx = b.x + b.width / 2
-        cy = b.y + b.height / 2
-      }
-      const s = mouse.y >= cy ? 1 : -1
-      return { dx: 0, dy: distance * s }
-    } catch (e) {
-      console.warn('computeOffsetVector failed, defaulting to zero', e)
-      return { dx: 0, dy: 0 }
-    }
-  }
-
-  // Update offset ghosts: translate for lines/paths, resize for circles/rects
-  function updateOffsetGhosts(mouse, distance) {
-    if (!isGhostingOffset || ghostElements.length === 0 || offsetOriginalElements.length === 0) return
-
-    const original = offsetOriginalElements[0]
-    const ghost = ghostElements[0]
-    if (!original || !ghost) return
-
-    try {
-      const type = original.type
-
-      if (type === 'circle') {
-        const cx = original.cx()
-        const cy = original.cy()
-        const r = original.radius ? original.radius() : original.attr('r')
-        const dxm = mouse.x - cx
-        const dym = mouse.y - cy
-        const dist = Math.hypot(dxm, dym)
-        const inward = dist < (typeof r === 'number' ? r : parseFloat(r))
-        const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -distance : distance))
-        // Reset transform and set new geometry
-        const initial = initialTransforms.get(ghost)
-        ghost.transform(initial)
-        // Position the ghost circle offset along the radial direction by exactly the distance
-        const unit = dist > 0 ? { x: dxm / dist, y: dym / dist } : { x: 0, y: -1 }
-        const tx = unit.x * (inward ? -distance : distance)
-        const ty = unit.y * (inward ? -distance : distance)
-        ghost.center(cx + tx, cy + ty)
-        if (ghost.radius) ghost.radius(newR)
-        else ghost.attr('r', newR)
-        return
-      }
-
-      if (type === 'rect') {
-        const x = original.x()
-        const y = original.y()
-        const w = original.width()
-        const h = original.height()
-        const cx = x + w / 2
-        const cy = y + h / 2
-        // Determine inside/outside using bounding box
-        const inside = mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h
-        const delta = inside ? -distance : distance
-        // Uniformly grow/shrink on all sides (keep center)
-        const newW = Math.max(0, w + 2 * delta)
-        const newH = Math.max(0, h + 2 * delta)
-        const newX = cx - newW / 2
-        const newY = cy - newH / 2
-        const initial = initialTransforms.get(ghost)
-        ghost.transform(initial)
-        ghost.size(newW, newH)
-        // Nudge the center toward/away from mouse by exactly distance on dominant axis to make the ghost visibly offset
-        const dxm = mouse.x - cx
-        const dym = mouse.y - cy
-        if (Math.abs(dym) >= Math.abs(dxm)) {
-          const ty = dym >= 0 ? distance : -distance
-          ghost.move(newX, newY + (inside ? -ty : ty))
-        } else {
-          const tx = dxm >= 0 ? distance : -distance
-          ghost.move(newX + (inside ? -tx : tx), newY)
-        }
-        return
-      }
-
-      // Default behavior: translate perpendicular like before
-      const { dx, dy } = computeOffsetVector(original, mouse, distance)
-      const initial = initialTransforms.get(ghost)
-      ghost.transform(initial).translate(dx, dy)
-    } catch (e) {
-      // Fallback to translation if anything fails
-      const { dx, dy } = computeOffsetVector(original, mouse, distance)
-      const initial = initialTransforms.get(ghost)
-      ghost.transform(initial).translate(dx, dy)
-    }
-  }
-
-  function onOffsetGhostingStarted(elements, distance) {
+  function onOffsetGhostingStarted(element, distance) {
     // Create clone ghosts in overlays and track initial transforms
+    console.log('ghost started. ghost element:', element)
+    initialTransforms.set(element, element[0].transform())
+    console.log('initial transforms', initialTransforms)
+    ghostElements = element[0]
     isGhostingOffset = true
-    offsetOriginalElements = elements || []
-    offsetDistance = typeof distance === 'number' ? distance : parseFloat(editor.distance || 0) || 0
-    ghostElements = []
-    initialTransforms.clear()
-
-    // Immediately position the ghost based on current mouse
-    if (coordinates) {
-      updateOffsetGhosts(coordinates, offsetDistance)
-    }
   }
 
   function onOffsetGhostingStopped() {
     isGhostingOffset = false
+    if (offsetGhostClone) offsetGhostClone.remove()
     // Remove ghost clones
-    ghostElements.forEach((el) => {
-      try {
-        el.remove()
-      } catch (e) {}
-    })
+    // ghostElements.remove()
     ghostElements = []
-    offsetOriginalElements = []
-    offsetDistance = 0
-    initialTransforms.clear()
+    offsetGhostClone = null
   }
 
   function zoomToFit(canvas) {
@@ -352,10 +188,9 @@ function Viewport(editor) {
           el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
         })
       }
-      if (isGhostingOffset) {
-        const mouse = coordinates
-        updateOffsetGhosts(mouse, offsetDistance)
-      }
+    }
+    if (isGhostingOffset) {
+      updateOffsetGhosts(coordinates)
     }
     updateCoordinates(coordinates)
     checkHover()
@@ -559,6 +394,56 @@ function Viewport(editor) {
       editor.snapPoint = null
     }
   }
+
+  // Update offset ghosts: translate for lines/paths, resize for circles/rects
+  function updateOffsetGhosts(point) {
+    if (ghostElements) {
+      if (!offsetGhostClone) {
+        offsetGhostClone = ghostElements.clone()
+        offsetGhostClone.putIn(editor.drawing)
+      }
+      offsetGhostClone.transform({})
+      // For circles/rects, resize instead of translate
+      if (ghostElements.type === 'circle') {
+        const cx = ghostElements.cx()
+        const cy = ghostElements.cy()
+        const r = ghostElements.radius ? ghostElements.radius() : ghostElements.attr('r')
+        const dx = point.x - cx
+        const dy = point.y - cy
+        const dist = Math.hypot(dx, dy)
+        const inward = dist < (typeof r === 'number' ? r : parseFloat(r))
+        const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -editor.distance : editor.distance))
+        offsetGhostClone.center(cx, cy)
+        if (offsetGhostClone.radius) offsetGhostClone.radius(newR)
+        else offsetGhostClone.attr('r', newR)
+      } else if (ghostElements.type === 'rect') {
+        const x = ghostElements.x()
+        const y = ghostElements.y()
+        const w = ghostElements.width()
+        const h = ghostElements.height()
+        const cx = x + w / 2
+        const cy = y + h / 2
+        const inside = point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h
+        const delta = inside ? -editor.distance : editor.distance
+        const newW = Math.max(0, w + 2 * delta)
+        const newH = Math.max(0, h + 2 * delta)
+        const newX = cx - newW / 2
+        const newY = cy - newH / 2
+        offsetGhostClone.size(newW, newH)
+        offsetGhostClone.move(newX, newY)
+      } else {
+        // Compute offset direction relative to the selected element and click position
+        const { dx, dy } = computeOffsetVector(ghostElements, point, editor.distance)
+        console.log('dx, dy', dx, dy)
+        try {
+          applyOffsetToElement(clone, dx, dy)
+        } catch (e) {
+          const t = offsetGhostClone.transform ? offsetGhostClone.transform() : {}
+          if (offsetGhostClone.transform) offsetGhostClone.transform(t).translate(dx, dy)
+        }
+      }
+    }
+  }
 }
 
 function drawSnap(point, zoom, svg) {
@@ -675,181 +560,6 @@ function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
   const angleRad = Math.atan2(cross, dot)
   const angleDegrees = angleRad * (180 / Math.PI)
   return angleDegrees
-}
-
-// Compute perpendicular offset vector for a given element towards mouse by a distance
-function computeOffsetVector(originalElement, mouse, distance) {
-  try {
-    if (!originalElement) return { dx: 0, dy: 0 }
-
-    // svg.js element exposes .type
-    const type = originalElement.type || (originalElement.node && originalElement.node.tagName?.toLowerCase()) || ''
-
-    // Helper to normalize vector
-    const normalize = (vx, vy) => {
-      const len = Math.hypot(vx, vy) || 1
-      return { x: vx / len, y: vy / len }
-    }
-
-    // Helper to compute sign based on which side of perpendicular mouse is
-    const signForPerp = (center, perp) => {
-      const toMouseX = mouse.x - center.x
-      const toMouseY = mouse.y - center.y
-      const proj = toMouseX * perp.x + toMouseY * perp.y
-      return proj >= 0 ? 1 : -1
-    }
-
-    if (type === 'line') {
-      const x1 = originalElement.node.x1.baseVal.value
-      const y1 = originalElement.node.y1.baseVal.value
-      const x2 = originalElement.node.x2.baseVal.value
-      const y2 = originalElement.node.y2.baseVal.value
-      const dir = normalize(x2 - x1, y2 - y1)
-      // Perpendicular vector (rotate 90deg)
-      const perp = { x: -dir.y, y: dir.x }
-      const center = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 }
-      const s = signForPerp(center, perp)
-      return { dx: perp.x * distance * s, dy: perp.y * distance * s }
-    }
-
-    if (type === 'rect') {
-      const x = originalElement.x()
-      const y = originalElement.y()
-      const w = originalElement.width()
-      const h = originalElement.height()
-      const center = { x: x + w / 2, y: y + h / 2 }
-      // Prefer axis with larger delta to mouse
-      const dxm = mouse.x - center.x
-      const dym = mouse.y - center.y
-      if (Math.abs(dym) >= Math.abs(dxm)) {
-        const s = dym >= 0 ? 1 : -1
-        return { dx: 0, dy: distance * s }
-      } else {
-        const s = dxm >= 0 ? 1 : -1
-        return { dx: distance * s, dy: 0 }
-      }
-    }
-
-    if (type === 'circle' || type === 'ellipse') {
-      const cx = originalElement.cx()
-      const cy = originalElement.cy()
-      const dir = normalize(mouse.x - cx, mouse.y - cy)
-      const s = 1 // outward by default
-      return { dx: dir.x * distance * s, dy: dir.y * distance * s }
-    }
-
-    // Default: vertical offset based on mouse.y
-    let cx = 0
-    let cy = 0
-    if (originalElement.bbox) {
-      const b = originalElement.bbox()
-      cx = b.x + b.width / 2
-      cy = b.y + b.height / 2
-    }
-    const s = mouse.y >= cy ? 1 : -1
-    return { dx: 0, dy: distance * s }
-  } catch (e) {
-    console.warn('computeOffsetVector failed, defaulting to zero', e)
-    return { dx: 0, dy: 0 }
-  }
-}
-
-// Update offset ghosts: translate for lines/paths, resize for circles/rects
-function updateOffsetGhosts(mouse, distance) {
-  if (!isGhostingOffset || offsetOriginalElements.length === 0) return
-
-  const original = offsetOriginalElements[0]
-  let ghost = ghostElements[0]
-  if (!original) return
-
-  try {
-    const type = original.type
-
-    if (type === 'circle') {
-      const obox = original.rbox ? original.rbox(editor.svg) : original.bbox()
-      const cx = obox.cx != null ? obox.cx : obox.x + obox.width / 2
-      const cy = obox.cy != null ? obox.cy : obox.y + obox.height / 2
-      const rWorld = obox.width / 2
-      const dxm = mouse.x - cx
-      const dym = mouse.y - cy
-      const dist = Math.hypot(dxm, dym)
-      const inward = dist < rWorld
-      const newR = Math.max(0, rWorld + (inward ? -distance : distance))
-      // Ensure we have a circle ghost element to draw into
-      if (!ghost || ghost.type !== 'circle') {
-        if (ghost) {
-          try {
-            ghost.remove()
-          } catch (e) {}
-        }
-        ghost = editor.overlays.circle()
-        ghost.addClass('elementSelected')
-        ghost.addClass('offset-ghost')
-        ghost.attr({ 'pointer-events': 'none', fill: 'none' })
-        ghostElements[0] = ghost
-      }
-      // Reset any transform completely and set new geometry; keep center fixed
-      ghost.attr('transform', null)
-      ghost.attr({ cx: cx, cy: cy, r: newR })
-      return
-    }
-
-    if (type === 'rect') {
-      const obox = original.rbox ? original.rbox(editor.svg) : original.bbox()
-      const x = obox.x
-      const y = obox.y
-      const w = obox.width
-      const h = obox.height
-      const cx = x + w / 2
-      const cy = y + h / 2
-      // Determine inside/outside using world-space bbox
-      const inside = mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h
-      const delta = inside ? -distance : distance
-      // Uniformly grow/shrink on all sides (keep center)
-      const newW = Math.max(0, w + 2 * delta)
-      const newH = Math.max(0, h + 2 * delta)
-      const newX = cx - newW / 2
-      const newY = cy - newH / 2
-      // Ensure we have a rect ghost element to draw into
-      if (!ghost || ghost.type !== 'rect') {
-        if (ghost) {
-          try {
-            ghost.remove()
-          } catch (e) {}
-        }
-        ghost = editor.overlays.rect()
-        ghost.addClass('elementSelected')
-        ghost.addClass('offset-ghost')
-        ghost.attr({ 'pointer-events': 'none', fill: 'none' })
-        ghostElements[0] = ghost
-      }
-      // Reset any transform completely and set new geometry
-      ghost.attr('transform', null)
-      ghost.attr({ x: newX, y: newY, width: newW, height: newH })
-      return
-    }
-
-    // Default behavior: translate perpendicular like before
-    const { dx, dy } = computeOffsetVector(original, mouse, distance)
-    if (!ghost) {
-      // Create clone once for linear-like elements
-      const clone = original.clone()
-      if (clone.putIn) clone.putIn(editor.overlays)
-      clone.attr({ 'pointer-events': 'none' })
-      clone.addClass('elementSelected')
-      clone.addClass('offset-ghost')
-      ghost = clone
-      ghostElements[0] = ghost
-      initialTransforms.set(ghost, ghost.transform())
-    }
-    const initial = initialTransforms.get(ghost)
-    ghost.transform(initial).translate(dx, dy)
-  } catch (e) {
-    // Fallback to translation if anything fails
-    const { dx, dy } = computeOffsetVector(original, mouse, distance)
-    const initial = initialTransforms.get(ghost)
-    ghost.transform(initial).translate(dx, dy)
-  }
 }
 
 window.handleToogleOverlay = handleToogleOverlay
