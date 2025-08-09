@@ -85,11 +85,15 @@ function Terminal(editor) {
         }
       }
     } else if (editor.isInteracting) {
-      if (isNumericString(terminalInput.value.trim())) {
-        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        if (isNumericString(terminalInput.value.trim())) {
           console.log('distance input', terminalInput.value)
           editor.distance = terminalInput.value
-          editor.signals.inputValue.dispatch()
+          editor.signals.inputValue.dispatch(terminalInput.value)
+          terminalText.value = ''
+        } else {
+          console.log('command params', terminalInput.value)
+          editor.signals.inputValue.dispatch(terminalInput.value)
           terminalText.value = ''
         }
       }

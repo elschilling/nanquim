@@ -46,6 +46,9 @@ function Editor() {
   this.offsetDY = null
   this.snapPoint = null
   this.lastCommand = null
+  this.cmdParams = {
+    filletRadius: 0,
+  }
 }
 
 Editor.prototype = {

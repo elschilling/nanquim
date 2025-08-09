@@ -239,6 +239,11 @@ function Viewport(editor) {
       } else {
         signals.pointCaptured.dispatch(point)
       }
+      if (editor.selectSingleElement) {
+        if (hoveredElements.length > 0) {
+          signals.toogledSelect.dispatch(hoveredElements[0])
+        }
+      }
       return
     }
 
@@ -246,8 +251,10 @@ function Viewport(editor) {
       // check middle click
       handleMiddleClick()
     } else {
-      if (hoveredElements.length > 0) signals.toogledSelect.dispatch(hoveredElements[0])
-      else {
+      console.log('hoveredElements', hoveredElements)
+      if (hoveredElements.length > 0) {
+        signals.toogledSelect.dispatch(hoveredElements[0])
+      } else {
         if (!editor.selectSingleElement) handleRectSelection(e)
       }
     }
@@ -442,7 +449,6 @@ function Viewport(editor) {
         offsetGhostClone.transform(initial || {}) // Reset to initial
         // Compute offset direction relative to the selected element and click position
         const { dx, dy } = computeOffsetVector(ghostElements, point, offsetDistance)
-        console.log('dx, dy', dx, dy)
         offsetGhostClone.translate(dx, dy)
       }
     }

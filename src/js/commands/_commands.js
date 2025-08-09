@@ -4,6 +4,7 @@ import { drawRectangleCommand } from './DrawRectangleCommand'
 import { moveCommand } from './MoveCommand'
 import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
+import { filletCommand } from './FilletCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -30,6 +31,10 @@ const commands = {
   OFFSET: {
     execute: offsetCommand,
     aliases: ['o'],
+  },
+  FILLET: {
+    execute: filletCommand,
+    aliases: ['f'],
   },
   // Add more commands and functions as needed
 }
