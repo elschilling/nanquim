@@ -6,6 +6,8 @@ class FilletCommand extends Command {
     this.type = 'FilletCommand'
     this.name = 'Fillet'
     this.selectedElements = []
+    this.originalStates = [] // Store original line states for undo
+    this.createdElements = [] // Store created arc elements for undo
 
     // Bind handlers
     this.boundOnKeyDown = this.onKeyDown.bind(this)
@@ -53,6 +55,24 @@ class FilletCommand extends Command {
     }
   }
 
+  // Store original state before modification
+  storeOriginalStates() {
+    this.originalStates = []
+    this.createdElements = []
+
+    for (let i = 0; i < this.selectedElements.length; i++) {
+      const [line, click] = this.selectedElements[i]
+      const originalState = {
+        element: line,
+        x1: line.attr('x1'),
+        y1: line.attr('y1'),
+        x2: line.attr('x2'),
+        y2: line.attr('y2'),
+      }
+      this.originalStates.push(originalState)
+    }
+  }
+
   filletElements() {
     console.log('lastClick', this.editor.lastClick)
     if (this.selectedElements.length !== 2) return
@@ -71,6 +91,9 @@ class FilletCommand extends Command {
       return
     }
 
+    // Store original states before modification
+    this.storeOriginalStates()
+
     const radius = parseFloat(this.editor.cmdParams.filletRadius) || 0
 
     try {
@@ -83,8 +106,11 @@ class FilletCommand extends Command {
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}` })
     } catch (error) {
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet failed: ${error.message}` })
+      // Restore original states on error
+      this.undo()
     }
-
+    this.editor.execute(this)
+    this.editor.lastCommand = this
     this.cleanup()
   }
 
@@ -199,23 +225,26 @@ class FilletCommand extends Command {
       console.log('Line2 after:', this.getLineEquation(line2))
     } catch (error) {
       console.error('Error in extendLinesToIntersection:', error)
+      throw error // Re-throw to trigger undo in filletElements
     }
   }
 
   // Create fillet arc between lines (radius > 0)
-  createFilletArc(line1, line2, radius) {
+  createFilletArc(line1Data, line2Data, radius) {
+    const [line1, click1] = line1Data
+    const [line2, click2] = line2Data
+
     const intersection = this.getLineIntersection(line1, line2)
-    const lastClick = this.editor.lastClick
 
     // Get line directions - we need to orient them correctly based on click position
     const l1 = this.getLineEquation(line1)
     const l2 = this.getLineEquation(line2)
 
     // Determine which end of each line is closer to the click (preserve these ends)
-    const dist1ToStartFromClick = Math.sqrt((lastClick.x - l1.x1) ** 2 + (lastClick.y - l1.y1) ** 2)
-    const dist1ToEndFromClick = Math.sqrt((lastClick.x - l1.x2) ** 2 + (lastClick.y - l1.y2) ** 2)
-    const dist2ToStartFromClick = Math.sqrt((lastClick.x - l2.x1) ** 2 + (lastClick.y - l2.y1) ** 2)
-    const dist2ToEndFromClick = Math.sqrt((lastClick.x - l2.x2) ** 2 + (lastClick.y - l2.y2) ** 2)
+    const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
+    const dist1ToEndFromClick = Math.sqrt((click1.x - l1.x2) ** 2 + (click1.y - l1.y2) ** 2)
+    const dist2ToStartFromClick = Math.sqrt((click2.x - l2.x1) ** 2 + (click2.y - l2.y1) ** 2)
+    const dist2ToEndFromClick = Math.sqrt((click2.x - l2.x2) ** 2 + (click2.y - l2.y2) ** 2)
 
     // Get directions pointing AWAY from the click position (towards intersection)
     let dir1, dir2
@@ -312,6 +341,9 @@ class FilletCommand extends Command {
       'stroke-width': line1.attr('stroke-width') || 1,
     })
 
+    // Store created arc for undo
+    this.createdElements.push(arcPath)
+
     // Trim the lines to the fillet points
     this.trimLineToPoint(line1, point1, intersection)
     this.trimLineToPoint(line2, point2, intersection)
@@ -361,11 +393,63 @@ class FilletCommand extends Command {
     this.editor.selectSingleElement = false
     this.editor.distance = null
     this.selectedElement = null
-    this.selectedElements = []
+    // Don't clear selectedElements - we need it for undo/redo
+    // this.selectedElements = []
   }
 
-  undo() {}
-  redo() {}
+  // Add a method to fully reset the command (call this when starting a new fillet)
+  reset() {
+    this.cleanup()
+    this.selectedElements = []
+    this.originalStates = []
+    this.createdElements = []
+  }
+
+  undo() {
+    // Restore original line states
+    for (let i = 0; i < this.originalStates.length; i++) {
+      const state = this.originalStates[i]
+      state.element.attr({
+        x1: state.x1,
+        y1: state.y1,
+        x2: state.x2,
+        y2: state.y2,
+      })
+    }
+
+    // Remove any created arc elements
+    for (let i = 0; i < this.createdElements.length; i++) {
+      this.createdElements[i].remove()
+    }
+
+    console.log('Fillet undone')
+  }
+
+  redo() {
+    // Re-execute the fillet operation
+    if (this.originalStates.length > 0 && this.selectedElements.length === 2) {
+      const radius = parseFloat(this.editor.cmdParams.filletRadius) || 0
+
+      // Clear the createdElements array for redo
+      this.createdElements = []
+
+      try {
+        if (radius === 0) {
+          // selectedElements is already in the format [[element, click], [element, click]]
+          this.extendLinesToIntersection(this.selectedElements[0], this.selectedElements[1])
+        } else {
+          this.createFilletArc(this.selectedElements[0], this.selectedElements[1], radius)
+        }
+        console.log('Fillet redone')
+      } catch (error) {
+        console.error('Error in redo:', error)
+        // If redo fails, restore original state again
+        this.undo()
+      }
+    } else {
+      console.log('Cannot redo: missing original states or selected elements')
+    }
+  }
 }
 
 function filletCommand(editor) {
