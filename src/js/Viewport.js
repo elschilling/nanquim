@@ -241,6 +241,7 @@ function Viewport(editor) {
       }
       if (editor.selectSingleElement) {
         if (hoveredElements.length > 0) {
+          editor.lastClick = point
           signals.toogledSelect.dispatch(hoveredElements[0])
         }
       }
