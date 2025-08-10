@@ -44,7 +44,7 @@ class FilletCommand extends Command {
   onElementSelected(el) {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     if (!el) return
-    this.selectedElements.push(el)
+    this.selectedElements.push([el, this.editor.lastClick])
     console.log('selectedElements', this.selectedElements)
     if (this.selectedElements.length < 2) {
       this.startSelection()
@@ -57,8 +57,12 @@ class FilletCommand extends Command {
     console.log('lastClick', this.editor.lastClick)
     if (this.selectedElements.length !== 2) return
 
-    const line1 = this.selectedElements[0]
-    const line2 = this.selectedElements[1]
+    const line1Data = this.selectedElements[0] // [element, clickPosition]
+    const line2Data = this.selectedElements[1] // [element, clickPosition]
+
+    // Extract elements for type checking
+    const line1 = line1Data[0]
+    const line2 = line2Data[0]
 
     // Verify both elements are lines
     if (line1.type !== 'line' || line2.type !== 'line') {
@@ -71,9 +75,9 @@ class FilletCommand extends Command {
 
     try {
       if (radius === 0) {
-        this.extendLinesToIntersection(line1, line2)
+        this.extendLinesToIntersection(line1Data, line2Data)
       } else {
-        this.createFilletArc(line1, line2, radius)
+        this.createFilletArc(line1Data, line2Data, radius)
       }
 
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}` })
@@ -127,56 +131,67 @@ class FilletCommand extends Command {
   }
 
   // Extend lines to their intersection point (radius = 0)
-  extendLinesToIntersection(line1, line2) {
+  extendLinesToIntersection(line1Data, line2Data) {
     try {
+      const [line1, click1] = line1Data
+      const [line2, click2] = line2Data
+
       const intersection = this.getLineIntersection(line1, line2)
-      const lastClick = this.editor.lastClick
 
       console.log('Intersection:', intersection)
-      console.log('Last click:', lastClick)
+      console.log('Click1:', click1)
+      console.log('Click2:', click2)
 
-      if (!lastClick || !intersection) {
-        console.log('Missing lastClick or intersection')
+      if (!click1 || !click2 || !intersection) {
+        console.log('Missing click positions or intersection')
         return
       }
 
-      // For line1: Keep the endpoint farther from intersection, move the closer one to intersection
+      // For line1: Find which endpoint is on the same side as the click relative to intersection
       const l1 = this.getLineEquation(line1)
       console.log('Line1 before:', l1)
 
-      const dist1StartToIntersection = Math.sqrt((intersection.x - l1.x1) ** 2 + (intersection.y - l1.y1) ** 2)
-      const dist1EndToIntersection = Math.sqrt((intersection.x - l1.x2) ** 2 + (intersection.y - l1.y2) ** 2)
+      // Calculate vectors from intersection to each endpoint and to click
+      const vecToStart1 = { x: l1.x1 - intersection.x, y: l1.y1 - intersection.y }
+      const vecToEnd1 = { x: l1.x2 - intersection.x, y: l1.y2 - intersection.y }
+      const vecToClick1 = { x: click1.x - intersection.x, y: click1.y - intersection.y }
 
-      console.log('Line1 - dist start to intersection:', dist1StartToIntersection)
-      console.log('Line1 - dist end to intersection:', dist1EndToIntersection)
+      // Calculate dot products to see which endpoint is more aligned with click direction
+      const dotStart1 = vecToStart1.x * vecToClick1.x + vecToStart1.y * vecToClick1.y
+      const dotEnd1 = vecToEnd1.x * vecToClick1.x + vecToEnd1.y * vecToClick1.y
 
-      if (dist1StartToIntersection > dist1EndToIntersection) {
-        // Start is farther from intersection - keep start, move end to intersection
-        console.log('Line1: Keeping start (farther), moving end to intersection')
+      console.log('Line1 - dot product start:', dotStart1, 'dot product end:', dotEnd1)
+
+      if (dotStart1 > dotEnd1) {
+        // Start is more aligned with click direction (same side), keep start and move end to intersection
+        console.log('Line1: Keeping start (same side as click), moving end to intersection')
         line1.attr({ x2: intersection.x, y2: intersection.y })
       } else {
-        // End is farther from intersection - keep end, move start to intersection
-        console.log('Line1: Keeping end (farther), moving start to intersection')
+        // End is more aligned with click direction (same side), keep end and move start to intersection
+        console.log('Line1: Keeping end (same side as click), moving start to intersection')
         line1.attr({ x1: intersection.x, y1: intersection.y })
       }
 
-      // For line2: Keep the endpoint farther from intersection, move the closer one to intersection
+      // For line2: Same logic
       const l2 = this.getLineEquation(line2)
       console.log('Line2 before:', l2)
 
-      const dist2StartToIntersection = Math.sqrt((intersection.x - l2.x1) ** 2 + (intersection.y - l2.y1) ** 2)
-      const dist2EndToIntersection = Math.sqrt((intersection.x - l2.x2) ** 2 + (intersection.y - l2.y2) ** 2)
+      const vecToStart2 = { x: l2.x1 - intersection.x, y: l2.y1 - intersection.y }
+      const vecToEnd2 = { x: l2.x2 - intersection.x, y: l2.y2 - intersection.y }
+      const vecToClick2 = { x: click2.x - intersection.x, y: click2.y - intersection.y }
 
-      console.log('Line2 - dist start to intersection:', dist2StartToIntersection)
-      console.log('Line2 - dist end to intersection:', dist2EndToIntersection)
+      const dotStart2 = vecToStart2.x * vecToClick2.x + vecToStart2.y * vecToClick2.y
+      const dotEnd2 = vecToEnd2.x * vecToClick2.x + vecToEnd2.y * vecToClick2.y
 
-      if (dist2StartToIntersection > dist2EndToIntersection) {
-        // Start is farther from intersection - keep start, move end to intersection
-        console.log('Line2: Keeping start (farther), moving end to intersection')
+      console.log('Line2 - dot product start:', dotStart2, 'dot product end:', dotEnd2)
+
+      if (dotStart2 > dotEnd2) {
+        // Start is more aligned with click direction (same side), keep start and move end to intersection
+        console.log('Line2: Keeping start (same side as click), moving end to intersection')
         line2.attr({ x2: intersection.x, y2: intersection.y })
       } else {
-        // End is farther from intersection - keep end, move start to intersection
-        console.log('Line2: Keeping end (farther), moving start to intersection')
+        // End is more aligned with click direction (same side), keep end and move start to intersection
+        console.log('Line2: Keeping end (same side as click), moving start to intersection')
         line2.attr({ x1: intersection.x, y1: intersection.y })
       }
 
