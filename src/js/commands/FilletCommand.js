@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import arc from '../libs/dxf/src/handlers/entity/arc'
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -236,131 +237,155 @@ class FilletCommand extends Command {
 
     const intersection = this.getLineIntersection(line1, line2)
 
-    // Get line directions - we need to orient them correctly based on click position
+    // Get line equations
     const l1 = this.getLineEquation(line1)
     const l2 = this.getLineEquation(line2)
 
-    // Determine which end of each line is closer to the click (preserve these ends)
+    // Find which endpoints to preserve (those closer to click positions)
     const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
     const dist1ToEndFromClick = Math.sqrt((click1.x - l1.x2) ** 2 + (click1.y - l1.y2) ** 2)
     const dist2ToStartFromClick = Math.sqrt((click2.x - l2.x1) ** 2 + (click2.y - l2.y1) ** 2)
     const dist2ToEndFromClick = Math.sqrt((click2.x - l2.x2) ** 2 + (click2.y - l2.y2) ** 2)
 
-    // Get directions pointing AWAY from the click position (towards intersection)
+    // Determine preserved endpoints
+    const preserveStart1 = dist1ToStartFromClick < dist1ToEndFromClick
+    const preserveStart2 = dist2ToStartFromClick < dist2ToEndFromClick
+
+    // Get vectors FROM intersection TO preserved endpoints (these are the directions to keep)
     let dir1, dir2
-    if (dist1ToStartFromClick < dist1ToEndFromClick) {
-      // Start is closer to click, direction goes from start to end
-      dir1 = { dx: l1.x2 - l1.x1, dy: l1.y2 - l1.y1 }
+    if (preserveStart1) {
+      dir1 = { dx: l1.x1 - intersection.x, dy: l1.y1 - intersection.y }
     } else {
-      // End is closer to click, direction goes from end to start
-      dir1 = { dx: l1.x1 - l1.x2, dy: l1.y1 - l1.y2 }
+      dir1 = { dx: l1.x2 - intersection.x, dy: l1.y2 - intersection.y }
     }
 
-    if (dist2ToStartFromClick < dist2ToEndFromClick) {
-      // Start is closer to click, direction goes from start to end
-      dir2 = { dx: l2.x2 - l2.x1, dy: l2.y2 - l2.y1 }
+    if (preserveStart2) {
+      dir2 = { dx: l2.x1 - intersection.x, dy: l2.y1 - intersection.y }
     } else {
-      // End is closer to click, direction goes from end to start
-      dir2 = { dx: l2.x1 - l2.x2, dy: l2.y1 - l2.y2 }
+      dir2 = { dx: l2.x2 - intersection.x, dy: l2.y2 - intersection.y }
     }
 
     // Normalize directions
     const len1 = Math.sqrt(dir1.dx * dir1.dx + dir1.dy * dir1.dy)
     const len2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
+
+    if (len1 === 0 || len2 === 0) {
+      throw new Error('Invalid line configuration')
+    }
+
     dir1.dx /= len1
     dir1.dy /= len1
     dir2.dx /= len2
     dir2.dy /= len2
 
-    // Calculate angle between lines
+    // Calculate angle between the directions
     const dot = dir1.dx * dir2.dx + dir1.dy * dir2.dy
     const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
 
-    if (angle < 0.01) {
-      // Nearly parallel lines
-      throw new Error('Lines are too close to parallel for filleting')
+    if (angle < 0.01 || angle > Math.PI - 0.01) {
+      throw new Error('Lines are too close to parallel or opposite for filleting')
     }
 
-    // Calculate distance from intersection to arc center along each line
+    // Calculate distance from intersection to tangent points
     const distance = radius / Math.tan(angle / 2)
 
-    if (distance <= 0) {
-      throw new Error('Invalid fillet configuration')
-    }
-
-    // Find points on each line where the arc will connect
+    // Find tangent points on each line
     const point1 = {
-      x: intersection.x - distance * dir1.dx,
-      y: intersection.y - distance * dir1.dy,
+      x: intersection.x + distance * dir1.dx,
+      y: intersection.y + distance * dir1.dy,
     }
 
     const point2 = {
-      x: intersection.x - distance * dir2.dx,
-      y: intersection.y - distance * dir2.dy,
+      x: intersection.x + distance * dir2.dx,
+      y: intersection.y + distance * dir2.dy,
     }
 
-    // Calculate arc center
-    const normal1 = { x: -dir1.dy, y: dir1.dx } // Perpendicular to line1
-    const normal2 = { x: -dir2.dy, y: dir2.dx } // Perpendicular to line2
+    // Calculate the bisector direction (average of the two unit vectors)
+    const bisectorX = (dir1.dx + dir2.dx) / 2
+    const bisectorY = (dir1.dy + dir2.dy) / 2
+    const bisectorLen = Math.sqrt(bisectorX * bisectorX + bisectorY * bisectorY)
 
-    // The center is at radius distance along the normals from the connection points
-    const center1 = {
-      x: point1.x + radius * normal1.x,
-      y: point1.y + radius * normal1.y,
+    if (bisectorLen === 0) {
+      throw new Error('Cannot calculate arc center')
     }
 
-    const center2 = {
-      x: point2.x + radius * normal2.x,
-      y: point2.y + radius * normal2.y,
-    }
+    // Normalize bisector
+    const bisectorUnitX = bisectorX / bisectorLen
+    const bisectorUnitY = bisectorY / bisectorLen
 
-    // Average the two centers (they should be very close)
+    // Calculate distance from intersection to arc center along bisector
+    const centerDistance = radius / Math.sin(angle / 2)
+
+    // Arc center is along the bisector
     const arcCenter = {
-      x: (center1.x + center2.x) / 2,
-      y: (center1.y + center2.y) / 2,
+      x: intersection.x + centerDistance * bisectorUnitX,
+      y: intersection.y + centerDistance * bisectorUnitY,
     }
 
     // Calculate start and end angles for the arc
     const startAngle = Math.atan2(point1.y - arcCenter.y, point1.x - arcCenter.x)
     const endAngle = Math.atan2(point2.y - arcCenter.y, point2.x - arcCenter.x)
 
-    // Determine if we need large arc flag and sweep direction
-    let deltaAngle = endAngle - startAngle
-    if (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI
-    if (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI
+    // Determine sweep direction based on cross product
+    const cross = dir1.dx * dir2.dy - dir1.dy * dir2.dx
+    const sweepFlag = cross > 0 ? 0 : 1 // 0 for counter-clockwise, 1 for clockwise
 
-    const largeArcFlag = Math.abs(deltaAngle) > Math.PI ? 1 : 0
-    const sweepFlag = deltaAngle > 0 ? 1 : 0
+    // Create the arc path
+    const pathData = `M ${point1.x} ${point1.y} A ${radius} ${radius} 0 0 ${sweepFlag} ${point2.x} ${point2.y}`
 
-    // Create the arc path using SVG.js
-    const pathData = `M ${point1.x} ${point1.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${point2.x} ${point2.y}`
-    const arcPath = this.editor.draw.path(pathData)
-    arcPath.attr({
-      fill: 'none',
-      stroke: line1.attr('stroke') || 'black',
-      'stroke-width': line1.attr('stroke-width') || 1,
+    // Try to find the correct drawing context
+    let drawContext = null
+    if (this.editor.draw) {
+      drawContext = this.editor.draw
+    } else if (this.editor.svg) {
+      drawContext = this.editor.svg
+    } else if (line1.parent) {
+      drawContext = line1.parent()
+    } else {
+      throw new Error('Cannot find SVG drawing context')
+    }
+
+    const arcPath = drawContext.path(pathData)
+
+    // Inherit all visual styles from line1 (or line2 if line1 doesn't have them)
+    const inheritedStyles = {
+      fill: 'none', // Always no fill for strokes
+      stroke: line1.attr('stroke') || line2.attr('stroke') || '#000000',
+      'stroke-width': line1.attr('stroke-width') || line2.attr('stroke-width') || '1',
+      'stroke-linecap': line1.attr('stroke-linecap') || line2.attr('stroke-linecap') || 'butt',
+      'stroke-linejoin': line1.attr('stroke-linejoin') || line2.attr('stroke-linejoin') || 'miter',
+      'stroke-dasharray': line1.attr('stroke-dasharray') || line2.attr('stroke-dasharray') || 'none',
+      'stroke-dashoffset': line1.attr('stroke-dashoffset') || line2.attr('stroke-dashoffset') || '0',
+      'stroke-opacity': line1.attr('stroke-opacity') || line2.attr('stroke-opacity') || '1',
+      opacity: line1.attr('opacity') || line2.attr('opacity') || '1',
+    }
+
+    // Remove any null/undefined values
+    Object.keys(inheritedStyles).forEach((key) => {
+      if (inheritedStyles[key] === null || inheritedStyles[key] === undefined || inheritedStyles[key] === 'null') {
+        delete inheritedStyles[key]
+      }
     })
 
+    // arcPath.attr(inheritedStyles)
+    arcPath.addClass('newDrawing')
     // Store created arc for undo
     this.createdElements.push(arcPath)
 
     // Trim the lines to the fillet points
-    this.trimLineToPoint(line1, point1, intersection)
-    this.trimLineToPoint(line2, point2, intersection)
+    this.trimLineToPoint(line1, point1, intersection, click1)
+    this.trimLineToPoint(line2, point2, intersection, click2)
   }
 
   // Helper function to trim a line to a specific point
-  trimLineToPoint(line, trimPoint, intersection) {
+  trimLineToPoint(line, trimPoint, intersection, clickPoint) {
     const l = this.getLineEquation(line)
-    const lastClick = this.editor.lastClick
 
     // We need to determine which endpoint is on the same side of the intersection as the click
-    // We'll use the intersection point as a reference and see which endpoint is on the same side as the click
-
     // Calculate vectors from intersection to each endpoint and to the click
     const vecToStart = { x: l.x1 - intersection.x, y: l.y1 - intersection.y }
     const vecToEnd = { x: l.x2 - intersection.x, y: l.y2 - intersection.y }
-    const vecToClick = { x: lastClick.x - intersection.x, y: lastClick.y - intersection.y }
+    const vecToClick = { x: clickPoint.x - intersection.x, y: clickPoint.y - intersection.y }
 
     // Calculate dot products to see which endpoint is more aligned with the click direction
     const dotStart = vecToStart.x * vecToClick.x + vecToStart.y * vecToClick.y
