@@ -1,5 +1,4 @@
 import { Command } from '../Command'
-import arc from '../libs/dxf/src/handlers/entity/arc'
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -235,59 +234,119 @@ class FilletCommand extends Command {
     const [line1, click1] = line1Data
     const [line2, click2] = line2Data
 
-    const intersection = this.getLineIntersection(line1, line2)
-
     // Get line equations
     const l1 = this.getLineEquation(line1)
     const l2 = this.getLineEquation(line2)
 
-    // Find which endpoints to preserve (those closer to click positions)
-    const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
-    const dist1ToEndFromClick = Math.sqrt((click1.x - l1.x2) ** 2 + (click1.y - l1.y2) ** 2)
-    const dist2ToStartFromClick = Math.sqrt((click2.x - l2.x1) ** 2 + (click2.y - l2.y1) ** 2)
-    const dist2ToEndFromClick = Math.sqrt((click2.x - l2.x2) ** 2 + (click2.y - l2.y2) ** 2)
+    // Check if lines are already connected (share an endpoint)
+    let sharedPoint = null
+    let line1FreeEnd = null
+    let line2FreeEnd = null
 
-    // Determine preserved endpoints
-    const preserveStart1 = dist1ToStartFromClick < dist1ToEndFromClick
-    const preserveStart2 = dist2ToStartFromClick < dist2ToEndFromClick
+    const tolerance = 0.001
 
-    // Get vectors FROM intersection TO preserved endpoints (these are the directions to keep)
-    let dir1, dir2
-    if (preserveStart1) {
-      dir1 = { dx: l1.x1 - intersection.x, dy: l1.y1 - intersection.y }
-    } else {
-      dir1 = { dx: l1.x2 - intersection.x, dy: l1.y2 - intersection.y }
+    // Check all possible endpoint connections
+    if (Math.abs(l1.x1 - l2.x1) < tolerance && Math.abs(l1.y1 - l2.y1) < tolerance) {
+      sharedPoint = { x: l1.x1, y: l1.y1 }
+      line1FreeEnd = { x: l1.x2, y: l1.y2 }
+      line2FreeEnd = { x: l2.x2, y: l2.y2 }
+    } else if (Math.abs(l1.x1 - l2.x2) < tolerance && Math.abs(l1.y1 - l2.y2) < tolerance) {
+      sharedPoint = { x: l1.x1, y: l1.y1 }
+      line1FreeEnd = { x: l1.x2, y: l1.y2 }
+      line2FreeEnd = { x: l2.x1, y: l2.y1 }
+    } else if (Math.abs(l1.x2 - l2.x1) < tolerance && Math.abs(l1.y2 - l2.y1) < tolerance) {
+      sharedPoint = { x: l1.x2, y: l1.y2 }
+      line1FreeEnd = { x: l1.x1, y: l1.y1 }
+      line2FreeEnd = { x: l2.x2, y: l2.y2 }
+    } else if (Math.abs(l1.x2 - l2.x2) < tolerance && Math.abs(l1.y2 - l2.y2) < tolerance) {
+      sharedPoint = { x: l1.x2, y: l1.y2 }
+      line1FreeEnd = { x: l1.x1, y: l1.y1 }
+      line2FreeEnd = { x: l2.x1, y: l2.y1 }
     }
 
-    if (preserveStart2) {
-      dir2 = { dx: l2.x1 - intersection.x, dy: l2.y1 - intersection.y }
+    let intersection, dir1, dir2, availableLength1, availableLength2
+
+    if (sharedPoint) {
+      // Lines are connected - use shared point as intersection
+      intersection = sharedPoint
+
+      // Direction vectors FROM intersection TO free ends
+      dir1 = { dx: line1FreeEnd.x - intersection.x, dy: line1FreeEnd.y - intersection.y }
+      dir2 = { dx: line2FreeEnd.x - intersection.x, dy: line2FreeEnd.y - intersection.y }
+
+      availableLength1 = Math.sqrt(dir1.dx * dir1.dx + dir1.dy * dir1.dy)
+      availableLength2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
     } else {
-      dir2 = { dx: l2.x2 - intersection.x, dy: l2.y2 - intersection.y }
+      // Lines are separate - find intersection by extending them
+      intersection = this.getLineIntersection(line1, line2)
+
+      // Find which endpoints to preserve (those closer to click positions)
+      const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
+      const dist1ToEndFromClick = Math.sqrt((click1.x - l1.x2) ** 2 + (click1.y - l1.y2) ** 2)
+      const dist2ToStartFromClick = Math.sqrt((click2.x - l2.x1) ** 2 + (click2.y - l2.y1) ** 2)
+      const dist2ToEndFromClick = Math.sqrt((click2.x - l2.x2) ** 2 + (click2.y - l2.y2) ** 2)
+
+      // Determine preserved endpoints and get their coordinates
+      const preserveStart1 = dist1ToStartFromClick < dist1ToEndFromClick
+      const preserveStart2 = dist2ToStartFromClick < dist2ToEndFromClick
+
+      const preservedPoint1 = preserveStart1 ? { x: l1.x1, y: l1.y1 } : { x: l1.x2, y: l1.y2 }
+      const preservedPoint2 = preserveStart2 ? { x: l2.x1, y: l2.y1 } : { x: l2.x2, y: l2.y2 }
+
+      // Get vectors FROM intersection TO preserved endpoints
+      dir1 = { dx: preservedPoint1.x - intersection.x, dy: preservedPoint1.y - intersection.y }
+      dir2 = { dx: preservedPoint2.x - intersection.x, dy: preservedPoint2.y - intersection.y }
+
+      availableLength1 = Math.sqrt(dir1.dx * dir1.dx + dir1.dy * dir1.dy)
+      availableLength2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
+    }
+
+    if (availableLength1 < tolerance || availableLength2 < tolerance) {
+      throw new Error('Lines are too short for filleting with this radius')
     }
 
     // Normalize directions
-    const len1 = Math.sqrt(dir1.dx * dir1.dx + dir1.dy * dir1.dy)
-    const len2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
-
-    if (len1 === 0 || len2 === 0) {
-      throw new Error('Invalid line configuration')
-    }
-
-    dir1.dx /= len1
-    dir1.dy /= len1
-    dir2.dx /= len2
-    dir2.dy /= len2
+    dir1.dx /= availableLength1
+    dir1.dy /= availableLength1
+    dir2.dx /= availableLength2
+    dir2.dy /= availableLength2
 
     // Calculate angle between the directions
     const dot = dir1.dx * dir2.dx + dir1.dy * dir2.dy
     const angle = Math.acos(Math.max(-1, Math.min(1, dot)))
 
-    if (angle < 0.01 || angle > Math.PI - 0.01) {
-      throw new Error('Lines are too close to parallel or opposite for filleting')
+    if (angle < 0.01) {
+      throw new Error('Lines are too close to parallel for filleting')
+    }
+
+    if (angle > Math.PI - 0.01) {
+      throw new Error('Lines are opposite - cannot create fillet')
     }
 
     // Calculate distance from intersection to tangent points
     const distance = radius / Math.tan(angle / 2)
+
+    // Calculate maximum possible radius based on available line lengths
+    // For a given line length L and angle, max radius R = L * tan(angle/2)
+    const maxRadius1 = availableLength1 * Math.tan(angle / 2)
+    const maxRadius2 = availableLength2 * Math.tan(angle / 2)
+    const maxRadius = Math.min(maxRadius1, maxRadius2)
+
+    // Validate that the radius is not too large (use 95% of max for safety margin)
+    if (radius > maxRadius * 0.95) {
+      throw new Error(
+        `Fillet radius ${radius} is too large. Maximum radius for this configuration is approximately ${(maxRadius * 0.95).toFixed(2)}`
+      )
+    }
+
+    // Additional validation: check if calculated distance exceeds available length
+    if (distance > availableLength1 * 0.98) {
+      throw new Error(`Fillet radius ${radius} requires more length on first line than available`)
+    }
+
+    if (distance > availableLength2 * 0.98) {
+      throw new Error(`Fillet radius ${radius} requires more length on second line than available`)
+    }
 
     // Find tangent points on each line
     const point1 = {
@@ -305,8 +364,8 @@ class FilletCommand extends Command {
     const bisectorY = (dir1.dy + dir2.dy) / 2
     const bisectorLen = Math.sqrt(bisectorX * bisectorX + bisectorY * bisectorY)
 
-    if (bisectorLen === 0) {
-      throw new Error('Cannot calculate arc center')
+    if (bisectorLen < 0.001) {
+      throw new Error('Cannot calculate arc center - lines may be opposite')
     }
 
     // Normalize bisector
@@ -322,9 +381,13 @@ class FilletCommand extends Command {
       y: intersection.y + centerDistance * bisectorUnitY,
     }
 
-    // Calculate start and end angles for the arc
-    const startAngle = Math.atan2(point1.y - arcCenter.y, point1.x - arcCenter.x)
-    const endAngle = Math.atan2(point2.y - arcCenter.y, point2.x - arcCenter.x)
+    // Verify arc center is at correct distance from both tangent points
+    const dist1ToCenter = Math.sqrt((point1.x - arcCenter.x) ** 2 + (point1.y - arcCenter.y) ** 2)
+    const dist2ToCenter = Math.sqrt((point2.x - arcCenter.x) ** 2 + (point2.y - arcCenter.y) ** 2)
+
+    if (Math.abs(dist1ToCenter - radius) > 0.1 || Math.abs(dist2ToCenter - radius) > 0.1) {
+      throw new Error('Geometric calculation error - arc center validation failed')
+    }
 
     // Determine sweep direction based on cross product
     const cross = dir1.dx * dir2.dy - dir1.dy * dir2.dx
@@ -335,8 +398,8 @@ class FilletCommand extends Command {
 
     // Try to find the correct drawing context
     let drawContext = null
-    if (this.editor.draw) {
-      drawContext = this.editor.draw
+    if (this.editor.drawing) {
+      drawContext = this.editor.drawing
     } else if (this.editor.svg) {
       drawContext = this.editor.svg
     } else if (line1.parent) {
@@ -369,12 +432,35 @@ class FilletCommand extends Command {
 
     // arcPath.attr(inheritedStyles)
     arcPath.addClass('newDrawing')
+
     // Store created arc for undo
     this.createdElements.push(arcPath)
 
     // Trim the lines to the fillet points
-    this.trimLineToPoint(line1, point1, intersection, click1)
-    this.trimLineToPoint(line2, point2, intersection, click2)
+    if (sharedPoint) {
+      // For connected lines, trim from shared point to tangent points
+      this.trimConnectedLineToPoint(line1, point1, sharedPoint, line1FreeEnd)
+      this.trimConnectedLineToPoint(line2, point2, sharedPoint, line2FreeEnd)
+    } else {
+      // For separate lines, use original trimming logic
+      this.trimLineToPoint(line1, point1, intersection, click1)
+      this.trimLineToPoint(line2, point2, intersection, click2)
+    }
+  }
+
+  // Helper function to trim connected lines
+  trimConnectedLineToPoint(line, trimPoint, sharedPoint, freeEnd) {
+    // Determine which endpoint is the shared point and trim from there
+    const l = this.getLineEquation(line)
+    const tolerance = 0.001
+
+    if (Math.abs(l.x1 - sharedPoint.x) < tolerance && Math.abs(l.y1 - sharedPoint.y) < tolerance) {
+      // x1,y1 is the shared point, move it to the trim point
+      line.attr({ x1: trimPoint.x, y1: trimPoint.y })
+    } else {
+      // x2,y2 is the shared point, move it to the trim point
+      line.attr({ x2: trimPoint.x, y2: trimPoint.y })
+    }
   }
 
   // Helper function to trim a line to a specific point
@@ -414,6 +500,8 @@ class FilletCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
+    this.editor.signals.inputValue.remove(this.onRadiusParam, this)
+    this.editor.signals.inputValue.remove(this.onRadiusInput, this)
     this.editor.isInteracting = false
     this.editor.selectSingleElement = false
     this.editor.distance = null
