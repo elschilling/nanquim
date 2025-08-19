@@ -218,6 +218,22 @@ function Viewport(editor) {
           )
         } else if (el.type === 'rect') {
           distance = distancePointToRectangleStroke(coordinates, el.node)
+        } else if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength === 0) {
+            distance = Infinity
+          } else {
+            let minDistance = Infinity
+            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
+            for (let i = 0; i <= pathLength; i += step) {
+              const p = el.pointAt(i)
+              const d = calculateDistance(coordinates, p)
+              if (d < minDistance) {
+                minDistance = d
+              }
+            }
+            distance = minDistance
+          }
         }
         if (distance < hoverTreshold) {
           if (!(hoveredElements.length > 0)) {
@@ -299,9 +315,26 @@ function Viewport(editor) {
 
       let isInsideOrIntersecting = false
       if (selectionMode === 'intersect') {
-        // Check if the element's bounding box is completely inside the selection rectangle
-        isInsideOrIntersecting =
-          bbox.x >= rect.x && bbox.y >= rect.y && bbox.x + bbox.width <= rect.x + rect.width && bbox.y + bbox.height <= rect.y + rect.height
+        if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength > 0) {
+            isInsideOrIntersecting = true // Assume it is, until proven otherwise
+            const step = Math.max(1, pathLength / 20)
+            for (let i = 0; i <= pathLength; i += step) {
+              const p = el.pointAt(i)
+              if (!(p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height)) {
+                isInsideOrIntersecting = false
+                break
+              }
+            }
+          } else {
+            isInsideOrIntersecting = false
+          }
+        } else {
+          // Check if the element's bounding box is completely inside the selection rectangle
+          isInsideOrIntersecting =
+            bbox.x >= rect.x && bbox.y >= rect.y && bbox.x + bbox.width <= rect.x + rect.width && bbox.y + bbox.height <= rect.y + rect.height
+        }
       } else if (selectionMode === 'inside') {
         if (el.type === 'line') {
           const line = {
@@ -317,6 +350,30 @@ function Viewport(editor) {
         } else if (el.type === 'polygon') {
           const polygon = el.array().map((point) => ({ x: point[0], y: point[1] }))
           isInsideOrIntersecting = isPolygonIntersectingRect(polygon, rect)
+        } else if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength > 0) {
+            const polyline = []
+            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
+            for (let i = 0; i <= pathLength; i += step) {
+              polyline.push(el.pointAt(i))
+            }
+            // Check if any segment of the polyline intersects the rect
+            for (let i = 0; i < polyline.length - 1; i++) {
+              const line = { x1: polyline[i].x, y1: polyline[i].y, x2: polyline[i + 1].x, y2: polyline[i + 1].y }
+              if (isLineIntersectingRect(line, rect)) {
+                isInsideOrIntersecting = true
+                break
+              }
+            }
+            // If no intersection, check if the path is completely inside
+            if (!isInsideOrIntersecting) {
+              const p = el.pointAt(0)
+              if (p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height) {
+                isInsideOrIntersecting = true
+              }
+            }
+          }
         } else {
           // Fallback to bounding box for other element types
           isInsideOrIntersecting =
