@@ -2,22 +2,22 @@
 
 ## Improve the selection system:
 
-    - Select elements that touches the selection rectangle
-    - Select elements that are inside the selection rectangle
+    - Select elements that touches the selection rectangle x
+    - Select elements that are inside the selection rectangle x
     - Selection handlers for all svg shape types
     - Handlers size constant across zoom levels
     - Allow editing elements with handlers
 
 ## Commands implementation
 
-    - Move
+    - Move x
     - Copy
-    - Rotate
+    - Rotate x
     - Scale
-    - Offset
+    - Offset x
     - Trim
     - Extend
-    - Fillet
+    - Fillet x
     - Explode
     - Mirror
     - Insert image

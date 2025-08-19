@@ -298,9 +298,9 @@ class RotateCommand extends Command {
     const sin = Math.sin(angleRad)
     const cx = centerPoint.x
     const cy = centerPoint.y
+    const angleDeg = angleRad * (180 / Math.PI)
 
-    // Helper function to rotate coordinates in path commands
-    const rotateCoords = (x, y) => {
+    const rotatePoint = (x, y) => {
       const dx = x - cx
       const dy = y - cy
       return {
@@ -309,13 +309,95 @@ class RotateCommand extends Command {
       }
     }
 
-    // Parse and rotate path data from original
-    const rotatedPathData = originalPathData.replace(/([ML])\s*([-\d.]+)\s*,?\s*([-\d.]+)/g, (match, command, x, y) => {
-      const rotated = rotateCoords(parseFloat(x), parseFloat(y))
-      return `${command}${rotated.x.toFixed(2)},${rotated.y.toFixed(2)}`
-    })
+    // Create a temporary path element to parse the original path data.
+    // This avoids any side effects on the actual element and leverages svg.js's parser.
+    const tempPath = pathElement.parent().path(originalPathData)
+    const pathArray = tempPath.array()
+    tempPath.remove()
 
-    pathElement.attr('d', rotatedPathData)
+    const newPathArray = []
+    let lastPoint = { x: 0, y: 0 }
+
+    for (const segment of pathArray) {
+      const newSegment = [...segment]
+      const command = newSegment[0]
+
+      switch (command) {
+        case 'M': {
+          const p = rotatePoint(newSegment[1], newSegment[2])
+          newSegment[1] = p.x
+          newSegment[2] = p.y
+          lastPoint = { x: newSegment[1], y: newSegment[2] }
+          break
+        }
+        case 'L':
+        case 'T': {
+          const p = rotatePoint(newSegment[1], newSegment[2])
+          newSegment[1] = p.x
+          newSegment[2] = p.y
+          lastPoint = { x: newSegment[1], y: newSegment[2] }
+          break
+        }
+        case 'H': {
+          const p = rotatePoint(newSegment[1], lastPoint.y)
+          newSegment[0] = 'L' // Convert H to L
+          newSegment[1] = p.x
+          newSegment[2] = p.y
+          lastPoint = { x: p.x, y: p.y }
+          break
+        }
+        case 'V': {
+          const p = rotatePoint(lastPoint.x, newSegment[1])
+          newSegment[0] = 'L' // Convert V to L
+          newSegment[1] = p.x
+          newSegment[2] = p.y
+          lastPoint = { x: p.x, y: p.y }
+          break
+        }
+        case 'C': {
+          const p1 = rotatePoint(newSegment[1], newSegment[2])
+          newSegment[1] = p1.x
+          newSegment[2] = p1.y
+          const p2 = rotatePoint(newSegment[3], newSegment[4])
+          newSegment[3] = p2.x
+          newSegment[4] = p2.y
+          const p3 = rotatePoint(newSegment[5], newSegment[6])
+          newSegment[5] = p3.x
+          newSegment[6] = p3.y
+          lastPoint = { x: newSegment[5], y: newSegment[6] }
+          break
+        }
+        case 'S':
+        case 'Q': {
+          const p1 = rotatePoint(newSegment[1], newSegment[2])
+          newSegment[1] = p1.x
+          newSegment[2] = p1.y
+          const p2 = rotatePoint(newSegment[3], newSegment[4])
+          newSegment[3] = p2.x
+          newSegment[4] = p2.y
+          lastPoint = { x: newSegment[3], y: newSegment[4] }
+          break
+        }
+        case 'A': {
+          // A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+          newSegment[3] = parseFloat(newSegment[3]) + angleDeg
+          const p = rotatePoint(newSegment[6], newSegment[7])
+          newSegment[6] = p.x
+          newSegment[7] = p.y
+          lastPoint = { x: newSegment[6], y: newSegment[7] }
+          break
+        }
+        case 'Z':
+        case 'z':
+          // No parameters to change
+          break
+        default:
+          console.warn(`Unhandled path command: ${command}. Rotation may be incorrect.`)
+      }
+      newPathArray.push(newSegment)
+    }
+
+    pathElement.plot(newPathArray)
   }
 
   getElementState(element) {
