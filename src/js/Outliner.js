@@ -21,7 +21,7 @@ function Outliner(editor) {
     signals.clearSelection.dispatch()
     editor.selected.forEach((el) => {
       const li = document.getElementById('li' + el.node.id)
-      el.selectize({ deepSelect: true })
+      // el.selectize({ deepSelect: true })
       el.addClass('elementSelected')
       // li.classList.add('outliner-selected')
     })
@@ -33,14 +33,18 @@ function Outliner(editor) {
       li.classList.remove('outliner-selected')
     }
     editor.drawing.children().each((el) => {
-      el.selectize(false, { deepSelect: true })
+      // el.selectize(false, { deepSelect: true })
       el.removeClass('elementSelected')
     })
   })
 
   signals.toogledSelect.add((el) => {
     if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
-      editor.selected.push(el)
+      if (editor.selectSingleElement) {
+        editor.selected = [el]
+      } else {
+        editor.selected.push(el)
+      }
     } else {
       editor.selected = editor.selected.filter((item) => item !== el)
     }

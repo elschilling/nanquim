@@ -1,4 +1,12 @@
-import { distanceFromPointToLine, distanceFromPointToCircle, distancePointToRectangleStroke } from '../utils/calculateDistance'
+import {
+  calculateDistance,
+  distanceFromPointToLine,
+  distanceFromPointToCircle,
+  distancePointToRectangleStroke,
+  calculateDeltaFromBasepoint,
+} from './utils/calculateDistance'
+import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
+import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -7,21 +15,35 @@ function Viewport(editor) {
 
   let hoverTreshold = 0.5
   let hoveredElements = []
-  let isSelecting = false
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
   let GRID_SIZE = 20
   let GRID_SPACING = 1
   let lastMiddleClickTime = 0
   let middleClickCount = 0
-  let isCapturingInput = false
+  let snapTolerance = 50
+  let ghostElements = []
+  let basePoint = null
+  let initialTransforms = new Map()
+  let isGhostingMove = false
+  let isGhostingRotate = false
+  let isGhostingOffset = false
+  let offsetGhostClone = null
+  let offsetDistance = null
+  let centerPoint = null
+  let referencePoint = null
 
-  // signals.clearSelection.add(() => {
-  //   clearSelection(drawing)
-  // })
+  signals.moveGhostingStarted.add(onMoveGhostingStarted)
+  signals.moveGhostingStopped.add(onMoveGhostingStopped)
+
+  signals.rotateGhostingStarted.add(onRotateGhostingStarted)
+  signals.rotateGhostingStopped.add(onRotateGhostingStopped)
+
+  signals.offsetGhostingStarted.add(onOffsetGhostingStarted)
+  signals.offsetGhostingStopped.add(onOffsetGhostingStopped)
+
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
-  // svg.addClass('canvas').panZoom({ zoomFactor, panButton: 1 }).mousemove(handleMove).mousedown(handleClick).click(handleRectSelection)
   svg
     .addClass('canvas')
     .addClass('cartesian')
@@ -33,7 +55,69 @@ function Viewport(editor) {
   drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
   drawAxis(editor.overlays, GRID_SIZE)
   svg.animate(300).viewbox(svg.bbox())
-  // svg.text('test')
+
+  function onMoveGhostingStarted(elements, point) {
+    isGhostingMove = true
+    ghostElements = elements
+    basePoint = point
+    ghostElements.forEach((el) => {
+      initialTransforms.set(el, el.transform())
+    })
+  }
+
+  function onMoveGhostingStopped() {
+    isGhostingMove = false
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    basePoint = null
+    initialTransforms.clear()
+  }
+
+  function onRotateGhostingStarted(elements, cPoint, rPoint) {
+    isGhostingRotate = true
+    ghostElements = elements
+    centerPoint = cPoint
+    referencePoint = rPoint
+    ghostElements.forEach((el) => {
+      initialTransforms.set(el, el.transform())
+    })
+  }
+
+  function onRotateGhostingStopped() {
+    isGhostingRotate = false
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    centerPoint = null
+    referencePoint = null
+    initialTransforms.clear()
+  }
+
+  function onOffsetGhostingStarted(element, distance) {
+    // Create clone ghosts in overlays and track initial transforms
+    console.log('ghost started. ghost element:', element)
+    const el = element[0]
+    initialTransforms.set(el, el.transform())
+    console.log('initial transforms', initialTransforms)
+    ghostElements = el
+    isGhostingOffset = true
+    offsetDistance = distance
+  }
+
+  function onOffsetGhostingStopped() {
+    isGhostingOffset = false
+    if (offsetGhostClone) offsetGhostClone.remove()
+    // Remove ghost clones
+    // ghostElements.remove()
+    ghostElements = []
+    offsetGhostClone = null
+    offsetDistance = null
+  }
 
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
@@ -63,14 +147,59 @@ function Viewport(editor) {
     }
   }
   function handleMove(e) {
-    updateCoordinates(e)
+    clearSnap()
+    if (editor.isSnapping) {
+      if (editor.isDrawing || editor.isInteracting) {
+        checkSnap({ x: e.pageX, y: e.pageY })
+      }
+    }
+    coordinates = svg.point(e.pageX, e.pageY)
+    if (ghostElements.length > 0) {
+      if (isGhostingMove) {
+        let dx = coordinates.x - basePoint.x
+        let dy = coordinates.y - basePoint.y
+        if (editor.distance) {
+          if (editor.ortho) {
+            if (Math.abs(dx) > Math.abs(dy)) {
+              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+            } else {
+              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+            }
+          } else {
+            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+          }
+        }
+        if (editor.ortho) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            dy = 0
+          } else {
+            dx = 0
+          }
+        }
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial).translate(dx, dy)
+        })
+      }
+      if (isGhostingRotate) {
+        let rotationAngle = calculateRotationAngle(centerPoint, referencePoint, coordinates)
+        if (editor.distance) {
+          rotationAngle = editor.distance
+        }
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial)
+          el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+        })
+      }
+    }
+    if (isGhostingOffset) {
+      updateOffsetGhosts(coordinates)
+    }
+    updateCoordinates(coordinates)
     checkHover()
   }
-  function updateCoordinates(e) {
-    coordinates = svg.point(e.pageX, e.pageY)
-    // TODO GRID SNAP TO AVOID THIS
-    coordinates.x = coordinates.x
-    coordinates.y = coordinates.y
+  function updateCoordinates(coordinates) {
     editor.signals.updatedCoordinates.dispatch(coordinates)
   }
   function checkHover() {
@@ -89,6 +218,22 @@ function Viewport(editor) {
           )
         } else if (el.type === 'rect') {
           distance = distancePointToRectangleStroke(coordinates, el.node)
+        } else if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength === 0) {
+            distance = Infinity
+          } else {
+            let minDistance = Infinity
+            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
+            for (let i = 0; i <= pathLength; i += step) {
+              const p = el.pointAt(i)
+              const d = calculateDistance(coordinates, p)
+              if (d < minDistance) {
+                minDistance = d
+              }
+            }
+            distance = minDistance
+          }
         }
         if (distance < hoverTreshold) {
           if (!(hoveredElements.length > 0)) {
@@ -103,18 +248,39 @@ function Viewport(editor) {
     }
   }
   function handleMousedown(e) {
+    if (editor.isInteracting) {
+      const point = svg.point(e.pageX, e.pageY)
+      if (editor.snapPoint) {
+        signals.pointCaptured.dispatch(editor.snapPoint)
+      } else {
+        signals.pointCaptured.dispatch(point)
+      }
+      if (editor.selectSingleElement) {
+        if (hoveredElements.length > 0) {
+          editor.lastClick = point
+          signals.toogledSelect.dispatch(hoveredElements[0])
+        }
+      }
+      return
+    }
+
     if (e.button === 1) {
       // check middle click
       handleMiddleClick()
     } else {
-      if (hoveredElements.length > 0) signals.toogledSelect.dispatch(hoveredElements[0])
-      else handleRectSelection(e)
+      console.log('hoveredElements', hoveredElements)
+      if (hoveredElements.length > 0) {
+        signals.toogledSelect.dispatch(hoveredElements[0])
+      } else {
+        if (!editor.selectSingleElement) handleRectSelection(e)
+      }
     }
   }
   function handleRectSelection(e) {
     e.preventDefault()
     e.stopImmediatePropagation()
     if (!editor.isDrawing) {
+      const startX = coordinates.x
       editor.isDrawing = true
       svg.click(null)
       svg
@@ -127,10 +293,12 @@ function Viewport(editor) {
           rect.y = e.target.y.baseVal.value
           rect.width = e.target.width.baseVal.value
           rect.height = e.target.height.baseVal.value
-          if (!(rect.x + rect.width >= coordinates.x)) e.srcElement.classList.add('selectionRectangleRight')
-          else {
+          if (coordinates.x < startX) {
+            e.srcElement.classList.add('selectionRectangleRight')
+            findElements(rect, 'intersect')
+          } else {
             e.target.classList.remove('selectionRectangleRight')
-            findElementsWithinRect(svg, rect)
+            findElements(rect, 'inside')
           }
         })
         .on('drawstop', (e) => {
@@ -140,16 +308,84 @@ function Viewport(editor) {
         })
     }
   }
-  function findElementsWithinRect(svg, rect) {
+
+  function findElements(rect, selectionMode) {
     drawing.children().each((el) => {
       const bbox = el.bbox()
 
-      // Check if the element's bounding box intersects or is contained within the selection rectangle
-      const intersects =
-        bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
-      if (intersects) {
+      let isInsideOrIntersecting = false
+      if (selectionMode === 'intersect') {
+        if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength > 0) {
+            isInsideOrIntersecting = true // Assume it is, until proven otherwise
+            const step = Math.max(1, pathLength / 20)
+            for (let i = 0; i <= pathLength; i += step) {
+              const p = el.pointAt(i)
+              if (!(p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height)) {
+                isInsideOrIntersecting = false
+                break
+              }
+            }
+          } else {
+            isInsideOrIntersecting = false
+          }
+        } else {
+          // Check if the element's bounding box is completely inside the selection rectangle
+          isInsideOrIntersecting =
+            bbox.x >= rect.x && bbox.y >= rect.y && bbox.x + bbox.width <= rect.x + rect.width && bbox.y + bbox.height <= rect.y + rect.height
+        }
+      } else if (selectionMode === 'inside') {
+        if (el.type === 'line') {
+          const line = {
+            x1: el.node.x1.baseVal.value,
+            y1: el.node.y1.baseVal.value,
+            x2: el.node.x2.baseVal.value,
+            y2: el.node.y2.baseVal.value,
+          }
+          isInsideOrIntersecting = isLineIntersectingRect(line, rect)
+        } else if (el.type === 'circle') {
+          const circle = { cx: el.node.cx.baseVal.value, cy: el.node.cy.baseVal.value, r: el.node.r.baseVal.value }
+          isInsideOrIntersecting = isCircleIntersectingRect(circle, rect)
+        } else if (el.type === 'polygon') {
+          const polygon = el.array().map((point) => ({ x: point[0], y: point[1] }))
+          isInsideOrIntersecting = isPolygonIntersectingRect(polygon, rect)
+        } else if (el.type === 'path') {
+          const pathLength = el.length()
+          if (pathLength > 0) {
+            const polyline = []
+            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
+            for (let i = 0; i <= pathLength; i += step) {
+              polyline.push(el.pointAt(i))
+            }
+            // Check if any segment of the polyline intersects the rect
+            for (let i = 0; i < polyline.length - 1; i++) {
+              const line = { x1: polyline[i].x, y1: polyline[i].y, x2: polyline[i + 1].x, y2: polyline[i + 1].y }
+              if (isLineIntersectingRect(line, rect)) {
+                isInsideOrIntersecting = true
+                break
+              }
+            }
+            // If no intersection, check if the path is completely inside
+            if (!isInsideOrIntersecting) {
+              const p = el.pointAt(0)
+              if (p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height) {
+                isInsideOrIntersecting = true
+              }
+            }
+          }
+        } else {
+          // Fallback to bounding box for other element types
+          isInsideOrIntersecting =
+            bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
+        }
+      }
+
+      if (isInsideOrIntersecting) {
         el.addClass('elementHover')
-        if (!hoveredElements.map((item) => item.node.id).includes(el.node.id)) {
+
+        // Check if element is already in hoveredElements using direct reference comparison
+        if (!hoveredElements.includes(el)) {
           hoveredElements.push(el)
         }
       } else {
@@ -160,23 +396,20 @@ function Viewport(editor) {
   }
 
   function selectHovered() {
+    console.log('hovered', hoveredElements)
     hoveredElements.forEach((el) => {
-      editor.selected.push(el)
-      editor.signals.updatedSelection.dispatch()
-      // el.selectize({ deepSelect: true })
-      // el.attr('selected', true)
-      // el.addClass('elementSelected')
+      // Check if element is already selected before adding it
+      if (!editor.selected.includes(el)) {
+        editor.selected.push(el)
+        console.log('Added element to selection:', el.type)
+      } else {
+        console.log('Element already selected, skipping:', el.type)
+      }
     })
-  }
-  function toogleSelect(el) {
-    if (el.attr('selected') === 'true') {
-      el.selectize(false, { deepSelect: true })
-      el.attr('selected', false)
-      el.removeClass('elementSelected')
-    } else {
-      el.selectize({ deepSelect: true })
-      el.attr('selected', true)
-      el.addClass('elementSelected')
+
+    // Only dispatch the signal once after all elements are processed
+    if (hoveredElements.length > 0) {
+      editor.signals.updatedSelection.dispatch()
     }
   }
   function handleMiddleClick() {
@@ -192,6 +425,109 @@ function Viewport(editor) {
       middleClickCount = 1
     }
     lastMiddleClickTime = currentTime
+  }
+
+  function checkSnap(coordinates) {
+    let targets = []
+    let snapCandidates = svg.find('.newDrawing')
+    if (editor.isDrawing) {
+      snapCandidates.pop()
+    }
+    // console.log('snapCandidates', snapCandidates)
+    snapCandidates.forEach((el) => {
+      // TO DO: Add other types
+      if (el.type === 'line') {
+        el.array().forEach((pointArr) => {
+          let worldPoint = { x: pointArr[0], y: pointArr[1] }
+          let screenPoint = worldToScreen(worldPoint, editor.svg)
+          targets.push(screenPoint)
+        })
+      }
+    })
+    let closest
+    let minDistance = Infinity
+    for (let target of targets) {
+      const distance = calculateDistance(coordinates, target)
+      if (distance < snapTolerance && distance < minDistance) {
+        minDistance = distance
+        closest = target
+        // console.log('distance', distance)
+      }
+    }
+    const currentZoom = editor.svg.zoom()
+    if (closest) {
+      let closestWorld = svg.point(closest.x, closest.y)
+      drawSnap(closestWorld, currentZoom, editor.snap)
+      editor.snapPoint = closestWorld
+    } else {
+      editor.snapPoint = null
+    }
+  }
+
+  // Update offset ghosts: translate for lines/paths, resize for circles/rects
+  function updateOffsetGhosts(point) {
+    if (ghostElements) {
+      if (!offsetGhostClone) {
+        offsetGhostClone = ghostElements.clone()
+        offsetGhostClone.putIn(editor.drawing)
+      }
+
+      // For circles/rects, resize instead of translate
+      if (ghostElements.type === 'circle') {
+        offsetGhostClone.transform({}) // Reset transform
+        const cx = ghostElements.cx()
+        const cy = ghostElements.cy()
+        const r = ghostElements.radius ? ghostElements.radius() : ghostElements.attr('r')
+        const dx = point.x - cx
+        const dy = point.y - cy
+        const dist = Math.hypot(dx, dy)
+        const inward = dist < (typeof r === 'number' ? r : parseFloat(r))
+        const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -offsetDistance : offsetDistance))
+        offsetGhostClone.center(cx, cy)
+        if (offsetGhostClone.radius) offsetGhostClone.radius(newR)
+        else offsetGhostClone.attr('r', newR)
+      } else if (ghostElements.type === 'rect') {
+        offsetGhostClone.transform({}) // Reset transform
+        const x = ghostElements.x()
+        const y = ghostElements.y()
+        const w = ghostElements.width()
+        const h = ghostElements.height()
+        const cx = x + w / 2
+        const cy = y + h / 2
+        const inside = point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h
+        const delta = inside ? -offsetDistance : offsetDistance
+        const newW = Math.max(0, w + 2 * delta)
+        const newH = Math.max(0, h + 2 * delta)
+        const newX = cx - newW / 2
+        const newY = cy - newH / 2
+        offsetGhostClone.size(newW, newH)
+        offsetGhostClone.move(newX, newY)
+      } else {
+        const initial = initialTransforms.get(ghostElements)
+        offsetGhostClone.transform(initial || {}) // Reset to initial
+        // Compute offset direction relative to the selected element and click position
+        const { dx, dy } = computeOffsetVector(ghostElements, point, offsetDistance)
+        offsetGhostClone.translate(dx, dy)
+      }
+    }
+  }
+}
+
+function drawSnap(point, zoom, svg) {
+  const snapSquareScreenSize = 20
+  const currentZoom = zoom && zoom ? zoom : 1
+  const snapSquareWorldSize = snapSquareScreenSize / currentZoom
+  const strokeWorldUnits = 1 / currentZoom
+  svg
+    .rect(snapSquareWorldSize, snapSquareWorldSize)
+    .center(point.x, point.y)
+    .fill('none')
+    .stroke({ color: 'blue', width: strokeWorldUnits })
+}
+
+function clearSnap() {
+  if (editor.snap) {
+    editor.snap.clear()
   }
 }
 
@@ -252,7 +588,49 @@ function handleToogleOrtho() {
   }
   editor.svg.fire('orthoChange')
 }
+
+function handleToogleSnap() {
+  let snapButton = document.getElementsByClassName('icon-snap-off')[0]
+  if (snapButton.classList.contains('is-active')) {
+    snapButton.classList.remove('is-active')
+    editor.isSnapping = false
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap OFF' })
+  } else {
+    snapButton.classList.add('is-active')
+    editor.isSnapping = true
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap ON' })
+  }
+}
+
+/**
+ * Converts a point from SVG world coordinates to screen coordinates using svg.js helpers.
+ * @param {object} worldPoint - The point in world space { x, y }.
+ * @param {SVG.Svg} svgCanvas - The main svg.js canvas element.
+ * @returns {object} The converted point in screen space { x, y }.
+ */
+function worldToScreen(worldPoint, svgCanvas) {
+  // Get the screen transformation matrix from the canvas
+  const matrix = svgCanvas.screenCTM()
+
+  // Create an svg.js point and apply the transformation
+  const screenPoint = new SVG.Point(worldPoint).transform(matrix)
+
+  return { x: screenPoint.x, y: screenPoint.y }
+}
+function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
+  const vec1 = { x: referencePoint.x - centerPoint.x, y: referencePoint.y - centerPoint.y }
+  const vec2 = { x: targetPoint.x - centerPoint.x, y: targetPoint.y - centerPoint.y }
+
+  // Use atan2 of the cross product and dot product to get the signed angle
+  const dot = vec1.x * vec2.x + vec1.y * vec2.y
+  const cross = vec1.x * vec2.y - vec1.y * vec2.x
+  const angleRad = Math.atan2(cross, dot)
+  const angleDegrees = angleRad * (180 / Math.PI)
+  return angleDegrees
+}
+
 window.handleToogleOverlay = handleToogleOverlay
 window.handleToogleOrtho = handleToogleOrtho
+window.handleToogleSnap = handleToogleSnap
 window.menuOverlay = menuOverlay
 export { Viewport }

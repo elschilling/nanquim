@@ -1,5 +1,5 @@
 import { History as _History } from './History'
-import { DXFLoader } from '../utils/DXFloader'
+import { DXFLoader } from './utils/DXFloader'
 
 function Editor() {
   const Signal = signals.Signal
@@ -12,6 +12,14 @@ function Editor() {
     clearSelection: new Signal(),
     toogledSelect: new Signal(),
     updatedProperties: new Signal(),
+    pointCaptured: new Signal(),
+    moveGhostingStarted: new Signal(),
+    moveGhostingStopped: new Signal(),
+    rotateGhostingStarted: new Signal(),
+    rotateGhostingStopped: new Signal(),
+    offsetGhostingStarted: new Signal(),
+    offsetGhostingStopped: new Signal(),
+    inputValue: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -20,14 +28,28 @@ function Editor() {
   this.overlays.attr('id', 'Overlays')
   this.handlers = this.overlays.group()
   this.handlers.attr('id', 'Handlers')
+  this.snap = this.svg.group()
+  this.snap.attr('id', 'Snap')
   this.drawing = this.svg.group()
   this.drawing.attr('id', 'Collection')
   this.isDrawing = false
+  this.isInteracting = false
+  this.selectSingleElement = false
+  this.isSnapping = false
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)
   this.orthomode = true
   this.length = null
+  this.distance = null
+  this.offsetDX = null
+  this.offsetDY = null
+  this.snapPoint = null
+  this.lastCommand = null
+  this.lastClick = null
+  this.cmdParams = {
+    filletRadius: 0,
+  }
 }
 
 Editor.prototype = {

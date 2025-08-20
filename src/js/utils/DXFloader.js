@@ -1,4 +1,4 @@
-import * as Helper from '../js/libs/dxf/src/Helper'
+import * as Helper from '../libs/dxf/src/Helper'
 
 function DXFLoader(editor) {
   this.loadFile = function (file) {

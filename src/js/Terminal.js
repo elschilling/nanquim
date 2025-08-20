@@ -33,8 +33,20 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
-    // console.log(e)
-    if ((!editor.isDrawing && e.code === 'Space') || e.code === 'Enter' || e.code === 'NumpadEnter') {
+    console.log('editor.lastCommand', editor.lastCommand)
+    console.log('editor.isDrawing', editor.isDrawing)
+    console.log('editor.isInteracting', editor.isInteracting)
+    if (!editor.isDrawing && !editor.isInteracting && e.code === 'Space' && terminalInput.value.trim() === '') {
+      // const lastCommand = editor.history.undos[editor.history.undos.length - 1]
+      if (editor.lastCommand) {
+        console.log('call last command')
+        editor.lastCommand.execute()
+      }
+    } else if (
+      (!editor.isDrawing && !editor.isInteracting && e.code === 'Space') ||
+      (!editor.isDrawing && !editor.isInteracting && e.code === 'Enter') ||
+      e.code === 'NumpadEnter'
+    ) {
       const typedCommand = terminalInput.value.trim().toLowerCase()
 
       for (const [command, { execute, aliases }] of Object.entries(commands)) {
@@ -49,6 +61,7 @@ function Terminal(editor) {
       // If no matching command or alias found
       console.log('Command not found')
     } else if (e.code === 'Escape') {
+      console.log('Escape')
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
       signals.clearSelection.dispatch()
@@ -56,6 +69,8 @@ function Terminal(editor) {
       signals.updatedProperties.dispatch()
     } else if (e.code === 'F8') {
       handleToogleOrtho()
+    } else if (e.code === 'F9') {
+      handleToogleSnap()
     } else if (e.code === 'Delete') {
       const element = editor.selected[0]
       if (element === null) return
@@ -68,9 +83,21 @@ function Terminal(editor) {
     } else if (editor.isDrawing) {
       if (isNumericString(terminalInput.value.trim())) {
         if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-          console.log('editor.isDrawing true')
           editor.length = terminalInput.value
           editor.svg.fire('valueInput')
+          terminalText.value = ''
+        }
+      }
+    } else if (editor.isInteracting) {
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        if (isNumericString(terminalInput.value.trim())) {
+          console.log('distance input', terminalInput.value)
+          editor.distance = terminalInput.value
+          editor.signals.inputValue.dispatch(terminalInput.value)
+          terminalText.value = ''
+        } else {
+          console.log('command params', terminalInput.value)
+          editor.signals.inputValue.dispatch(terminalInput.value)
           terminalText.value = ''
         }
       }
