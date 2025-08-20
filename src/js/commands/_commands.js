@@ -2,6 +2,7 @@ import { drawLineCommand } from './DrawLineCommand'
 import { drawCircleCommand } from './DrawCircleCommand'
 import { drawRectangleCommand } from './DrawRectangleCommand'
 import { moveCommand } from './MoveCommand'
+import { copyCommand } from './CopyCommand'
 import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
@@ -23,6 +24,10 @@ const commands = {
   MOVE: {
     execute: moveCommand,
     aliases: ['m'],
+  },
+  COPY: {
+    execute: copyCommand,
+    aliases: ['co'],
   },
   ROTATE: {
     execute: rotateCommand,
