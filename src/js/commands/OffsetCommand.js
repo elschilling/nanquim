@@ -18,19 +18,28 @@ class OffsetCommand extends Command {
 
   execute() {
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
-    this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Enter a distance to offset` })
+    const lastDistance = this.editor.lastOffsetDistance || 10 // Default to 10 if not set
+    this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Enter a distance to offset <${lastDistance}>:` })
     this.editor.isInteracting = true
     this.editor.signals.inputValue.addOnce(this.onDistanceInput, this)
     document.addEventListener('keydown', this.boundOnKeyDown)
   }
 
   onDistanceInput() {
-    const d = parseFloat(this.editor.distance)
+    let d
+    // If user input is empty, use the last distance.
+    if (this.editor.distance === null || String(this.editor.distance).trim() === '') {
+      d = this.editor.lastOffsetDistance || 10
+    } else {
+      d = parseFloat(this.editor.distance)
+    }
+
     if (isNaN(d) || d <= 0) {
       this.editor.signals.terminalLogged.dispatch({ msg: 'Invalid distance. Command cancelled.' })
       return this.cleanup()
     }
     this.distance = d
+    this.editor.lastOffsetDistance = d // Remember this distance
     this.editor.signals.terminalLogged.dispatch({ msg: `Offset distance: ${this.distance}. Select one element.` })
     this.startSelection()
   }
@@ -56,7 +65,6 @@ class OffsetCommand extends Command {
   }
 
   onConfirmPoint(point) {
-    console.log('onConfirmPoint', point)
     if (!this.selectedElement) return this.cleanup()
 
     const clone = this.selectedElement.clone()
@@ -113,13 +121,13 @@ class OffsetCommand extends Command {
 
     // Stop ghosting for this element and allow another selection
     this.editor.signals.offsetGhostingStopped.dispatch()
-    this.selectedElement = null
-    this.editor.isInteracting = false
-    this.editor.selectSingleElement = false
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element.` })
 
-    // Allow multiple offsets with same distance
-    this.startSelection()
+    // Finish the command
+    this.cleanup()
+    this.editor.selected = []
+    this.editor.signals.clearSelection.dispatch()
+    this.editor.lastCommand = new OffsetCommand(this.editor)
   }
 
   onKeyDown(e) {

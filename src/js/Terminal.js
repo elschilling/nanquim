@@ -33,10 +33,13 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
-    // console.log(e)
+    console.log('editor.lastCommand', editor.lastCommand)
+    console.log('editor.isDrawing', editor.isDrawing)
+    console.log('editor.isInteracting', editor.isInteracting)
     if (!editor.isDrawing && !editor.isInteracting && e.code === 'Space' && terminalInput.value.trim() === '') {
       // const lastCommand = editor.history.undos[editor.history.undos.length - 1]
       if (editor.lastCommand) {
+        console.log('call last command')
         editor.lastCommand.execute()
       }
     } else if (
@@ -58,6 +61,7 @@ function Terminal(editor) {
       // If no matching command or alias found
       console.log('Command not found')
     } else if (e.code === 'Escape') {
+      console.log('Escape')
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
       signals.clearSelection.dispatch()

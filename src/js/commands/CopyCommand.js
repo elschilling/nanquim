@@ -9,9 +9,13 @@ class CopyCommand extends Command {
     // Store bound function reference for proper cleanup
     this.boundOnKeyDown = this.onKeyDown.bind(this)
     this.copiedElements = []
+    this.interactiveExecutionDone = false
   }
 
   execute() {
+    if (this.interactiveExecutionDone) {
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
@@ -113,11 +117,12 @@ class CopyCommand extends Command {
     this.editor.isInteracting = false
 
     this.editor.signals.clearSelection.dispatch()
-    // this.editor.selected = this.copiedElements.slice()
+    this.editor.selected = []
     // this.editor.signals.updatedSelection.dispatch()
 
+    this.interactiveExecutionDone = true
     this.editor.execute(this)
-    this.editor.lastCommand = this
+    this.editor.lastCommand = new CopyCommand(this.editor)
     this.editor.distance = null
   }
 

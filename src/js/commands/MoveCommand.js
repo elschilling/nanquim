@@ -8,9 +8,13 @@ class MoveCommand extends Command {
     this.name = 'Move'
     // Store bound function reference for proper cleanup
     this.boundOnKeyDown = this.onKeyDown.bind(this)
+    this.interactiveExecutionDone = false
   }
 
   execute() {
+    if (this.interactiveExecutionDone) {
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
@@ -66,13 +70,13 @@ class MoveCommand extends Command {
         if (Math.abs(dx) > Math.abs(dy)) {
           ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
         } else {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, editor.distance))
+          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, this.editor.distance))
         }
       } else {
-        ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, editor.distance))
+        ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, this.editor.distance))
       }
     }
-    if (editor.ortho) {
+    if (this.editor.ortho) {
       if (Math.abs(dx) > Math.abs(dy)) {
         dy = 0
       } else {
@@ -137,8 +141,9 @@ class MoveCommand extends Command {
     this.selectedElements = this.editor.selected
     this.editor.signals.clearSelection.dispatch()
     this.editor.selected = []
+    this.interactiveExecutionDone = true
     this.editor.execute(this)
-    this.editor.lastCommand = this
+    this.editor.lastCommand = new MoveCommand(this.editor)
   }
 
   undo() {
