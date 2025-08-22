@@ -6,6 +6,7 @@ import { copyCommand } from './CopyCommand'
 import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
+import { scaleCommand } from './ScaleCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -32,6 +33,10 @@ const commands = {
   ROTATE: {
     execute: rotateCommand,
     aliases: ['r'],
+  },
+  SCALE: {
+    execute: scaleCommand,
+    aliases: ['s'],
   },
   OFFSET: {
     execute: offsetCommand,
