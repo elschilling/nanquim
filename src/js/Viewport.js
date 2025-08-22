@@ -28,6 +28,7 @@ function Viewport(editor) {
   let isGhostingMove = false
   let isGhostingRotate = false
   let isGhostingOffset = false
+  let isGhostingScale = false
   let offsetGhostClone = null
   let offsetDistance = null
   let centerPoint = null
@@ -35,6 +36,9 @@ function Viewport(editor) {
 
   signals.moveGhostingStarted.add(onMoveGhostingStarted)
   signals.moveGhostingStopped.add(onMoveGhostingStopped)
+
+  signals.scaleGhostingStarted.add(onScaleGhostingStarted)
+  signals.scaleGhostingStopped.add(onScaleGhostingStopped)
 
   signals.rotateGhostingStarted.add(onRotateGhostingStarted)
   signals.rotateGhostingStopped.add(onRotateGhostingStopped)
@@ -67,6 +71,26 @@ function Viewport(editor) {
 
   function onMoveGhostingStopped() {
     isGhostingMove = false
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    basePoint = null
+    initialTransforms.clear()
+  }
+
+  function onScaleGhostingStarted(elements, point) {
+    isGhostingScale = true
+    ghostElements = elements
+    basePoint = point
+    ghostElements.forEach((el) => {
+      initialTransforms.set(el, el.transform())
+    })
+  }
+
+  function onScaleGhostingStopped() {
+    isGhostingScale = false
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
       el.transform(initial)
@@ -190,6 +214,18 @@ function Viewport(editor) {
           const initial = initialTransforms.get(el)
           el.transform(initial)
           el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+        })
+      }
+      if (isGhostingScale) {
+        const dist = calculateDistance(basePoint, coordinates)
+        let scaleFactor = dist
+        if (editor.distance) {
+          scaleFactor = editor.distance
+        }
+
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial).scale(scaleFactor, scaleFactor, basePoint.x, basePoint.y)
         })
       }
     }
@@ -333,7 +369,10 @@ function Viewport(editor) {
         } else {
           // Check if the element's bounding box is completely inside the selection rectangle
           isInsideOrIntersecting =
-            bbox.x >= rect.x && bbox.y >= rect.y && bbox.x + bbox.width <= rect.x + rect.width && bbox.y + bbox.height <= rect.y + rect.height
+            bbox.x >= rect.x &&
+            bbox.y >= rect.y &&
+            bbox.x + bbox.width <= rect.x + rect.width &&
+            bbox.y + bbox.height <= rect.y + rect.height
         }
       } else if (selectionMode === 'inside') {
         if (el.type === 'line') {

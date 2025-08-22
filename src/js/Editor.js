@@ -19,6 +19,8 @@ function Editor() {
     rotateGhostingStopped: new Signal(),
     offsetGhostingStarted: new Signal(),
     offsetGhostingStopped: new Signal(),
+    scaleGhostingStarted: new Signal(),
+    scaleGhostingStopped: new Signal(),
     inputValue: new Signal(),
   }
   this.history = new _History(this)
