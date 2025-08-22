@@ -91,6 +91,13 @@ function Viewport(editor) {
 
   function onScaleGhostingStopped() {
     isGhostingScale = false
+    ghostElements.forEach((el) => {
+      const initial = initialTransforms.get(el)
+      el.transform(initial)
+    })
+    ghostElements = []
+    basePoint = null
+    initialTransforms.clear()
   }
 
   function onRotateGhostingStarted(elements, cPoint, rPoint) {
@@ -210,7 +217,16 @@ function Viewport(editor) {
         })
       }
       if (isGhostingScale) {
-        // implement scale ghosting logic
+        const dist = calculateDistance(basePoint, coordinates)
+        let scaleFactor = dist
+        if (editor.distance) {
+          scaleFactor = editor.distance
+        }
+
+        ghostElements.forEach((el) => {
+          const initial = initialTransforms.get(el)
+          el.transform(initial).scale(scaleFactor, scaleFactor, basePoint.x, basePoint.y)
+        })
       }
     }
     if (isGhostingOffset) {
