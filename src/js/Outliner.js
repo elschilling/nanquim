@@ -39,10 +39,44 @@ function Outliner(editor) {
     const handlerScreenSize = 16 // pixels on screen
     const handlerWorldSize = handlerScreenSize / currentZoom
 
+    // Helper to find all selected vertices at a given position
+    function getCoincidentVertices(x, y) {
+      const vertices = []
+      editor.selected.forEach((s) => {
+        if (s.type === 'line') {
+          const sx1 = s.node.x1.baseVal.value
+          const sy1 = s.node.y1.baseVal.value
+          const sx2 = s.node.x2.baseVal.value
+          const sy2 = s.node.y2.baseVal.value
+
+          if (Math.abs(sx1 - x) < 0.001 && Math.abs(sy1 - y) < 0.001) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
+          }
+          if (Math.abs(sx2 - x) < 0.001 && Math.abs(sy2 - y) < 0.001) {
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
+          }
+        } else if (s.type === 'circle') {
+          const cx = s.node.cx.baseVal.value
+          const cy = s.node.cy.baseVal.value
+          const r = s.node.r.baseVal.value
+
+          // Check Center
+          if (Math.abs(cx - x) < 0.001 && Math.abs(cy - y) < 0.001) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
+          }
+          // Check Quadrants (approximation for exact float matches might be needed, but handlers are drawn at exact calc points)
+          if (Math.abs(cx - x) < 0.001 && Math.abs((cy - r) - y) < 0.001) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
+          if (Math.abs((cx + r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
+          if (Math.abs(cx - x) < 0.001 && Math.abs((cy + r) - y) < 0.001) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
+          if (Math.abs((cx - r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+        }
+      })
+      return vertices
+    }
+
     // Draw handlers for each selected element
     editor.selected.forEach((el) => {
       if (el.type === 'line') {
-        // Get line endpoints
         const x1 = el.node.x1.baseVal.value
         const y1 = el.node.y1.baseVal.value
         const x2 = el.node.x2.baseVal.value
@@ -55,26 +89,7 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            const vertices = []
-            // Find all selected lines with a vertex at (x1, y1)
-            editor.selected.forEach((s) => {
-              if (s.type === 'line') {
-                const sx1 = s.node.x1.baseVal.value
-                const sy1 = s.node.y1.baseVal.value
-                const sx2 = s.node.x2.baseVal.value
-                const sy2 = s.node.y2.baseVal.value
-
-                // Check first vertex
-                if (Math.abs(sx1 - x1) < 0.001 && Math.abs(sy1 - y1) < 0.001) {
-                  vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
-                }
-                // Check second vertex
-                if (Math.abs(sx2 - x1) < 0.001 && Math.abs(sy2 - y1) < 0.001) {
-                  vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
-                }
-              }
-            })
-            signals.vertexEditStarted.dispatch(vertices)
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(x1, y1))
           })
 
         // Draw handler at second vertex
@@ -84,27 +99,9 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            const vertices = []
-            // Find all selected lines with a vertex at (x2, y2)
-            editor.selected.forEach((s) => {
-              if (s.type === 'line') {
-                const sx1 = s.node.x1.baseVal.value
-                const sy1 = s.node.y1.baseVal.value
-                const sx2 = s.node.x2.baseVal.value
-                const sy2 = s.node.y2.baseVal.value
-
-                // Check first vertex
-                if (Math.abs(sx1 - x2) < 0.001 && Math.abs(sy1 - y2) < 0.001) {
-                  vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
-                }
-                // Check second vertex
-                if (Math.abs(sx2 - x2) < 0.001 && Math.abs(sy2 - y2) < 0.001) {
-                  vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
-                }
-              }
-            })
-            signals.vertexEditStarted.dispatch(vertices)
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(x2, y2))
           })
+
       } else if (el.type === 'circle') {
         const cx = el.node.cx.baseVal.value
         const cy = el.node.cy.baseVal.value
@@ -125,8 +122,7 @@ function Outliner(editor) {
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              const vertices = [{ element: el, vertexIndex: p.index, originalPosition: { cx, cy, r } }]
-              signals.vertexEditStarted.dispatch(vertices)
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
             })
         })
       }

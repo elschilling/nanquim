@@ -607,6 +607,22 @@ function Viewport(editor) {
           let screenPoint = worldToScreen(worldPoint, editor.svg)
           targets.push(screenPoint)
         })
+      } else if (el.type === 'circle') {
+        const cx = el.node.cx.baseVal.value
+        const cy = el.node.cy.baseVal.value
+        const r = el.node.r.baseVal.value
+
+        const points = [
+          { x: cx, y: cy },
+          { x: cx, y: cy - r },
+          { x: cx + r, y: cy },
+          { x: cx, y: cy + r },
+          { x: cx - r, y: cy }
+        ]
+
+        points.forEach(p => {
+          targets.push(worldToScreen(p, editor.svg))
+        })
       }
     })
     let closest
@@ -682,12 +698,12 @@ function drawSnap(point, zoom, svg) {
   const snapSquareScreenSize = 20
   const currentZoom = zoom && zoom ? zoom : 1
   const snapSquareWorldSize = snapSquareScreenSize / currentZoom
-  const strokeWorldUnits = 1 / currentZoom
+  const strokeWorldUnits = 3 / currentZoom
   svg
     .rect(snapSquareWorldSize, snapSquareWorldSize)
     .center(point.x, point.y)
     .fill('none')
-    .stroke({ color: 'blue', width: strokeWorldUnits })
+    .stroke({ color: 'hsl(217, 47%, 55%)', width: strokeWorldUnits })
 }
 
 function clearSnap() {
