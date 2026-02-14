@@ -146,21 +146,17 @@ function Viewport(editor) {
     offsetDistance = null
   }
 
-  function onVertexEditStarted(element, vertexIndex, x, y) {
+  function onVertexEditStarted(vertices) {
     editor.isEditingVertex = true
-    editor.editingElement = element
-    editor.editingVertexIndex = vertexIndex
-    editor.originalVertexPosition = { x, y }
+    editor.editingVertices = vertices
     editor.handlers.addClass('handlers-editing')
-    console.log('Vertex edit started:', vertexIndex, 'at', x, y)
+    console.log('Vertex edit started for', vertices.length, 'vertices')
   }
 
   function onVertexEditStopped() {
     editor.handlers.removeClass('handlers-editing')
     editor.isEditingVertex = false
-    editor.editingElement = null
-    editor.editingVertexIndex = null
-    editor.originalVertexPosition = null
+    editor.editingVertices = []
     console.log('Vertex edit stopped')
   }
 
@@ -254,18 +250,22 @@ function Viewport(editor) {
       updateOffsetGhosts(coordinates)
     }
     // Handle vertex editing
+    // Handle vertex editing
     if (editor.isEditingVertex) {
       const point = editor.snapPoint || coordinates
-      const element = editor.editingElement
-      const vertexIndex = editor.editingVertexIndex
 
-      if (vertexIndex === 0) {
-        // Update first vertex
-        element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-      } else {
-        // Update second vertex
-        element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
-      }
+      editor.editingVertices.forEach(vertexData => {
+        const element = vertexData.element
+        const vertexIndex = vertexData.vertexIndex
+
+        if (vertexIndex === 0) {
+          // Update first vertex
+          element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+        } else {
+          // Update second vertex
+          element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
+        }
+      })
 
       // Redraw handlers to follow the vertex
       signals.updatedSelection.dispatch()
@@ -325,16 +325,23 @@ function Viewport(editor) {
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
       const point = editor.snapPoint || svg.point(e.pageX, e.pageY)
-      const element = editor.editingElement
-      const vertexIndex = editor.editingVertexIndex
-      const oldPos = editor.originalVertexPosition
+
+      // Prepare updates for command
+      const vertexUpdates = editor.editingVertices.map(v => ({
+        element: v.element,
+        vertexIndex: v.vertexIndex,
+        oldX: v.originalPosition.x,
+        oldY: v.originalPosition.y,
+        newX: point.x,
+        newY: point.y
+      }))
 
       // Stop edit mode immediately
       signals.vertexEditStopped.dispatch()
 
-      // Import EditVertexCommand and execute
-      import('./commands/EditVertexCommand.js').then(({ EditVertexCommand }) => {
-        editor.execute(new EditVertexCommand(editor, element, vertexIndex, oldPos.x, oldPos.y, point.x, point.y))
+      // Import MultiEditVertexCommand and execute
+      import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
+        editor.execute(new MultiEditVertexCommand(editor, vertexUpdates))
         // Redraw handlers at final position while keeping element selected
         signals.updatedSelection.dispatch()
       })
@@ -529,8 +536,9 @@ function Viewport(editor) {
     if (editor.isDrawing) {
       snapCandidates.pop()
     }
-    if (editor.isEditingVertex && editor.editingElement) {
-      snapCandidates = snapCandidates.filter(el => el.node !== editor.editingElement.node)
+    if (editor.isEditingVertex && editor.editingVertices.length > 0) {
+      const editingNodes = editor.editingVertices.map(v => v.element.node)
+      snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
     }
     // console.log('snapCandidates', snapCandidates)
     snapCandidates.forEach((el) => {

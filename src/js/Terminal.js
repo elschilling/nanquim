@@ -64,17 +64,20 @@ function Terminal(editor) {
       console.log('Escape')
 
       // Cancel vertex editing if active
+      // Cancel vertex editing if active
       if (editor.isEditingVertex) {
-        const element = editor.editingElement
-        const vertexIndex = editor.editingVertexIndex
-        const oldPos = editor.originalVertexPosition
+        editor.editingVertices.forEach((v) => {
+          const element = v.element
+          const vertexIndex = v.vertexIndex
+          const oldPos = v.originalPosition
 
-        // Restore original position
-        if (vertexIndex === 0) {
-          element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-        } else {
-          element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
-        }
+          // Restore original position
+          if (vertexIndex === 0) {
+            element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+          } else {
+            element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+          }
+        })
 
         signals.vertexEditStopped.dispatch()
         signals.updatedSelection.dispatch() // Redraw handlers at original position

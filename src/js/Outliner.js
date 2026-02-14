@@ -55,7 +55,26 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(el, 0, x1, y1)
+            const vertices = []
+            // Find all selected lines with a vertex at (x1, y1)
+            editor.selected.forEach((s) => {
+              if (s.type === 'line') {
+                const sx1 = s.node.x1.baseVal.value
+                const sy1 = s.node.y1.baseVal.value
+                const sx2 = s.node.x2.baseVal.value
+                const sy2 = s.node.y2.baseVal.value
+
+                // Check first vertex
+                if (Math.abs(sx1 - x1) < 0.001 && Math.abs(sy1 - y1) < 0.001) {
+                  vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
+                }
+                // Check second vertex
+                if (Math.abs(sx2 - x1) < 0.001 && Math.abs(sy2 - y1) < 0.001) {
+                  vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
+                }
+              }
+            })
+            signals.vertexEditStarted.dispatch(vertices)
           })
 
         // Draw handler at second vertex
@@ -65,7 +84,26 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(el, 1, x2, y2)
+            const vertices = []
+            // Find all selected lines with a vertex at (x2, y2)
+            editor.selected.forEach((s) => {
+              if (s.type === 'line') {
+                const sx1 = s.node.x1.baseVal.value
+                const sy1 = s.node.y1.baseVal.value
+                const sx2 = s.node.x2.baseVal.value
+                const sy2 = s.node.y2.baseVal.value
+
+                // Check first vertex
+                if (Math.abs(sx1 - x2) < 0.001 && Math.abs(sy1 - y2) < 0.001) {
+                  vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
+                }
+                // Check second vertex
+                if (Math.abs(sx2 - x2) < 0.001 && Math.abs(sy2 - y2) < 0.001) {
+                  vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
+                }
+              }
+            })
+            signals.vertexEditStarted.dispatch(vertices)
           })
       }
     })

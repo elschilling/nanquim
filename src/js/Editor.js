@@ -53,9 +53,7 @@ function Editor() {
   this.lastCommand = null
   this.lastClick = null
   this.isEditingVertex = false
-  this.editingElement = null
-  this.editingVertexIndex = null
-  this.originalVertexPosition = null
+  this.editingVertices = [] // Array of { element, vertexIndex, originalPosition }
   this.cmdParams = {
     filletRadius: 0,
   }
