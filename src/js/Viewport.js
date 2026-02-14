@@ -46,6 +46,9 @@ function Viewport(editor) {
   signals.offsetGhostingStarted.add(onOffsetGhostingStarted)
   signals.offsetGhostingStopped.add(onOffsetGhostingStopped)
 
+  signals.vertexEditStarted.add(onVertexEditStarted)
+  signals.vertexEditStopped.add(onVertexEditStopped)
+
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
   svg
@@ -143,6 +146,24 @@ function Viewport(editor) {
     offsetDistance = null
   }
 
+  function onVertexEditStarted(element, vertexIndex, x, y) {
+    editor.isEditingVertex = true
+    editor.editingElement = element
+    editor.editingVertexIndex = vertexIndex
+    editor.originalVertexPosition = { x, y }
+    editor.handlers.addClass('handlers-editing')
+    console.log('Vertex edit started:', vertexIndex, 'at', x, y)
+  }
+
+  function onVertexEditStopped() {
+    editor.handlers.removeClass('handlers-editing')
+    editor.isEditingVertex = false
+    editor.editingElement = null
+    editor.editingVertexIndex = null
+    editor.originalVertexPosition = null
+    console.log('Vertex edit stopped')
+  }
+
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
   }
@@ -173,7 +194,7 @@ function Viewport(editor) {
   function handleMove(e) {
     clearSnap()
     if (editor.isSnapping) {
-      if (editor.isDrawing || editor.isInteracting) {
+      if (editor.isDrawing || editor.isInteracting || editor.isEditingVertex) {
         checkSnap({ x: e.pageX, y: e.pageY })
       }
     }
@@ -232,6 +253,23 @@ function Viewport(editor) {
     if (isGhostingOffset) {
       updateOffsetGhosts(coordinates)
     }
+    // Handle vertex editing
+    if (editor.isEditingVertex) {
+      const point = editor.snapPoint || coordinates
+      const element = editor.editingElement
+      const vertexIndex = editor.editingVertexIndex
+
+      if (vertexIndex === 0) {
+        // Update first vertex
+        element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+      } else {
+        // Update second vertex
+        element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
+      }
+
+      // Redraw handlers to follow the vertex
+      signals.updatedSelection.dispatch()
+    }
     updateCoordinates(coordinates)
     checkHover()
   }
@@ -284,6 +322,25 @@ function Viewport(editor) {
     }
   }
   function handleMousedown(e) {
+    // Handle vertex editing commit
+    if (editor.isEditingVertex) {
+      const point = editor.snapPoint || svg.point(e.pageX, e.pageY)
+      const element = editor.editingElement
+      const vertexIndex = editor.editingVertexIndex
+      const oldPos = editor.originalVertexPosition
+
+      // Stop edit mode immediately
+      signals.vertexEditStopped.dispatch()
+
+      // Import EditVertexCommand and execute
+      import('./commands/EditVertexCommand.js').then(({ EditVertexCommand }) => {
+        editor.execute(new EditVertexCommand(editor, element, vertexIndex, oldPos.x, oldPos.y, point.x, point.y))
+        // Redraw handlers at final position while keeping element selected
+        signals.updatedSelection.dispatch()
+      })
+      return
+    }
+
     if (editor.isInteracting) {
       const point = svg.point(e.pageX, e.pageY)
       if (editor.snapPoint) {
@@ -471,6 +528,9 @@ function Viewport(editor) {
     let snapCandidates = svg.find('.newDrawing')
     if (editor.isDrawing) {
       snapCandidates.pop()
+    }
+    if (editor.isEditingVertex && editor.editingElement) {
+      snapCandidates = snapCandidates.filter(el => el.node !== editor.editingElement.node)
     }
     // console.log('snapCandidates', snapCandidates)
     snapCandidates.forEach((el) => {

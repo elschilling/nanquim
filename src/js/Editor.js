@@ -23,6 +23,8 @@ function Editor() {
     scaleGhostingStopped: new Signal(),
     inputValue: new Signal(),
     zoomChanged: new Signal(),
+    vertexEditStarted: new Signal(),
+    vertexEditStopped: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -50,6 +52,10 @@ function Editor() {
   this.snapPoint = null
   this.lastCommand = null
   this.lastClick = null
+  this.isEditingVertex = false
+  this.editingElement = null
+  this.editingVertexIndex = null
+  this.originalVertexPosition = null
   this.cmdParams = {
     filletRadius: 0,
   }

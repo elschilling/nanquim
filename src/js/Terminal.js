@@ -62,6 +62,25 @@ function Terminal(editor) {
       console.log('Command not found')
     } else if (e.code === 'Escape') {
       console.log('Escape')
+
+      // Cancel vertex editing if active
+      if (editor.isEditingVertex) {
+        const element = editor.editingElement
+        const vertexIndex = editor.editingVertexIndex
+        const oldPos = editor.originalVertexPosition
+
+        // Restore original position
+        if (vertexIndex === 0) {
+          element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+        } else {
+          element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+        }
+
+        signals.vertexEditStopped.dispatch()
+        signals.updatedSelection.dispatch() // Redraw handlers at original position
+        return
+      }
+
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
       signals.clearSelection.dispatch()

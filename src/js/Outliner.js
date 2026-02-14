@@ -53,12 +53,20 @@ function Outliner(editor) {
           .rect(handlerWorldSize, handlerWorldSize)
           .center(x1, y1)
           .addClass('selection-handler')
+          .mousedown((e) => {
+            e.stopPropagation()
+            signals.vertexEditStarted.dispatch(el, 0, x1, y1)
+          })
 
         // Draw handler at second vertex
         editor.handlers
           .rect(handlerWorldSize, handlerWorldSize)
           .center(x2, y2)
           .addClass('selection-handler')
+          .mousedown((e) => {
+            e.stopPropagation()
+            signals.vertexEditStarted.dispatch(el, 1, x2, y2)
+          })
       }
     })
   }
