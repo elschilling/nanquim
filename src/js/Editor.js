@@ -22,18 +22,19 @@ function Editor() {
     scaleGhostingStarted: new Signal(),
     scaleGhostingStopped: new Signal(),
     inputValue: new Signal(),
+    zoomChanged: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
   this.svg = SVG().addTo('#canvas')
   this.overlays = this.svg.group()
   this.overlays.attr('id', 'Overlays')
-  this.handlers = this.overlays.group()
-  this.handlers.attr('id', 'Handlers')
   this.snap = this.svg.group()
   this.snap.attr('id', 'Snap')
   this.drawing = this.svg.group()
   this.drawing.attr('id', 'Collection')
+  this.handlers = this.svg.group()
+  this.handlers.attr('id', 'Handlers')
   this.isDrawing = false
   this.isInteracting = false
   this.selectSingleElement = false

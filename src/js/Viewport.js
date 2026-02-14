@@ -185,12 +185,12 @@ function Viewport(editor) {
         if (editor.distance) {
           if (editor.ortho) {
             if (Math.abs(dx) > Math.abs(dy)) {
-              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
             } else {
-              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
             }
           } else {
-            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+            ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
           }
         }
         if (editor.ortho) {
