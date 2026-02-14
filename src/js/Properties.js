@@ -175,41 +175,119 @@ function Properties(editor) {
   }
 
   function renderStyleTab(container, element, node) {
+    const computedStyle = window.getComputedStyle(node)
+
     // Fill Color (only for closed shapes or paths)
     if (['circle', 'rect', 'path', 'polygon'].includes(node.nodeName)) {
-      const currentFill = element.attr('fill')
-      // If 'none', use white as placeholder or handle 'none' explicitly
-      // Here we allow picking a color.
-      createPropertyField(container, 'Fill', currentFill === 'none' ? '#ffffff' : currentFill, (value) => {
-        element.attr('fill', value)
-        safeDispatch('render')
-        // Force refresh if needed
-      }, false, 'color')
+      const currentFill = element.css('fill') || element.attr('fill')
+      // computedStyle.fill gives us the resolved RGB color
+      const visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
+
+      createColorProperty(container, 'Fill', visualFill, (value) => {
+        element.css('fill', value)
+        safeDispatch('refreshHandlers')
+      })
     }
 
     // Stroke Color
-    const currentStroke = element.attr('stroke')
-    createPropertyField(container, 'Stroke', currentStroke === 'none' ? '#000000' : currentStroke, (value) => {
-      element.attr('stroke', value)
-      safeDispatch('render')
-    }, false, 'color')
+    const currentStroke = element.css('stroke') || element.attr('stroke')
+    const visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : (currentStroke || '#000000')
+
+    createColorProperty(container, 'Stroke', visualStroke, (value) => {
+      element.css('stroke', value)
+      safeDispatch('refreshHandlers')
+    })
 
     // Stroke Width
-    createPropertyField(container, 'Stroke Width', parseFloat(element.attr('stroke-width')) || 1, (value) => {
+    const currentWidth = parseFloat(element.css('stroke-width') || element.attr('stroke-width')) || parseFloat(computedStyle.strokeWidth) || 1
+    createPropertyField(container, 'Stroke Width', currentWidth, (value) => {
       const num = parseFloat(value)
       if (!isNaN(num) && num >= 0) {
-        element.attr('stroke-width', num)
-        // safeDispatch('refreshHandlers') // Handlers might need update if bbox changes?
+        element.css('stroke-width', num)
+        safeDispatch('refreshHandlers')
       }
     })
 
     // Opacity
-    createPropertyField(container, 'Opacity', parseFloat(element.attr('opacity')) || 1, (value) => {
+    createPropertyField(container, 'Opacity', parseFloat(element.css('opacity') || element.attr('opacity')) || 1, (value) => {
       const num = parseFloat(value)
       if (!isNaN(num) && num >= 0 && num <= 1) {
-        element.attr('opacity', num)
+        element.css('opacity', num)
       }
     })
+  }
+
+  // Helper to convert rgb(r, g, b) to #rrggbb
+  function rgbToHex(rgb) {
+    if (!rgb || rgb === 'none' || rgb === 'transparent') return '#000000';
+    // Handle hex directly
+    if (rgb.startsWith('#')) return rgb;
+
+    // Choose correct separator
+    const sep = rgb.indexOf(",") > -1 ? "," : " ";
+    // Turn "rgb(r,g,b)" into [r,g,b]
+    const parts = rgb.substr(4).split(")")[0].split(sep);
+
+    let r = (+parts[0]).toString(16),
+      g = (+parts[1]).toString(16),
+      b = (+parts[2]).toString(16);
+
+    if (r.length == 1) r = "0" + r;
+    if (g.length == 1) g = "0" + g;
+    if (b.length == 1) b = "0" + b;
+
+    return "#" + r + g + b;
+  }
+
+  function createColorProperty(container, label, value, onChange) {
+    const row = document.createElement('div')
+    row.className = 'property-row'
+
+    const labelEl = document.createElement('label')
+    labelEl.textContent = label
+    labelEl.className = 'property-label'
+
+    const controls = document.createElement('div')
+    controls.style.display = 'flex'
+    controls.style.alignItems = 'center'
+    controls.style.flex = '1'
+    controls.style.gap = '5px'
+
+    const checkbox = document.createElement('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = value !== 'none' && value !== 'transparent'
+
+    const input = document.createElement('input')
+    input.type = 'color'
+    input.value = rgbToHex(value)
+    input.className = 'property-input'
+    input.style.height = '24px'
+    input.style.padding = '0 2px'
+    input.style.cursor = 'pointer'
+    input.disabled = !checkbox.checked
+
+    checkbox.addEventListener('change', (e) => {
+      input.disabled = !e.target.checked
+      if (e.target.checked) {
+        onChange(input.value)
+      } else {
+        onChange('none')
+      }
+    })
+
+    input.addEventListener('input', (e) => {
+      onChange(e.target.value)
+    })
+
+    input.addEventListener('change', (e) => {
+      onChange(e.target.value)
+    })
+
+    controls.appendChild(checkbox)
+    controls.appendChild(input)
+    row.appendChild(labelEl)
+    row.appendChild(controls)
+    container.appendChild(row)
   }
 
   // Initial tab UI setup
