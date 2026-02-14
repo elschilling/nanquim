@@ -414,7 +414,7 @@ class FilletCommand extends Command {
     const inheritedStyles = {
       fill: 'none', // Always no fill for strokes
       stroke: line1.attr('stroke') || line2.attr('stroke') || '#000000',
-      'stroke-width': line1.attr('stroke-width') || line2.attr('stroke-width') || '1',
+      'stroke-width': line1.attr('stroke-width') || line2.attr('stroke-width') || '0.1',
       'stroke-linecap': line1.attr('stroke-linecap') || line2.attr('stroke-linecap') || 'butt',
       'stroke-linejoin': line1.attr('stroke-linejoin') || line2.attr('stroke-linejoin') || 'miter',
       'stroke-dasharray': line1.attr('stroke-dasharray') || line2.attr('stroke-dasharray') || 'none',

@@ -331,10 +331,10 @@ function Viewport(editor) {
           rect.height = e.target.height.baseVal.value
           if (coordinates.x < startX) {
             e.srcElement.classList.add('selectionRectangleRight')
-            findElements(rect, 'intersect')
+            findElements(rect, 'inside')
           } else {
             e.target.classList.remove('selectionRectangleRight')
-            findElements(rect, 'inside')
+            findElements(rect, 'intersect')
           }
         })
         .on('drawstop', (e) => {

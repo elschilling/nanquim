@@ -72,11 +72,16 @@ function Terminal(editor) {
     } else if (e.code === 'F9') {
       handleToogleSnap()
     } else if (e.code === 'Delete') {
-      const element = editor.selected[0]
-      if (element === null) return
+      if (editor.selected.length === 0) return
+      // Store elements to delete before clearing selection
+      const elementsToDelete = [...editor.selected]
+      // Clear selection and reset array first
       signals.clearSelection.dispatch()
       editor.selected = []
-      editor.execute(new RemoveElementCommand(editor, element))
+      // Then delete all elements
+      elementsToDelete.forEach((element) => {
+        editor.execute(new RemoveElementCommand(editor, element))
+      })
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()
       else editor.undo()
