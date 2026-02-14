@@ -284,6 +284,56 @@ function Viewport(editor) {
             const newRadius = calculateDistance(currentCenter, point)
             element.radius(newRadius)
           }
+        } else if (element.type === 'rect') {
+          const original = vertexData.originalPosition
+          const index = vertexIndex
+
+          let newX = element.x()
+          let newY = element.y()
+          let newW = element.width()
+          let newH = element.height()
+
+          // Helper to update rect from 2 corner points (normalize negative width/height)
+          const setRectFromPoints = (x1, y1, x2, y2) => {
+            const x = Math.min(x1, x2)
+            const y = Math.min(y1, y2)
+            const w = Math.abs(x2 - x1)
+            const h = Math.abs(y2 - y1)
+            element.move(x, y).size(w, h)
+          }
+
+          // Case 0: Top-Left Corner
+          if (index === 0) {
+            setRectFromPoints(point.x, point.y, original.x + original.width, original.y + original.height)
+          }
+          // Case 1: Top-Right Corner
+          else if (index === 1) {
+            setRectFromPoints(original.x, point.y, point.x, original.y + original.height)
+          }
+          // Case 2: Bottom-Right Corner
+          else if (index === 2) {
+            setRectFromPoints(original.x, original.y, point.x, point.y)
+          }
+          // Case 3: Bottom-Left Corner
+          else if (index === 3) {
+            setRectFromPoints(point.x, original.y, original.x + original.width, point.y)
+          }
+          // Case 4: Top Edge
+          else if (index === 4) {
+            setRectFromPoints(original.x, point.y, original.x + original.width, original.y + original.height)
+          }
+          // Case 5: Right Edge
+          else if (index === 5) {
+            setRectFromPoints(original.x, original.y, point.x, original.y + original.height)
+          }
+          // Case 6: Bottom Edge
+          else if (index === 6) {
+            setRectFromPoints(original.x, original.y, original.x + original.width, point.y)
+          }
+          // Case 7: Left Edge
+          else if (index === 7) {
+            setRectFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+          }
         }
       })
 
@@ -623,6 +673,26 @@ function Viewport(editor) {
         points.forEach(p => {
           targets.push(worldToScreen(p, editor.svg))
         })
+      } else if (el.type === 'rect') {
+        const rx = el.node.x.baseVal.value
+        const ry = el.node.y.baseVal.value
+        const rw = el.node.width.baseVal.value
+        const rh = el.node.height.baseVal.value
+
+        const points = [
+          { x: rx, y: ry },
+          { x: rx + rw, y: ry },
+          { x: rx + rw, y: ry + rh },
+          { x: rx, y: ry + rh },
+          { x: rx + rw / 2, y: ry },
+          { x: rx + rw, y: ry + rh / 2 },
+          { x: rx + rw / 2, y: ry + rh },
+          { x: rx, y: ry + rh / 2 }
+        ]
+
+        points.forEach(p => {
+          targets.push(worldToScreen(p, editor.svg))
+        })
       }
     })
     let closest
@@ -695,7 +765,7 @@ function Viewport(editor) {
 }
 
 function drawSnap(point, zoom, svg) {
-  const snapSquareScreenSize = 20
+  const snapSquareScreenSize = 15
   const currentZoom = zoom && zoom ? zoom : 1
   const snapSquareWorldSize = snapSquareScreenSize / currentZoom
   const strokeWorldUnits = 3 / currentZoom

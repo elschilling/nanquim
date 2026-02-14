@@ -69,6 +69,28 @@ function Outliner(editor) {
           if (Math.abs((cx + r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
           if (Math.abs(cx - x) < 0.001 && Math.abs((cy + r) - y) < 0.001) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
           if (Math.abs((cx - r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+        } else if (s.type === 'rect') {
+          const rx = s.node.x.baseVal.value
+          const ry = s.node.y.baseVal.value
+          const rw = s.node.width.baseVal.value
+          const rh = s.node.height.baseVal.value
+
+          const rectPoints = [
+            { x: rx, y: ry, index: 0 },
+            { x: rx + rw, y: ry, index: 1 },
+            { x: rx + rw, y: ry + rh, index: 2 },
+            { x: rx, y: ry + rh, index: 3 },
+            { x: rx + rw / 2, y: ry, index: 4 },
+            { x: rx + rw, y: ry + rh / 2, index: 5 },
+            { x: rx + rw / 2, y: ry + rh, index: 6 },
+            { x: rx, y: ry + rh / 2, index: 7 }
+          ]
+
+          rectPoints.forEach(p => {
+            if (Math.abs(p.x - x) < 0.001 && Math.abs(p.y - y) < 0.001) {
+              vertices.push({ element: s, vertexIndex: p.index, originalPosition: { x: rx, y: ry, width: rw, height: rh } })
+            }
+          })
         }
       })
       return vertices
@@ -118,6 +140,42 @@ function Outliner(editor) {
         points.forEach((p) => {
           editor.handlers
             .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.x, p.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+            })
+        })
+      } else if (el.type === 'rect') {
+        const rx = el.node.x.baseVal.value
+        const ry = el.node.y.baseVal.value
+        const rw = el.node.width.baseVal.value
+        const rh = el.node.height.baseVal.value
+
+        const points = [
+          { x: rx, y: ry, index: 0, isCorner: true }, // TL
+          { x: rx + rw, y: ry, index: 1, isCorner: true }, // TR
+          { x: rx + rw, y: ry + rh, index: 2, isCorner: true }, // BR
+          { x: rx, y: ry + rh, index: 3, isCorner: true }, // BL
+          { x: rx + rw / 2, y: ry, index: 4, isCorner: false }, // Top
+          { x: rx + rw, y: ry + rh / 2, index: 5, isCorner: false }, // Right
+          { x: rx + rw / 2, y: ry + rh, index: 6, isCorner: false }, // Bottom
+          { x: rx, y: ry + rh / 2, index: 7, isCorner: false } // Left
+        ]
+
+        points.forEach((p) => {
+          let width, height
+          if (p.isCorner) {
+            width = handlerWorldSize
+            height = handlerWorldSize
+          } else {
+            const isHorizontal = p.index === 4 || p.index === 6 // Top or Bottom
+            width = isHorizontal ? handlerWorldSize * 1.5 : handlerWorldSize
+            height = isHorizontal ? handlerWorldSize : handlerWorldSize * 1.5
+          }
+          editor.handlers
+            .rect(width, height)
             .center(p.x, p.y)
             .addClass('selection-handler')
             .mousedown((e) => {
