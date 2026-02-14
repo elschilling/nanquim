@@ -190,9 +190,13 @@ function Viewport(editor) {
   function handleMove(e) {
     clearSnap()
     if (editor.isSnapping) {
-      if (editor.isDrawing || editor.isInteracting || editor.isEditingVertex) {
+      if ((editor.isDrawing && !editor.isSelecting) || editor.isInteracting || editor.isEditingVertex) {
         checkSnap({ x: e.pageX, y: e.pageY })
+      } else {
+        editor.snapPoint = null
       }
+    } else {
+      editor.snapPoint = null
     }
     coordinates = svg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
@@ -382,6 +386,7 @@ function Viewport(editor) {
     if (!editor.isDrawing) {
       const startX = coordinates.x
       editor.isDrawing = true
+      editor.isSelecting = true
       svg.click(null)
       svg
         .rect()
@@ -404,6 +409,7 @@ function Viewport(editor) {
         .on('drawstop', (e) => {
           e.target.remove()
           editor.isDrawing = false
+          editor.isSelecting = false
           selectHovered()
         })
     }

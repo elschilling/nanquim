@@ -40,6 +40,7 @@ function Editor() {
   this.isDrawing = false
   this.isInteracting = false
   this.selectSingleElement = false
+  this.isSelecting = false
   this.isSnapping = false
   this.elementIndex = 0
   this.selected = []
