@@ -228,6 +228,8 @@ function Outliner(editor) {
   })
 
   signals.toogledSelect.add((el) => {
+    if (editor.preventSelection) return
+
     if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
       if (editor.selectSingleElement) {
         editor.selected = [el]

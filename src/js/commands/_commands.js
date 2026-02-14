@@ -7,6 +7,7 @@ import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
 import { scaleCommand } from './ScaleCommand'
+import { matchPropertiesCommand } from './MatchPropertiesCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -45,6 +46,10 @@ const commands = {
   FILLET: {
     execute: filletCommand,
     aliases: ['f'],
+  },
+  MATCH_PROPERTIES: {
+    execute: matchPropertiesCommand,
+    aliases: ['ma'],
   },
   // Add more commands and functions as needed
 }
