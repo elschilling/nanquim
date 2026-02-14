@@ -56,6 +56,10 @@ function Terminal(editor) {
 
       for (const [command, { execute, aliases }] of Object.entries(commands)) {
         if (aliases.includes(typedCommand)) {
+          // Set default repeat behavior: execute the command factory again
+          // Individual commands can override this if they want to reuse the instance
+          editor.lastCommand = { execute: () => execute(editor) }
+
           // Execute the command function
           execute(editor)
           // Clear input after execution
