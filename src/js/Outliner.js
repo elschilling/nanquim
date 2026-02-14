@@ -105,6 +105,30 @@ function Outliner(editor) {
             })
             signals.vertexEditStarted.dispatch(vertices)
           })
+      } else if (el.type === 'circle') {
+        const cx = el.node.cx.baseVal.value
+        const cy = el.node.cy.baseVal.value
+        const r = el.node.r.baseVal.value
+
+        const points = [
+          { x: cx, y: cy, index: 0 }, // Center
+          { x: cx, y: cy - r, index: 1 }, // Top
+          { x: cx + r, y: cy, index: 2 }, // Right
+          { x: cx, y: cy + r, index: 3 }, // Bottom
+          { x: cx - r, y: cy, index: 4 }, // Left
+        ]
+
+        points.forEach((p) => {
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.x, p.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              const vertices = [{ element: el, vertexIndex: p.index, originalPosition: { cx, cy, r } }]
+              signals.vertexEditStarted.dispatch(vertices)
+            })
+        })
       }
     })
   }

@@ -71,11 +71,16 @@ function Terminal(editor) {
           const vertexIndex = v.vertexIndex
           const oldPos = v.originalPosition
 
-          // Restore original position
-          if (vertexIndex === 0) {
-            element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-          } else {
-            element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+          if (element.type === 'line') {
+            // Restore original position
+            if (vertexIndex === 0) {
+              element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+            } else {
+              element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+            }
+          } else if (element.type === 'circle') {
+            element.center(oldPos.cx, oldPos.cy)
+            element.radius(oldPos.r)
           }
         })
 

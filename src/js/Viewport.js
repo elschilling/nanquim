@@ -262,12 +262,28 @@ function Viewport(editor) {
         const element = vertexData.element
         const vertexIndex = vertexData.vertexIndex
 
-        if (vertexIndex === 0) {
-          // Update first vertex
-          element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-        } else {
-          // Update second vertex
-          element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
+        if (element.type === 'line') {
+          if (vertexIndex === 0) {
+            // Update first vertex
+            element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+          } else {
+            // Update second vertex
+            element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
+          }
+        } else if (element.type === 'circle') {
+          const cx = vertexData.originalPosition.cx
+          const cy = vertexData.originalPosition.cy
+
+          if (vertexIndex === 0) {
+            // Center handler: Move the circle
+            element.center(point.x, point.y)
+          } else {
+            // Quadrant handler: Resize radius
+            // Calculate distance from center to mouse point
+            const currentCenter = { x: element.cx(), y: element.cy() }
+            const newRadius = calculateDistance(currentCenter, point)
+            element.radius(newRadius)
+          }
         }
       })
 
@@ -330,25 +346,61 @@ function Viewport(editor) {
     if (editor.isEditingVertex) {
       const point = editor.snapPoint || svg.point(e.pageX, e.pageY)
 
-      // Prepare updates for command
-      const vertexUpdates = editor.editingVertices.map(v => ({
-        element: v.element,
-        vertexIndex: v.vertexIndex,
-        oldX: v.originalPosition.x,
-        oldY: v.originalPosition.y,
-        newX: point.x,
-        newY: point.y
-      }))
+      // Separate line updates and circle updates
+      const lineUpdates = []
+      const circleUpdates = []
+
+      editor.editingVertices.forEach(v => {
+        if (v.element.type === 'line') {
+          lineUpdates.push({
+            element: v.element,
+            vertexIndex: v.vertexIndex,
+            oldX: v.originalPosition.x,
+            oldY: v.originalPosition.y,
+            newX: point.x,
+            newY: point.y
+          })
+        } else if (v.element.type === 'circle') {
+          // For circle, we calculate the final state
+          let newCx = v.originalPosition.cx
+          let newCy = v.originalPosition.cy
+          let newR = v.originalPosition.r
+
+          if (v.vertexIndex === 0) {
+            newCx = point.x
+            newCy = point.y
+          } else {
+            const currentCenter = { x: v.originalPosition.cx, y: v.originalPosition.cy }
+            newR = calculateDistance(currentCenter, point)
+          }
+          circleUpdates.push({
+            element: v.element,
+            oldValues: { cx: v.originalPosition.cx, cy: v.originalPosition.cy, r: v.originalPosition.r },
+            newValues: { cx: newCx, cy: newCy, r: newR }
+          })
+        }
+      })
 
       // Stop edit mode immediately
       signals.vertexEditStopped.dispatch()
 
-      // Import MultiEditVertexCommand and execute
-      import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
-        editor.execute(new MultiEditVertexCommand(editor, vertexUpdates))
-        // Redraw handlers at final position while keeping element selected
-        signals.updatedSelection.dispatch()
-      })
+      if (lineUpdates.length > 0) {
+        import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
+          editor.execute(new MultiEditVertexCommand(editor, lineUpdates))
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (circleUpdates.length > 0) {
+        import('./commands/EditCircleCommand.js').then(({ EditCircleCommand }) => {
+          // For now, assume single circle editing or multiple independent circle edits
+          circleUpdates.forEach(update => {
+            editor.execute(new EditCircleCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
       return
     }
 
