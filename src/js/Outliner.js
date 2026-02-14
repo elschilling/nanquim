@@ -42,6 +42,7 @@ function Outliner(editor) {
     // Helper to find all selected vertices at a given position
     function getCoincidentVertices(x, y) {
       const vertices = []
+      const tolerance = 0.1
       editor.selected.forEach((s) => {
         if (s.type === 'line') {
           const sx1 = s.node.x1.baseVal.value
@@ -49,10 +50,10 @@ function Outliner(editor) {
           const sx2 = s.node.x2.baseVal.value
           const sy2 = s.node.y2.baseVal.value
 
-          if (Math.abs(sx1 - x) < 0.001 && Math.abs(sy1 - y) < 0.001) {
+          if (Math.abs(sx1 - x) < tolerance && Math.abs(sy1 - y) < tolerance) {
             vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
           }
-          if (Math.abs(sx2 - x) < 0.001 && Math.abs(sy2 - y) < 0.001) {
+          if (Math.abs(sx2 - x) < tolerance && Math.abs(sy2 - y) < tolerance) {
             vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
           }
         } else if (s.type === 'circle') {
@@ -61,14 +62,14 @@ function Outliner(editor) {
           const r = s.node.r.baseVal.value
 
           // Check Center
-          if (Math.abs(cx - x) < 0.001 && Math.abs(cy - y) < 0.001) {
+          if (Math.abs(cx - x) < tolerance && Math.abs(cy - y) < tolerance) {
             vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
           }
           // Check Quadrants (approximation for exact float matches might be needed, but handlers are drawn at exact calc points)
-          if (Math.abs(cx - x) < 0.001 && Math.abs((cy - r) - y) < 0.001) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
-          if (Math.abs((cx + r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
-          if (Math.abs(cx - x) < 0.001 && Math.abs((cy + r) - y) < 0.001) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
-          if (Math.abs((cx - r) - x) < 0.001 && Math.abs(cy - y) < 0.001) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+          if (Math.abs(cx - x) < tolerance && Math.abs((cy - r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
+          if (Math.abs((cx + r) - x) < tolerance && Math.abs(cy - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
+          if (Math.abs(cx - x) < tolerance && Math.abs((cy + r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
+          if (Math.abs((cx - r) - x) < tolerance && Math.abs(cy - y) < tolerance) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
         } else if (s.type === 'rect') {
           const rx = s.node.x.baseVal.value
           const ry = s.node.y.baseVal.value
@@ -87,7 +88,7 @@ function Outliner(editor) {
           ]
 
           rectPoints.forEach(p => {
-            if (Math.abs(p.x - x) < 0.001 && Math.abs(p.y - y) < 0.001) {
+            if (Math.abs(p.x - x) < tolerance && Math.abs(p.y - y) < tolerance) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { x: rx, y: ry, width: rw, height: rh } })
             }
           })

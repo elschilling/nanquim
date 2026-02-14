@@ -187,6 +187,43 @@ function Viewport(editor) {
       }
     }
   }
+  function getOrthoConstrainedPoint(point, vertexData) {
+    let baseX = 0, baseY = 0
+    const { element, vertexIndex, originalPosition } = vertexData
+
+    // Determine base point for ortho constraint
+    if (element.type === 'line') {
+      baseX = originalPosition.x
+      baseY = originalPosition.y
+    } else if (element.type === 'circle') {
+      const { cx, cy, r } = originalPosition
+      if (vertexIndex === 0) { baseX = cx; baseY = cy }
+      else if (vertexIndex === 1) { baseX = cx; baseY = cy - r }
+      else if (vertexIndex === 2) { baseX = cx + r; baseY = cy }
+      else if (vertexIndex === 3) { baseX = cx; baseY = cy + r }
+      else if (vertexIndex === 4) { baseX = cx - r; baseY = cy }
+    } else if (element.type === 'rect') {
+      const { x, y, width, height } = originalPosition
+      if (vertexIndex === 0) { baseX = x; baseY = y }
+      else if (vertexIndex === 1) { baseX = x + width; baseY = y }
+      else if (vertexIndex === 2) { baseX = x + width; baseY = y + height }
+      else if (vertexIndex === 3) { baseX = x; baseY = y + height }
+      else if (vertexIndex === 4) { baseX = x + width / 2; baseY = y }
+      else if (vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
+      else if (vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
+      else if (vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+    }
+
+    const dx = point.x - baseX
+    const dy = point.y - baseY
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return { x: point.x, y: baseY }
+    } else {
+      return { x: baseX, y: point.y }
+    }
+  }
+
   function handleMove(e) {
     clearSnap()
     if (editor.isSnapping) {
@@ -254,9 +291,45 @@ function Viewport(editor) {
       updateOffsetGhosts(coordinates)
     }
     // Handle vertex editing
-    // Handle vertex editing
-    if (editor.isEditingVertex) {
-      const point = editor.snapPoint || coordinates
+    if (editor.isEditingVertex && editor.editingVertices.length > 0) {
+      let point = editor.snapPoint || coordinates
+
+      if (editor.ortho) {
+        const v0 = editor.editingVertices[0]
+        let baseX = 0, baseY = 0
+
+        // Determine base point for ortho constraint
+        if (v0.element.type === 'line') {
+          baseX = v0.originalPosition.x
+          baseY = v0.originalPosition.y
+        } else if (v0.element.type === 'circle') {
+          const { cx, cy, r } = v0.originalPosition
+          if (v0.vertexIndex === 0) { baseX = cx; baseY = cy }
+          else if (v0.vertexIndex === 1) { baseX = cx; baseY = cy - r }
+          else if (v0.vertexIndex === 2) { baseX = cx + r; baseY = cy }
+          else if (v0.vertexIndex === 3) { baseX = cx; baseY = cy + r }
+          else if (v0.vertexIndex === 4) { baseX = cx - r; baseY = cy }
+        } else if (v0.element.type === 'rect') {
+          const { x, y, width, height } = v0.originalPosition
+          if (v0.vertexIndex === 0) { baseX = x; baseY = y }
+          else if (v0.vertexIndex === 1) { baseX = x + width; baseY = y }
+          else if (v0.vertexIndex === 2) { baseX = x + width; baseY = y + height }
+          else if (v0.vertexIndex === 3) { baseX = x; baseY = y + height }
+          else if (v0.vertexIndex === 4) { baseX = x + width / 2; baseY = y }
+          else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
+          else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
+          else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+        }
+
+        const dx = point.x - baseX
+        const dy = point.y - baseY
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          point = { x: point.x, y: baseY }
+        } else {
+          point = { x: baseX, y: point.y }
+        }
+      }
 
       editor.editingVertices.forEach(vertexData => {
         const element = vertexData.element
@@ -394,7 +467,11 @@ function Viewport(editor) {
   function handleMousedown(e) {
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
-      const point = editor.snapPoint || svg.point(e.pageX, e.pageY)
+      let point = editor.snapPoint || svg.point(e.pageX, e.pageY)
+
+      if (editor.ortho && editor.editingVertices.length > 0) {
+        point = getOrthoConstrainedPoint(point, editor.editingVertices[0])
+      }
 
       // Separate line updates and circle updates
       const lineUpdates = []
