@@ -49,6 +49,10 @@ function Viewport(editor) {
   signals.vertexEditStarted.add(onVertexEditStarted)
   signals.vertexEditStopped.add(onVertexEditStopped)
 
+  signals.updatedOutliner.add(() => {
+    hoveredElements = []
+  })
+
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
   svg

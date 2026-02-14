@@ -72,12 +72,25 @@ Editor.prototype = {
     // parent.put(element)
     element.putIn(parent)
     // element[0].remove()
+    this.signals.updatedOutliner.dispatch()
   },
 
   removeElement: function (element) {
     console.log('removeElement', element)
+
+    // Check if element is in selection and remove it
+    if (this.selected.includes(element)) {
+      this.selected = this.selected.filter(el => el !== element)
+      this.signals.clearSelection.dispatch()
+      // If other elements remain selected, update handlers
+      if (this.selected.length > 0) {
+        this.signals.updatedSelection.dispatch()
+      }
+    }
+
     element.remove()
     // element[0].remove()
+    this.signals.updatedOutliner.dispatch()
   },
 
   execute: function (cmd) {
