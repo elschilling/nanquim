@@ -16,6 +16,15 @@ class MoveCommand extends Command {
       return
     }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+
+    if (this.editor.selected.length > 0) {
+      this.editor.suppressHandlers = true
+      this.editor.handlers.clear() // Force clear directly
+      this.editor.isInteracting = true
+      this.onSelectionConfirmed()
+      return
+    }
+
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
       msg: `Select elements to move and press Enter to confirm.`,

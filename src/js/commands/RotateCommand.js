@@ -11,6 +11,14 @@ class RotateCommand extends Command {
 
   execute() {
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+    if (this.editor.selected.length > 0) {
+      this.editor.suppressHandlers = true
+      this.editor.handlers.clear()
+      this.editor.isInteracting = true
+      this.onSelectionConfirmed()
+      return
+    }
+
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
       msg: `Select elements to Rotate and press Enter to confirm.`,

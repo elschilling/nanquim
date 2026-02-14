@@ -35,6 +35,8 @@ function Outliner(editor) {
     // Clear existing handlers
     editor.handlers.clear()
 
+    if (editor.suppressHandlers) return
+
     // Get current zoom level
     const currentZoom = editor.svg.zoom()
     const handlerScreenSize = 16 // pixels on screen
