@@ -25,6 +25,7 @@ function Editor() {
     zoomChanged: new Signal(),
     vertexEditStarted: new Signal(),
     vertexEditStopped: new Signal(),
+    refreshHandlers: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')

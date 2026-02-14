@@ -222,6 +222,11 @@ function Outliner(editor) {
     drawHandlers()
   })
 
+  // Redraw handlers when properties change (without full selection update)
+  signals.refreshHandlers.add(() => {
+    drawHandlers()
+  })
+
   signals.toogledSelect.add((el) => {
     if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
       if (editor.selectSingleElement) {
@@ -239,7 +244,8 @@ function Outliner(editor) {
     const ul = document.createElement('ul')
     const li = document.createElement('li')
     li.id = 'li' + group.node.id
-    li.textContent = group.node.nodeName + ' ' + group.node.id
+    const groupName = group.attr('name') || group.node.nodeName
+    li.textContent = groupName + ' ' + group.node.id
     li.addEventListener('click', (e) => {
       e.stopPropagation()
       signals.toogledSelect.dispatch(group)
@@ -252,7 +258,8 @@ function Outliner(editor) {
         const childUl = document.createElement('ul')
         const li = document.createElement('li')
         li.id = 'li' + child.node.id
-        li.textContent = child.node.nodeName
+        const childName = child.attr('name') || child.node.nodeName
+        li.textContent = childName
         li.addEventListener('click', (e) => {
           e.stopPropagation()
           signals.toogledSelect.dispatch(child)

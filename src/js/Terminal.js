@@ -28,7 +28,12 @@ function Terminal(editor) {
   document.addEventListener('keydown', handleInput)
   document.addEventListener('keyup', handleKeyUp)
 
-  function handleInput() {
+  function handleInput(e) {
+    // Don't auto-focus terminal if user is editing a property input
+    const activeElement = document.activeElement
+    if (activeElement && activeElement.classList.contains('property-input')) {
+      return
+    }
     terminalInput.focus()
   }
 

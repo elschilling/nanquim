@@ -32,28 +32,32 @@ function Properties(editor) {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('x1', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Y1', parseFloat(element.attr('y1')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('y1', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'X2', parseFloat(element.attr('x2')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('x2', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Y2', parseFloat(element.attr('y2')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('y2', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
       } else if (node.nodeName === 'circle') {
@@ -61,21 +65,24 @@ function Properties(editor) {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('cx', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'CY', parseFloat(element.attr('cy')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('cy', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Radius', parseFloat(element.attr('r')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num) && num > 0) {
             element.attr('r', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
       } else if (node.nodeName === 'rect') {
@@ -83,28 +90,32 @@ function Properties(editor) {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('x', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Y', parseFloat(element.attr('y')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num)) {
             element.attr('y', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Width', parseFloat(element.attr('width')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num) && num > 0) {
             element.attr('width', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
         createPropertyField(container, 'Height', parseFloat(element.attr('height')).toFixed(2), (value) => {
           const num = parseFloat(value)
           if (!isNaN(num) && num > 0) {
             element.attr('height', num)
-            editor.signals.render.dispatch()
+            // editor.signals.render.dispatch()
+            signals.refreshHandlers.dispatch()
           }
         })
       } else if (node.nodeName === 'path') {
@@ -124,6 +135,37 @@ function Properties(editor) {
       propertiesPanel.appendChild(p)
     }
   })
+
+  // Focus management: allow editing properties when mouse is over the panel
+  const propertiesPanelContainer = document.querySelector('.properties-panel-container')
+  const viewport = document.querySelector('.viewport')
+
+  if (propertiesPanelContainer) {
+    propertiesPanelContainer.addEventListener('mouseenter', () => {
+      // When mouse enters properties panel, allow inputs to receive focus
+      editor.isEditingProperties = true
+    })
+
+    propertiesPanelContainer.addEventListener('mouseleave', () => {
+      // When mouse leaves properties panel, return focus to terminal
+      editor.isEditingProperties = false
+      const terminalInput = document.getElementById('terminalInput')
+      if (terminalInput) {
+        terminalInput.focus()
+      }
+    })
+  }
+
+  if (viewport) {
+    viewport.addEventListener('mouseenter', () => {
+      // When mouse enters viewport, ensure terminal gets focus
+      editor.isEditingProperties = false
+      const terminalInput = document.getElementById('terminalInput')
+      if (terminalInput) {
+        terminalInput.focus()
+      }
+    })
+  }
 }
 
 function createPropertyField(container, label, value, onChange, readOnly = false) {
