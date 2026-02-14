@@ -181,7 +181,11 @@ function Properties(editor) {
     if (['circle', 'rect', 'path', 'polygon'].includes(node.nodeName)) {
       const currentFill = element.css('fill') || element.attr('fill')
       // computedStyle.fill gives us the resolved RGB color
-      const visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
+      let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
+
+      if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') {
+        visualFill = 'none'
+      }
 
       createColorProperty(container, 'Fill', visualFill, (value) => {
         element.css('fill', value)
@@ -191,7 +195,11 @@ function Properties(editor) {
 
     // Stroke Color
     const currentStroke = element.css('stroke') || element.attr('stroke')
-    const visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : (currentStroke || '#000000')
+    let visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : (currentStroke || '#000000')
+
+    if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') {
+      visualStroke = 'none'
+    }
 
     createColorProperty(container, 'Stroke', visualStroke, (value) => {
       element.css('stroke', value)
