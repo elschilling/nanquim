@@ -62,6 +62,33 @@ function Terminal(editor) {
       console.log('Command not found')
     } else if (e.code === 'Escape') {
       console.log('Escape')
+
+      // Cancel vertex editing if active
+      // Cancel vertex editing if active
+      if (editor.isEditingVertex) {
+        editor.editingVertices.forEach((v) => {
+          const element = v.element
+          const vertexIndex = v.vertexIndex
+          const oldPos = v.originalPosition
+
+          if (element.type === 'line') {
+            // Restore original position
+            if (vertexIndex === 0) {
+              element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+            } else {
+              element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+            }
+          } else if (element.type === 'circle') {
+            element.center(oldPos.cx, oldPos.cy)
+            element.radius(oldPos.r)
+          }
+        })
+
+        signals.vertexEditStopped.dispatch()
+        signals.updatedSelection.dispatch() // Redraw handlers at original position
+        return
+      }
+
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
       signals.clearSelection.dispatch()
@@ -72,11 +99,16 @@ function Terminal(editor) {
     } else if (e.code === 'F9') {
       handleToogleSnap()
     } else if (e.code === 'Delete') {
-      const element = editor.selected[0]
-      if (element === null) return
+      if (editor.selected.length === 0) return
+      // Store elements to delete before clearing selection
+      const elementsToDelete = [...editor.selected]
+      // Clear selection and reset array first
       signals.clearSelection.dispatch()
       editor.selected = []
-      editor.execute(new RemoveElementCommand(editor, element))
+      // Then delete all elements
+      elementsToDelete.forEach((element) => {
+        editor.execute(new RemoveElementCommand(editor, element))
+      })
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()
       else editor.undo()

@@ -155,7 +155,7 @@ main
 .newDrawing
     // vector-effect: non-scaling-stroke
     stroke: white
-    stroke-width: .2
+    stroke-width: .1
     stroke-linecap: round
     fill: transparent
     // &:hover
@@ -184,6 +184,20 @@ main
     fill-opacity: .2
 .selectionRectangleRight
     stroke-dasharray: 4
+
+.selection-handler
+    vector-effect: non-scaling-stroke
+    fill: orange
+    stroke: black
+    stroke-width: 1
+    cursor: pointer
+    &.active
+        fill: yellow
+        stroke: orange
+        stroke-width: 2
+
+.handlers-editing
+    pointer-events: none
 
 .outliner-root
     padding-left: 0px
@@ -234,7 +248,7 @@ main
     align-items: flex-start
 
 .outliner-selected
-    background: #334d80  !important
+    background: var(--accent-color) !important
     &:hover
         background: #4d6490 !important
 

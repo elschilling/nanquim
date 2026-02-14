@@ -46,6 +46,9 @@ function Viewport(editor) {
   signals.offsetGhostingStarted.add(onOffsetGhostingStarted)
   signals.offsetGhostingStopped.add(onOffsetGhostingStopped)
 
+  signals.vertexEditStarted.add(onVertexEditStarted)
+  signals.vertexEditStopped.add(onVertexEditStopped)
+
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
   svg
@@ -143,6 +146,20 @@ function Viewport(editor) {
     offsetDistance = null
   }
 
+  function onVertexEditStarted(vertices) {
+    editor.isEditingVertex = true
+    editor.editingVertices = vertices
+    editor.handlers.addClass('handlers-editing')
+    console.log('Vertex edit started for', vertices.length, 'vertices')
+  }
+
+  function onVertexEditStopped() {
+    editor.handlers.removeClass('handlers-editing')
+    editor.isEditingVertex = false
+    editor.editingVertices = []
+    console.log('Vertex edit stopped')
+  }
+
   function zoomToFit(canvas) {
     canvas.animate(300).viewbox(canvas.bbox())
   }
@@ -170,12 +187,53 @@ function Viewport(editor) {
       }
     }
   }
+  function getOrthoConstrainedPoint(point, vertexData) {
+    let baseX = 0, baseY = 0
+    const { element, vertexIndex, originalPosition } = vertexData
+
+    // Determine base point for ortho constraint
+    if (element.type === 'line') {
+      baseX = originalPosition.x
+      baseY = originalPosition.y
+    } else if (element.type === 'circle') {
+      const { cx, cy, r } = originalPosition
+      if (vertexIndex === 0) { baseX = cx; baseY = cy }
+      else if (vertexIndex === 1) { baseX = cx; baseY = cy - r }
+      else if (vertexIndex === 2) { baseX = cx + r; baseY = cy }
+      else if (vertexIndex === 3) { baseX = cx; baseY = cy + r }
+      else if (vertexIndex === 4) { baseX = cx - r; baseY = cy }
+    } else if (element.type === 'rect') {
+      const { x, y, width, height } = originalPosition
+      if (vertexIndex === 0) { baseX = x; baseY = y }
+      else if (vertexIndex === 1) { baseX = x + width; baseY = y }
+      else if (vertexIndex === 2) { baseX = x + width; baseY = y + height }
+      else if (vertexIndex === 3) { baseX = x; baseY = y + height }
+      else if (vertexIndex === 4) { baseX = x + width / 2; baseY = y }
+      else if (vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
+      else if (vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
+      else if (vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+    }
+
+    const dx = point.x - baseX
+    const dy = point.y - baseY
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return { x: point.x, y: baseY }
+    } else {
+      return { x: baseX, y: point.y }
+    }
+  }
+
   function handleMove(e) {
     clearSnap()
     if (editor.isSnapping) {
-      if (editor.isDrawing || editor.isInteracting) {
+      if ((editor.isDrawing && !editor.isSelecting) || editor.isInteracting || editor.isEditingVertex) {
         checkSnap({ x: e.pageX, y: e.pageY })
+      } else {
+        editor.snapPoint = null
       }
+    } else {
+      editor.snapPoint = null
     }
     coordinates = svg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
@@ -185,12 +243,12 @@ function Viewport(editor) {
         if (editor.distance) {
           if (editor.ortho) {
             if (Math.abs(dx) > Math.abs(dy)) {
-              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
             } else {
-              ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
             }
           } else {
-            ;({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+            ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
           }
         }
         if (editor.ortho) {
@@ -231,6 +289,129 @@ function Viewport(editor) {
     }
     if (isGhostingOffset) {
       updateOffsetGhosts(coordinates)
+    }
+    // Handle vertex editing
+    if (editor.isEditingVertex && editor.editingVertices.length > 0) {
+      let point = editor.snapPoint || coordinates
+
+      if (editor.ortho) {
+        const v0 = editor.editingVertices[0]
+        let baseX = 0, baseY = 0
+
+        // Determine base point for ortho constraint
+        if (v0.element.type === 'line') {
+          baseX = v0.originalPosition.x
+          baseY = v0.originalPosition.y
+        } else if (v0.element.type === 'circle') {
+          const { cx, cy, r } = v0.originalPosition
+          if (v0.vertexIndex === 0) { baseX = cx; baseY = cy }
+          else if (v0.vertexIndex === 1) { baseX = cx; baseY = cy - r }
+          else if (v0.vertexIndex === 2) { baseX = cx + r; baseY = cy }
+          else if (v0.vertexIndex === 3) { baseX = cx; baseY = cy + r }
+          else if (v0.vertexIndex === 4) { baseX = cx - r; baseY = cy }
+        } else if (v0.element.type === 'rect') {
+          const { x, y, width, height } = v0.originalPosition
+          if (v0.vertexIndex === 0) { baseX = x; baseY = y }
+          else if (v0.vertexIndex === 1) { baseX = x + width; baseY = y }
+          else if (v0.vertexIndex === 2) { baseX = x + width; baseY = y + height }
+          else if (v0.vertexIndex === 3) { baseX = x; baseY = y + height }
+          else if (v0.vertexIndex === 4) { baseX = x + width / 2; baseY = y }
+          else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
+          else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
+          else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+        }
+
+        const dx = point.x - baseX
+        const dy = point.y - baseY
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+          point = { x: point.x, y: baseY }
+        } else {
+          point = { x: baseX, y: point.y }
+        }
+      }
+
+      editor.editingVertices.forEach(vertexData => {
+        const element = vertexData.element
+        const vertexIndex = vertexData.vertexIndex
+
+        if (element.type === 'line') {
+          if (vertexIndex === 0) {
+            // Update first vertex
+            element.plot(point.x, point.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+          } else {
+            // Update second vertex
+            element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, point.x, point.y)
+          }
+        } else if (element.type === 'circle') {
+          const cx = vertexData.originalPosition.cx
+          const cy = vertexData.originalPosition.cy
+
+          if (vertexIndex === 0) {
+            // Center handler: Move the circle
+            element.center(point.x, point.y)
+          } else {
+            // Quadrant handler: Resize radius
+            // Calculate distance from center to mouse point
+            const currentCenter = { x: element.cx(), y: element.cy() }
+            const newRadius = calculateDistance(currentCenter, point)
+            element.radius(newRadius)
+          }
+        } else if (element.type === 'rect') {
+          const original = vertexData.originalPosition
+          const index = vertexIndex
+
+          let newX = element.x()
+          let newY = element.y()
+          let newW = element.width()
+          let newH = element.height()
+
+          // Helper to update rect from 2 corner points (normalize negative width/height)
+          const setRectFromPoints = (x1, y1, x2, y2) => {
+            const x = Math.min(x1, x2)
+            const y = Math.min(y1, y2)
+            const w = Math.abs(x2 - x1)
+            const h = Math.abs(y2 - y1)
+            element.move(x, y).size(w, h)
+          }
+
+          // Case 0: Top-Left Corner
+          if (index === 0) {
+            setRectFromPoints(point.x, point.y, original.x + original.width, original.y + original.height)
+          }
+          // Case 1: Top-Right Corner
+          else if (index === 1) {
+            setRectFromPoints(original.x, point.y, point.x, original.y + original.height)
+          }
+          // Case 2: Bottom-Right Corner
+          else if (index === 2) {
+            setRectFromPoints(original.x, original.y, point.x, point.y)
+          }
+          // Case 3: Bottom-Left Corner
+          else if (index === 3) {
+            setRectFromPoints(point.x, original.y, original.x + original.width, point.y)
+          }
+          // Case 4: Top Edge
+          else if (index === 4) {
+            setRectFromPoints(original.x, point.y, original.x + original.width, original.y + original.height)
+          }
+          // Case 5: Right Edge
+          else if (index === 5) {
+            setRectFromPoints(original.x, original.y, point.x, original.y + original.height)
+          }
+          // Case 6: Bottom Edge
+          else if (index === 6) {
+            setRectFromPoints(original.x, original.y, original.x + original.width, point.y)
+          }
+          // Case 7: Left Edge
+          else if (index === 7) {
+            setRectFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+          }
+        }
+      })
+
+      // Redraw handlers to follow the vertex
+      signals.updatedSelection.dispatch()
     }
     updateCoordinates(coordinates)
     checkHover()
@@ -284,6 +465,72 @@ function Viewport(editor) {
     }
   }
   function handleMousedown(e) {
+    // Handle vertex editing commit
+    if (editor.isEditingVertex) {
+      let point = editor.snapPoint || svg.point(e.pageX, e.pageY)
+
+      if (editor.ortho && editor.editingVertices.length > 0) {
+        point = getOrthoConstrainedPoint(point, editor.editingVertices[0])
+      }
+
+      // Separate line updates and circle updates
+      const lineUpdates = []
+      const circleUpdates = []
+
+      editor.editingVertices.forEach(v => {
+        if (v.element.type === 'line') {
+          lineUpdates.push({
+            element: v.element,
+            vertexIndex: v.vertexIndex,
+            oldX: v.originalPosition.x,
+            oldY: v.originalPosition.y,
+            newX: point.x,
+            newY: point.y
+          })
+        } else if (v.element.type === 'circle') {
+          // For circle, we calculate the final state
+          let newCx = v.originalPosition.cx
+          let newCy = v.originalPosition.cy
+          let newR = v.originalPosition.r
+
+          if (v.vertexIndex === 0) {
+            newCx = point.x
+            newCy = point.y
+          } else {
+            const currentCenter = { x: v.originalPosition.cx, y: v.originalPosition.cy }
+            newR = calculateDistance(currentCenter, point)
+          }
+          circleUpdates.push({
+            element: v.element,
+            oldValues: { cx: v.originalPosition.cx, cy: v.originalPosition.cy, r: v.originalPosition.r },
+            newValues: { cx: newCx, cy: newCy, r: newR }
+          })
+        }
+      })
+
+      // Stop edit mode immediately
+      signals.vertexEditStopped.dispatch()
+
+      if (lineUpdates.length > 0) {
+        import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
+          editor.execute(new MultiEditVertexCommand(editor, lineUpdates))
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (circleUpdates.length > 0) {
+        import('./commands/EditCircleCommand.js').then(({ EditCircleCommand }) => {
+          // For now, assume single circle editing or multiple independent circle edits
+          circleUpdates.forEach(update => {
+            editor.execute(new EditCircleCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      return
+    }
+
     if (editor.isInteracting) {
       const point = svg.point(e.pageX, e.pageY)
       if (editor.snapPoint) {
@@ -318,6 +565,7 @@ function Viewport(editor) {
     if (!editor.isDrawing) {
       const startX = coordinates.x
       editor.isDrawing = true
+      editor.isSelecting = true
       svg.click(null)
       svg
         .rect()
@@ -331,15 +579,16 @@ function Viewport(editor) {
           rect.height = e.target.height.baseVal.value
           if (coordinates.x < startX) {
             e.srcElement.classList.add('selectionRectangleRight')
-            findElements(rect, 'intersect')
+            findElements(rect, 'inside')
           } else {
             e.target.classList.remove('selectionRectangleRight')
-            findElements(rect, 'inside')
+            findElements(rect, 'intersect')
           }
         })
         .on('drawstop', (e) => {
           e.target.remove()
           editor.isDrawing = false
+          editor.isSelecting = false
           selectHovered()
         })
     }
@@ -472,6 +721,10 @@ function Viewport(editor) {
     if (editor.isDrawing) {
       snapCandidates.pop()
     }
+    if (editor.isEditingVertex && editor.editingVertices.length > 0) {
+      const editingNodes = editor.editingVertices.map(v => v.element.node)
+      snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
+    }
     // console.log('snapCandidates', snapCandidates)
     snapCandidates.forEach((el) => {
       // TO DO: Add other types
@@ -480,6 +733,42 @@ function Viewport(editor) {
           let worldPoint = { x: pointArr[0], y: pointArr[1] }
           let screenPoint = worldToScreen(worldPoint, editor.svg)
           targets.push(screenPoint)
+        })
+      } else if (el.type === 'circle') {
+        const cx = el.node.cx.baseVal.value
+        const cy = el.node.cy.baseVal.value
+        const r = el.node.r.baseVal.value
+
+        const points = [
+          { x: cx, y: cy },
+          { x: cx, y: cy - r },
+          { x: cx + r, y: cy },
+          { x: cx, y: cy + r },
+          { x: cx - r, y: cy }
+        ]
+
+        points.forEach(p => {
+          targets.push(worldToScreen(p, editor.svg))
+        })
+      } else if (el.type === 'rect') {
+        const rx = el.node.x.baseVal.value
+        const ry = el.node.y.baseVal.value
+        const rw = el.node.width.baseVal.value
+        const rh = el.node.height.baseVal.value
+
+        const points = [
+          { x: rx, y: ry },
+          { x: rx + rw, y: ry },
+          { x: rx + rw, y: ry + rh },
+          { x: rx, y: ry + rh },
+          { x: rx + rw / 2, y: ry },
+          { x: rx + rw, y: ry + rh / 2 },
+          { x: rx + rw / 2, y: ry + rh },
+          { x: rx, y: ry + rh / 2 }
+        ]
+
+        points.forEach(p => {
+          targets.push(worldToScreen(p, editor.svg))
         })
       }
     })
@@ -553,15 +842,15 @@ function Viewport(editor) {
 }
 
 function drawSnap(point, zoom, svg) {
-  const snapSquareScreenSize = 20
+  const snapSquareScreenSize = 15
   const currentZoom = zoom && zoom ? zoom : 1
   const snapSquareWorldSize = snapSquareScreenSize / currentZoom
-  const strokeWorldUnits = 1 / currentZoom
+  const strokeWorldUnits = 3 / currentZoom
   svg
     .rect(snapSquareWorldSize, snapSquareWorldSize)
     .center(point.x, point.y)
     .fill('none')
-    .stroke({ color: 'blue', width: strokeWorldUnits })
+    .stroke({ color: 'hsl(217, 47%, 55%)', width: strokeWorldUnits })
 }
 
 function clearSnap() {
