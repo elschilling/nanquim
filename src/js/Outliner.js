@@ -26,7 +26,9 @@ function Outliner(editor) {
     })
     signals.updatedProperties.dispatch()
     // Draw handlers for selected elements
-    drawHandlers()
+    if (!editor.suppressHandlers) {
+      drawHandlers()
+    }
   })
 
   function drawHandlers() {

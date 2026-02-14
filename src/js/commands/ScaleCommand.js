@@ -22,6 +22,7 @@ class ScaleCommand extends Command {
       msg: `Select elements to scale and press Enter to confirm.`,
     })
     document.addEventListener('keydown', this.boundOnKeyDown)
+    this.editor.suppressHandlers = true
   }
 
   onKeyDown(event) {
@@ -96,6 +97,7 @@ class ScaleCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
+    this.editor.suppressHandlers = false
     this.editor.signals.scaleGhostingStopped.dispatch()
   }
 

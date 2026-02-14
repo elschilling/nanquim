@@ -22,6 +22,7 @@ class MoveCommand extends Command {
     })
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
+    this.editor.suppressHandlers = true
   }
 
   onKeyDown(event) {
@@ -68,12 +69,12 @@ class MoveCommand extends Command {
     if (this.editor.distance) {
       if (this.editor.ortho) {
         if (Math.abs(dx) > Math.abs(dy)) {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
+          ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
         } else {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, this.editor.distance))
+          ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, this.editor.distance))
         }
       } else {
-        ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, this.editor.distance))
+        ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, this.editor.distance))
       }
     }
     if (this.editor.ortho) {
@@ -113,6 +114,7 @@ class MoveCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
+    this.editor.suppressHandlers = false
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 

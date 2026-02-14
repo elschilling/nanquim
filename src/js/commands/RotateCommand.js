@@ -17,6 +17,7 @@ class RotateCommand extends Command {
     })
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
+    this.editor.suppressHandlers = true
   }
 
   onKeyDown(event) {
@@ -456,6 +457,7 @@ class RotateCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
+    this.editor.suppressHandlers = false
     this.editor.signals.rotateGhostingStopped.dispatch()
   }
 
