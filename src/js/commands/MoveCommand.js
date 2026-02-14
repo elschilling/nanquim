@@ -149,6 +149,7 @@ class MoveCommand extends Command {
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
     this.editor.isInteracting = false
+    this.editor.suppressHandlers = false // Reset handlers suppression
     this.selectedElements = this.editor.selected
     this.editor.signals.clearSelection.dispatch()
     this.editor.selected = []
