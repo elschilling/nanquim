@@ -121,13 +121,12 @@ class OffsetCommand extends Command {
 
     // Stop ghosting for this element and allow another selection
     this.editor.signals.offsetGhostingStopped.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element.` })
+    this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element. Select next element or press Esc to finish.` })
 
-    // Finish the command
-    this.cleanup()
-    this.editor.selected = []
-    this.editor.signals.clearSelection.dispatch()
+    // Continue: loop back to element selection with the same distance
     this.editor.lastCommand = new OffsetCommand(this.editor)
+    this.editor.selected = []
+    this.startSelection()
   }
 
   onKeyDown(e) {
@@ -148,8 +147,8 @@ class OffsetCommand extends Command {
     this.selectedElement = null
   }
 
-  undo() {}
-  redo() {}
+  undo() { }
+  redo() { }
 }
 
 function offsetCommand(editor) {

@@ -103,7 +103,7 @@ class FilletCommand extends Command {
         this.createFilletArc(line1Data, line2Data, radius)
       }
 
-      this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}` })
+      this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}. Select next elements or press Esc to finish.` })
     } catch (error) {
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet failed: ${error.message}` })
       // Restore original states on error
@@ -111,7 +111,12 @@ class FilletCommand extends Command {
     }
     this.editor.execute(this)
     this.editor.lastCommand = this
-    this.cleanup()
+
+    // Continue: reset selection and loop back for more fillets
+    this.selectedElements = []
+    this.originalStates = []
+    this.createdElements = []
+    this.startSelection()
   }
 
   // Utility functions for line geometry
