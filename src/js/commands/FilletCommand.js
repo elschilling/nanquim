@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { getLineIntersection, getLineEquation } from '../utils/intersection'
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -120,36 +121,8 @@ class FilletCommand extends Command {
   }
 
   // Utility functions for line geometry
-  getLineEquation(line) {
-    // SVG.js uses attr() method instead of getAttribute()
-    const x1 = parseFloat(line.attr('x1'))
-    const y1 = parseFloat(line.attr('y1'))
-    const x2 = parseFloat(line.attr('x2'))
-    const y2 = parseFloat(line.attr('y2'))
-
-    return { x1, y1, x2, y2 }
-  }
-
-  getLineIntersection(line1, line2) {
-    const l1 = this.getLineEquation(line1)
-    const l2 = this.getLineEquation(line2)
-
-    const denom = (l1.x1 - l1.x2) * (l2.y1 - l2.y2) - (l1.y1 - l1.y2) * (l2.x1 - l2.x2)
-
-    if (Math.abs(denom) < 1e-10) {
-      throw new Error('Lines are parallel or coincident')
-    }
-
-    const t = ((l1.x1 - l2.x1) * (l2.y1 - l2.y2) - (l1.y1 - l2.y1) * (l2.x1 - l2.x2)) / denom
-
-    return {
-      x: l1.x1 + t * (l1.x2 - l1.x1),
-      y: l1.y1 + t * (l1.y2 - l1.y1),
-    }
-  }
-
   getLineDirection(line) {
-    const l = this.getLineEquation(line)
+    const l = getLineEquation(line)
     const dx = l.x2 - l.x1
     const dy = l.y2 - l.y1
     const length = Math.sqrt(dx * dx + dy * dy)
@@ -157,7 +130,7 @@ class FilletCommand extends Command {
   }
 
   getLineLength(line) {
-    const l = this.getLineEquation(line)
+    const l = getLineEquation(line)
     return Math.sqrt((l.x2 - l.x1) ** 2 + (l.y2 - l.y1) ** 2)
   }
 
@@ -167,7 +140,7 @@ class FilletCommand extends Command {
       const [line1, click1] = line1Data
       const [line2, click2] = line2Data
 
-      const intersection = this.getLineIntersection(line1, line2)
+      const intersection = getLineIntersection(line1, line2)
 
       console.log('Intersection:', intersection)
       console.log('Click1:', click1)
@@ -179,7 +152,7 @@ class FilletCommand extends Command {
       }
 
       // For line1: Find which endpoint is on the same side as the click relative to intersection
-      const l1 = this.getLineEquation(line1)
+      const l1 = getLineEquation(line1)
       console.log('Line1 before:', l1)
 
       // Calculate vectors from intersection to each endpoint and to click
@@ -204,7 +177,7 @@ class FilletCommand extends Command {
       }
 
       // For line2: Same logic
-      const l2 = this.getLineEquation(line2)
+      const l2 = getLineEquation(line2)
       console.log('Line2 before:', l2)
 
       const vecToStart2 = { x: l2.x1 - intersection.x, y: l2.y1 - intersection.y }
@@ -226,8 +199,8 @@ class FilletCommand extends Command {
         line2.attr({ x1: intersection.x, y1: intersection.y })
       }
 
-      console.log('Line1 after:', this.getLineEquation(line1))
-      console.log('Line2 after:', this.getLineEquation(line2))
+      console.log('Line1 after:', getLineEquation(line1))
+      console.log('Line2 after:', getLineEquation(line2))
     } catch (error) {
       console.error('Error in extendLinesToIntersection:', error)
       throw error // Re-throw to trigger undo in filletElements
@@ -240,8 +213,8 @@ class FilletCommand extends Command {
     const [line2, click2] = line2Data
 
     // Get line equations
-    const l1 = this.getLineEquation(line1)
-    const l2 = this.getLineEquation(line2)
+    const l1 = getLineEquation(line1)
+    const l2 = getLineEquation(line2)
 
     // Check if lines are already connected (share an endpoint)
     let sharedPoint = null
@@ -283,7 +256,7 @@ class FilletCommand extends Command {
       availableLength2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
     } else {
       // Lines are separate - find intersection by extending them
-      intersection = this.getLineIntersection(line1, line2)
+      intersection = getLineIntersection(line1, line2)
 
       // Find which endpoints to preserve (those closer to click positions)
       const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
@@ -456,7 +429,7 @@ class FilletCommand extends Command {
   // Helper function to trim connected lines
   trimConnectedLineToPoint(line, trimPoint, sharedPoint, freeEnd) {
     // Determine which endpoint is the shared point and trim from there
-    const l = this.getLineEquation(line)
+    const l = getLineEquation(line)
     const tolerance = 0.001
 
     if (Math.abs(l.x1 - sharedPoint.x) < tolerance && Math.abs(l.y1 - sharedPoint.y) < tolerance) {
@@ -470,7 +443,7 @@ class FilletCommand extends Command {
 
   // Helper function to trim a line to a specific point
   trimLineToPoint(line, trimPoint, intersection, clickPoint) {
-    const l = this.getLineEquation(line)
+    const l = getLineEquation(line)
 
     // We need to determine which endpoint is on the same side of the intersection as the click
     // Calculate vectors from intersection to each endpoint and to the click

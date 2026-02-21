@@ -9,6 +9,7 @@ import { filletCommand } from './FilletCommand'
 import { scaleCommand } from './ScaleCommand'
 import { matchPropertiesCommand } from './MatchPropertiesCommand'
 import { eraseCommand } from './EraseCommand'
+import { extendCommand } from './ExtendCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -55,6 +56,10 @@ const commands = {
   ERASE: {
     execute: eraseCommand,
     aliases: ['e'],
+  },
+  EXTEND: {
+    execute: extendCommand,
+    aliases: ['ex'],
   },
   // Add more commands and functions as needed
 }

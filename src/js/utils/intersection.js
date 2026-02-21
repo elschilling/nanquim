@@ -1,6 +1,6 @@
 function onSegment(p, q, r) {
   if (q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) &&
-      q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y)) {
+    q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y)) {
     return true;
   }
   return false;
@@ -32,52 +32,52 @@ function doLineSegmentsIntersect(p1, q1, p2, q2) {
 }
 
 export function isLineIntersectingRect(line, rect) {
-    const p1 = { x: line.x1, y: line.y1 };
-    const q1 = { x: line.x2, y: line.y2 };
+  const p1 = { x: line.x1, y: line.y1 };
+  const q1 = { x: line.x2, y: line.y2 };
 
-    // Check if the line is completely inside the rectangle
-    if (p1.x > rect.x && p1.x < rect.x + rect.width &&
-        p1.y > rect.y && p1.y < rect.y + rect.height &&
-        q1.x > rect.x && q1.x < rect.x + rect.width &&
-        q1.y > rect.y && q1.y < rect.y + rect.height) {
-        return true;
-    }
+  // Check if the line is completely inside the rectangle
+  if (p1.x > rect.x && p1.x < rect.x + rect.width &&
+    p1.y > rect.y && p1.y < rect.y + rect.height &&
+    q1.x > rect.x && q1.x < rect.x + rect.width &&
+    q1.y > rect.y && q1.y < rect.y + rect.height) {
+    return true;
+  }
 
-    // Check for intersection with each of the 4 rectangle segments
-    const topLeft = { x: rect.x, y: rect.y };
-    const topRight = { x: rect.x + rect.width, y: rect.y };
-    const bottomLeft = { x: rect.x, y: rect.y + rect.height };
-    const bottomRight = { x: rect.x + rect.width, y: rect.y + rect.height };
+  // Check for intersection with each of the 4 rectangle segments
+  const topLeft = { x: rect.x, y: rect.y };
+  const topRight = { x: rect.x + rect.width, y: rect.y };
+  const bottomLeft = { x: rect.x, y: rect.y + rect.height };
+  const bottomRight = { x: rect.x + rect.width, y: rect.y + rect.height };
 
-    if (doLineSegmentsIntersect(p1, q1, topLeft, topRight)) return true;
-    if (doLineSegmentsIntersect(p1, q1, topRight, bottomRight)) return true;
-    if (doLineSegmentsIntersect(p1, q1, bottomRight, bottomLeft)) return true;
-    if (doLineSegmentsIntersect(p1, q1, bottomLeft, topLeft)) return true;
+  if (doLineSegmentsIntersect(p1, q1, topLeft, topRight)) return true;
+  if (doLineSegmentsIntersect(p1, q1, topRight, bottomRight)) return true;
+  if (doLineSegmentsIntersect(p1, q1, bottomRight, bottomLeft)) return true;
+  if (doLineSegmentsIntersect(p1, q1, bottomLeft, topLeft)) return true;
 
-    return false;
+  return false;
 }
 
 export function isCircleIntersectingRect(circle, rect) {
-    const circleDistX = Math.abs(circle.cx - rect.x - rect.width / 2);
-    const circleDistY = Math.abs(circle.cy - rect.y - rect.height / 2);
+  const circleDistX = Math.abs(circle.cx - rect.x - rect.width / 2);
+  const circleDistY = Math.abs(circle.cy - rect.y - rect.height / 2);
 
-    if (circleDistX > (rect.width / 2 + circle.r)) { return false; }
-    if (circleDistY > (rect.height / 2 + circle.r)) { return false; }
+  if (circleDistX > (rect.width / 2 + circle.r)) { return false; }
+  if (circleDistY > (rect.height / 2 + circle.r)) { return false; }
 
-    if (circleDistX <= (rect.width / 2)) { return true; }
-    if (circleDistY <= (rect.height / 2)) { return true; }
+  if (circleDistX <= (rect.width / 2)) { return true; }
+  if (circleDistY <= (rect.height / 2)) { return true; }
 
-    const cornerDistanceSq = Math.pow(circleDistX - rect.width / 2, 2) +
-                             Math.pow(circleDistY - rect.height / 2, 2);
+  const cornerDistanceSq = Math.pow(circleDistX - rect.width / 2, 2) +
+    Math.pow(circleDistY - rect.height / 2, 2);
 
-    return (cornerDistanceSq <= Math.pow(circle.r, 2));
+  return (cornerDistanceSq <= Math.pow(circle.r, 2));
 }
 
 export function isPolygonIntersectingRect(polygon, rect) {
   // 1. Check if any vertex of the polygon is inside the rectangle
   for (const vertex of polygon) {
     if (vertex.x >= rect.x && vertex.x <= rect.x + rect.width &&
-        vertex.y >= rect.y && vertex.y <= rect.y + rect.height) {
+      vertex.y >= rect.y && vertex.y <= rect.y + rect.height) {
       return true;
     }
   }
@@ -117,4 +117,101 @@ export function isPolygonIntersectingRect(polygon, rect) {
   }
 
   return inside;
+}
+
+// Utility functions for line geometry
+export function getLineEquation(line) {
+  // SVG.js uses attr() method instead of getAttribute()
+  // Works with svg.js elements or raw objects with x1,y1,x2,y2 properties
+  const x1 = typeof line.attr === 'function' ? parseFloat(line.attr('x1')) : line.x1;
+  const y1 = typeof line.attr === 'function' ? parseFloat(line.attr('y1')) : line.y1;
+  const x2 = typeof line.attr === 'function' ? parseFloat(line.attr('x2')) : line.x2;
+  const y2 = typeof line.attr === 'function' ? parseFloat(line.attr('y2')) : line.y2;
+
+  return { x1, y1, x2, y2 }
+}
+
+export function getLineIntersection(line1, line2) {
+  const l1 = getLineEquation(line1)
+  const l2 = getLineEquation(line2)
+
+  const denom = (l1.x1 - l1.x2) * (l2.y1 - l2.y2) - (l1.y1 - l1.y2) * (l2.x1 - l2.x2)
+
+  if (Math.abs(denom) < 1e-10) {
+    return null // Lines are parallel or coincident
+  }
+
+  const t = ((l1.x1 - l2.x1) * (l2.y1 - l2.y2) - (l1.y1 - l2.y1) * (l2.x1 - l2.x2)) / denom
+
+  return {
+    x: l1.x1 + t * (l1.x2 - l1.x1),
+    y: l1.y1 + t * (l1.y2 - l1.y1),
+  }
+}
+
+export function getLineCircleIntersections(line, circle) {
+  // line: {x1, y1, x2, y2} (or from getLineEquation)
+  // circle: {cx, cy, r}
+  const dx = line.x2 - line.x1;
+  const dy = line.y2 - line.y1;
+  const cx = circle.cx;
+  const cy = circle.cy;
+  const r = circle.r;
+
+  const A = dx * dx + dy * dy;
+  const B = 2 * (dx * (line.x1 - cx) + dy * (line.y1 - cy));
+  const C = (line.x1 - cx) * (line.x1 - cx) + (line.y1 - cy) * (line.y1 - cy) - r * r;
+
+  const det = B * B - 4 * A * C;
+  if (A <= 0.0000001 || det < 0) {
+    return []; // No intersection
+  } else if (det === 0) {
+    // One intersection (tangent)
+    const t = -B / (2 * A);
+    return [{ x: line.x1 + t * dx, y: line.y1 + t * dy }];
+  } else {
+    // Two intersections
+    const t1 = (-B + Math.sqrt(det)) / (2 * A);
+    const t2 = (-B - Math.sqrt(det)) / (2 * A);
+    return [
+      { x: line.x1 + t1 * dx, y: line.y1 + t1 * dy },
+      { x: line.x1 + t2 * dx, y: line.y1 + t2 * dy }
+    ];
+  }
+}
+
+export function getLineRectIntersections(line, rect) {
+  // rect: {x, y, width, height}
+  const intersections = [];
+
+  const minX = rect.x;
+  const maxX = rect.x + rect.width;
+  const minY = rect.y;
+  const maxY = rect.y + rect.height;
+
+  // The 4 segments of the rectangle
+  const segments = [
+    { x1: minX, y1: minY, x2: maxX, y2: minY }, // Top
+    { x1: maxX, y1: minY, x2: maxX, y2: maxY }, // Right
+    { x1: maxX, y1: maxY, x2: minX, y2: maxY }, // Bottom
+    { x1: minX, y1: maxY, x2: minX, y2: minY }  // Left
+  ];
+
+  for (const seg of segments) {
+    const pt = getLineIntersection(line, seg);
+    if (pt) {
+      // Check if point is on the finite rectangle segment
+      const intersectMinX = Math.min(seg.x1, seg.x2) - 1e-4;
+      const intersectMaxX = Math.max(seg.x1, seg.x2) + 1e-4;
+      const intersectMinY = Math.min(seg.y1, seg.y2) - 1e-4;
+      const intersectMaxY = Math.max(seg.y1, seg.y2) + 1e-4;
+
+      if (pt.x >= intersectMinX && pt.x <= intersectMaxX &&
+        pt.y >= intersectMinY && pt.y <= intersectMaxY) {
+        intersections.push(pt);
+      }
+    }
+  }
+
+  return intersections;
 }

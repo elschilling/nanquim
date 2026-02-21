@@ -542,11 +542,11 @@ function Viewport(editor) {
       } else {
         signals.pointCaptured.dispatch(point)
       }
-      if (editor.selectSingleElement) {
-        if (hoveredElements.length > 0) {
-          editor.lastClick = point
-          signals.toogledSelect.dispatch(hoveredElements[0])
-        }
+      if (hoveredElements.length > 0) {
+        editor.lastClick = point
+        signals.toogledSelect.dispatch(hoveredElements[0])
+      } else if (!editor.selectSingleElement) {
+        handleRectSelection(e)
       }
       return
     }
@@ -689,6 +689,21 @@ function Viewport(editor) {
 
   function selectHovered() {
     console.log('hovered', hoveredElements)
+
+    // During interaction tools that support multi-selection (like Extend), dispatch toogledSelect directly
+    if (editor.isInteracting && !editor.selectSingleElement) {
+      // Create a copy to prevent mutation issues during dispatch
+      const elementsToDispatch = [...hoveredElements]
+
+      // Update lastClick to current coordinates so direction logic works for rect selection
+      editor.lastClick = coordinates
+
+      elementsToDispatch.forEach(el => {
+        signals.toogledSelect.dispatch(el)
+      })
+      return
+    }
+
     hoveredElements.forEach((el) => {
       // Check if element is already selected before adding it
       if (!editor.selected.includes(el)) {

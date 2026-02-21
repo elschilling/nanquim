@@ -18,7 +18,7 @@ function Outliner(editor) {
   })
 
   signals.updatedSelection.add(() => {
-    signals.clearSelection.dispatch()
+    clearSelectionVisuals()
     editor.selected.forEach((el) => {
       const li = document.getElementById('li' + el.node.id)
       el.addClass('elementSelected')
@@ -31,23 +31,16 @@ function Outliner(editor) {
     }
   })
 
-  function drawHandlers() {
-    // Clear existing handlers
+  function clearSelectionVisuals() {
+    // Clear handlers
     editor.handlers.clear()
 
-    if (editor.suppressHandlers) return
-
-    // Get current zoom level
-    const currentZoom = editor.svg.zoom()
-    const handlerScreenSize = 16 // pixels on screen
-    const handlerWorldSize = handlerScreenSize / currentZoom
-
-    // ... (rest of drawHandlers)
+    const selectedItems = drawingTree.querySelectorAll('.outliner-selected')
+    selectedItems.forEach(li => li.classList.remove('outliner-selected'))
+    editor.drawing.children().each((el) => {
+      el.removeClass('elementSelected')
+    })
   }
-
-  // ... (getCoincidentVertices helper is here, I need to skip it to reach clearSelection)
-  // I will use multiple ReplaceChunks to skip the middle part if I can, but I am editing lines 20-31 and 192-203.
-  // Wait, these are far apart. I should use MultiReplaceFileContent.
 
 
   function drawHandlers() {
@@ -210,15 +203,8 @@ function Outliner(editor) {
 
 
   signals.clearSelection.add(() => {
-    // Clear handlers
-    editor.handlers.clear()
-
-    const selectedItems = drawingTree.querySelectorAll('.outliner-selected')
-    selectedItems.forEach(li => li.classList.remove('outliner-selected'))
-    editor.drawing.children().each((el) => {
-      // el.selectize(false, { deepSelect: true })
-      el.removeClass('elementSelected')
-    })
+    clearSelectionVisuals()
+    editor.selected = []
   })
 
   // Redraw handlers when zoom changes
@@ -232,7 +218,7 @@ function Outliner(editor) {
   })
 
   signals.toogledSelect.add((el) => {
-    if (editor.preventSelection) return
+    if (editor.preventSelection || editor.isInteracting) return
 
     if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
       if (editor.selectSingleElement) {
