@@ -55,6 +55,7 @@ class DrawLineCommand extends Command {
           line = null
           if (!startPoint) {
             // No start point yet - use coordinate as start point
+            this.editor.snapPoint = { x: coord.x, y: coord.y }
             this.draw({ x: coord.x, y: coord.y })
           } else {
             // Start point exists - draw line to absolute coordinate
@@ -64,6 +65,7 @@ class DrawLineCommand extends Command {
             this.editor.history.undos.push(new AddElementCommand(this.editor, newLine))
             this.editor.lastCommand = this
             this.updatedOutliner()
+            this.editor.snapPoint = { x: coord.x, y: coord.y }
             this.draw({ x: coord.x, y: coord.y })
           }
         }

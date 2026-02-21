@@ -60,17 +60,54 @@ class MoveCommand extends Command {
     this.editor.signals.terminalLogged.dispatch({ msg: `Selected ${selectedElements.length} elements.` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify base point.' })
     this.editor.signals.pointCaptured.addOnce(this.onBasePoint, this)
+
+    // Listen for coordinate input for base point
+    this.boundOnBaseCoordinateInput = () => {
+      this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
+      this.onBasePoint(this.editor.inputCoord)
+    }
+    this.editor.signals.coordinateInput.addOnce(this.boundOnBaseCoordinateInput, this)
   }
 
   onBasePoint(point) {
+    if (this.boundOnBaseCoordinateInput) {
+      this.editor.signals.coordinateInput.remove(this.boundOnBaseCoordinateInput, this)
+    }
     this.basePoint = point
     this.editor.signals.terminalLogged.dispatch({ msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}` })
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point or enter a distance.' })
+    this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point or type a distance.' })
     this.editor.signals.moveGhostingStarted.dispatch(this.editor.selected, this.basePoint)
     this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
+
+    // Listen for typed distance input — move in current mouse direction by the typed amount
+    this.boundOnDistanceInput = () => {
+      // Remove the pointCaptured listener since we're using the typed distance
+      this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
+      // Use the current mouse position on the editor as direction reference
+      const dirPoint = this.editor.snapPoint || this.editor.coordinates
+      this.onSecondPoint(dirPoint)
+    }
+    this.editor.signals.inputValue.addOnce(this.boundOnDistanceInput, this)
+
+    // Listen for absolute coordinate input for second point
+    this.boundOnSecondCoordinateInput = () => {
+      this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
+      if (this.boundOnDistanceInput) {
+        this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
+      }
+      this.onSecondPoint(this.editor.inputCoord)
+    }
+    this.editor.signals.coordinateInput.addOnce(this.boundOnSecondCoordinateInput, this)
   }
 
   onSecondPoint(point) {
+    // Clean up listeners if we got here via click or other inputs
+    if (this.boundOnDistanceInput) {
+      this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
+    }
+    if (this.boundOnSecondCoordinateInput) {
+      this.editor.signals.coordinateInput.remove(this.boundOnSecondCoordinateInput, this)
+    }
     this.editor.signals.moveGhostingStopped.dispatch()
     const secondPoint = point
     let dx = secondPoint.x - this.basePoint.x
@@ -122,6 +159,15 @@ class MoveCommand extends Command {
   // Cleanup method to properly reset state and remove listeners
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
+    if (this.boundOnBaseCoordinateInput) {
+      this.editor.signals.coordinateInput.remove(this.boundOnBaseCoordinateInput, this)
+    }
+    if (this.boundOnDistanceInput) {
+      this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
+    }
+    if (this.boundOnSecondCoordinateInput) {
+      this.editor.signals.coordinateInput.remove(this.boundOnSecondCoordinateInput, this)
+    }
     this.editor.isInteracting = false
     this.editor.suppressHandlers = false
     this.editor.signals.moveGhostingStopped.dispatch()

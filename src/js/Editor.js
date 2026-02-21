@@ -23,6 +23,7 @@ function Editor() {
     scaleGhostingStopped: new Signal(),
     inputValue: new Signal(),
     zoomChanged: new Signal(),
+    coordinateInput: new Signal(),
     vertexEditStarted: new Signal(),
     vertexEditStopped: new Signal(),
     refreshHandlers: new Signal(),

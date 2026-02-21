@@ -554,7 +554,7 @@ function Viewport(editor) {
     if (e.button === 1) {
       // check middle click
       handleMiddleClick()
-    } else {
+    } else if (!editor.isDrawing) {
       console.log('hoveredElements', hoveredElements)
       if (hoveredElements.length > 0) {
         signals.toogledSelect.dispatch(hoveredElements[0])

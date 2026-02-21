@@ -12,7 +12,7 @@ function Terminal(editor) {
   let terminalLog = document.getElementById('terminalLog')
 
   signals.updatedCoordinates.add((coordinates) => {
-    // console.log('update coordinates', coordinates)
+    editor.coordinates = coordinates
   })
 
   signals.terminalLogged.add((e) => {
@@ -143,14 +143,26 @@ function Terminal(editor) {
       }
     } else if (editor.isInteracting) {
       if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-        if (isNumericString(terminalInput.value.trim())) {
-          console.log('distance input', terminalInput.value)
-          editor.distance = terminalInput.value
-          editor.signals.inputValue.dispatch(terminalInput.value)
+        const input = terminalInput.value.trim()
+        if (isNumericString(input)) {
+          console.log('distance input', input)
+          editor.distance = input
+          editor.signals.inputValue.dispatch(input)
           terminalText.value = ''
+        } else if (input.startsWith('@')) {
+          const coords = input.substring(1).split(',')
+          if (coords.length === 2) {
+            const x = parseFloat(coords[0])
+            const y = parseFloat(coords[1])
+            if (!isNaN(x) && !isNaN(y)) {
+              editor.inputCoord = { x, y }
+              editor.signals.coordinateInput.dispatch()
+              terminalText.value = ''
+            }
+          }
         } else {
-          console.log('command params', terminalInput.value)
-          editor.signals.inputValue.dispatch(terminalInput.value)
+          console.log('command params', input)
+          editor.signals.inputValue.dispatch(input)
           terminalText.value = ''
         }
       }
