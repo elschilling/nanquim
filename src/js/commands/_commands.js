@@ -8,6 +8,7 @@ import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
 import { scaleCommand } from './ScaleCommand'
 import { matchPropertiesCommand } from './MatchPropertiesCommand'
+import { eraseCommand } from './EraseCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -50,6 +51,10 @@ const commands = {
   MATCH_PROPERTIES: {
     execute: matchPropertiesCommand,
     aliases: ['ma'],
+  },
+  ERASE: {
+    execute: eraseCommand,
+    aliases: ['e'],
   },
   // Add more commands and functions as needed
 }

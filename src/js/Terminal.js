@@ -115,8 +115,8 @@ function Terminal(editor) {
       signals.clearSelection.dispatch()
       editor.selected = []
       // Then delete all elements
-      elementsToDelete.forEach((element) => {
-        editor.execute(new RemoveElementCommand(editor, element))
+      import('./commands/MultiRemoveElementCommand.js').then(({ MultiRemoveElementCommand }) => {
+        editor.execute(new MultiRemoveElementCommand(editor, elementsToDelete))
       })
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()
