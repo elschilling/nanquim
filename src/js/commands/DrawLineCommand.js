@@ -47,6 +47,27 @@ class DrawLineCommand extends Command {
           this.draw(startPoint, this.editor.length)
         }
       })
+      this.editor.svg.on('coordinateInput', (e) => {
+        if (line) {
+          const coord = this.editor.inputCoord
+          line.off()
+          line.draw('cancel')
+          line = null
+          if (!startPoint) {
+            // No start point yet - use coordinate as start point
+            this.draw({ x: coord.x, y: coord.y })
+          } else {
+            // Start point exists - draw line to absolute coordinate
+            let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y).addClass('newDrawing')
+            newLine.attr('id', this.editor.elementIndex++)
+            newLine.attr('name', 'Line')
+            this.editor.history.undos.push(new AddElementCommand(this.editor, newLine))
+            this.editor.lastCommand = this
+            this.updatedOutliner()
+            this.draw({ x: coord.x, y: coord.y })
+          }
+        }
+      })
       this.editor.svg.on('orthoChange', () => {
         if (line) {
           console.log('line', line)

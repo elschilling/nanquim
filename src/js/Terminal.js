@@ -122,11 +122,23 @@ function Terminal(editor) {
       if (e.shiftKey) editor.redo()
       else editor.undo()
     } else if (editor.isDrawing) {
-      if (isNumericString(terminalInput.value.trim())) {
-        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-          editor.length = terminalInput.value
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+        const input = terminalInput.value.trim()
+        if (isNumericString(input)) {
+          editor.length = input
           editor.svg.fire('valueInput')
           terminalText.value = ''
+        } else if (input.startsWith('@')) {
+          const coords = input.substring(1).split(',')
+          if (coords.length === 2) {
+            const x = parseFloat(coords[0])
+            const y = parseFloat(coords[1])
+            if (!isNaN(x) && !isNaN(y)) {
+              editor.inputCoord = { x, y }
+              editor.svg.fire('coordinateInput')
+              terminalText.value = ''
+            }
+          }
         }
       }
     } else if (editor.isInteracting) {
