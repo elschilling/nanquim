@@ -23,6 +23,7 @@ class FilletCommand extends Command {
     })
     this.editor.isInteracting = true
     this.editor.signals.inputValue.addOnce(this.onRadiusParam, this)
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.startSelection()
   }
@@ -469,9 +470,9 @@ class FilletCommand extends Command {
   }
 
   onKeyDown(e) {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
       this.cleanup()
-      this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
     }
   }
 
@@ -480,6 +481,7 @@ class FilletCommand extends Command {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     this.editor.signals.inputValue.remove(this.onRadiusParam, this)
     this.editor.signals.inputValue.remove(this.onRadiusInput, this)
+    this.editor.signals.commandCancelled.remove(this.cleanup, this)
     this.editor.isInteracting = false
     this.editor.selectSingleElement = false
     this.editor.distance = null

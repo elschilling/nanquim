@@ -52,6 +52,13 @@ function Viewport(editor) {
   signals.updatedOutliner.add(() => {
     hoveredElements = []
   })
+  signals.clearSelection.add(() => {
+    hoveredElements = []
+  })
+
+  signals.requestHoverCheck.add(() => {
+    checkHover()
+  })
 
   document.addEventListener('contextmenu', handleRightClick)
   let canvas = document.getElementById('canvas')
@@ -457,18 +464,20 @@ function Viewport(editor) {
           }
         }
         if (distance < hoverTreshold) {
-          if (!(hoveredElements.length > 0)) {
+          if (!hoveredElements.some((item) => item.node === el.node)) {
             el.addClass('elementHover')
-            hoveredElements = [el]
+            hoveredElements.push(el)
           }
         } else {
           el.removeClass('elementHover')
-          hoveredElements = hoveredElements.filter((item) => item !== el)
+          hoveredElements = hoveredElements.filter((item) => item.node !== el.node)
         }
       })
     }
   }
   function handleMousedown(e) {
+    if (editor.isDrawing) return
+
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
       let point = editor.snapPoint || svg.point(e.pageX, e.pageY)
@@ -537,14 +546,20 @@ function Viewport(editor) {
 
     if (editor.isInteracting) {
       const point = svg.point(e.pageX, e.pageY)
-      if (editor.snapPoint) {
-        signals.pointCaptured.dispatch(editor.snapPoint)
-      } else {
-        signals.pointCaptured.dispatch(point)
+
+      // Only capture points for single-click operations here. 
+      // Rectangle selection captures its own points via draw plugin.
+      if (!editor.isSelecting) {
+        if (editor.snapPoint) {
+          signals.pointCaptured.dispatch(editor.snapPoint)
+        } else {
+          signals.pointCaptured.dispatch(point)
+        }
       }
+
       if (hoveredElements.length > 0) {
         editor.lastClick = point
-        signals.toogledSelect.dispatch(hoveredElements[0])
+        signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
       } else if (!editor.selectSingleElement) {
         handleRectSelection(e)
       }
@@ -600,6 +615,9 @@ function Viewport(editor) {
 
   function findElements(rect, selectionMode) {
     drawing.children().each((el) => {
+      // Skip selection rectangle and ghost elements
+      if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine')) return
+
       const bbox = el.bbox()
 
       let isInsideOrIntersecting = false
@@ -676,37 +694,47 @@ function Viewport(editor) {
       if (isInsideOrIntersecting) {
         el.addClass('elementHover')
 
-        // Check if element is already in hoveredElements using direct reference comparison
-        if (!hoveredElements.includes(el)) {
+        // Check if element is already in hoveredElements using node identity
+        if (!hoveredElements.some((item) => item.node === el.node)) {
           hoveredElements.push(el)
         }
       } else {
         el.removeClass('elementHover')
-        hoveredElements = hoveredElements.filter((item) => item !== el)
+        hoveredElements = hoveredElements.filter((item) => item.node !== el.node)
       }
     })
   }
 
   function selectHovered() {
-    console.log('hovered', hoveredElements)
+    const backupHovered = [...hoveredElements]
+    hoveredElements = []
 
     // During interaction tools that support multi-selection (like Extend), dispatch toogledSelect directly
     if (editor.isInteracting && !editor.selectSingleElement) {
-      // Create a copy to prevent mutation issues during dispatch
-      const elementsToDispatch = [...hoveredElements]
+      // Create a unique copy based on node identity to prevent double-dispatch
+      const elementsToDispatch = []
+      const seenNodes = new Set()
+      backupHovered.forEach(el => {
+        if (!seenNodes.has(el.node)) {
+          seenNodes.add(el.node)
+          elementsToDispatch.push(el)
+        }
+      })
 
       // Update lastClick to current coordinates so direction logic works for rect selection
       editor.lastClick = coordinates
 
       elementsToDispatch.forEach(el => {
-        signals.toogledSelect.dispatch(el)
+        signals.toogledSelect.dispatch(el, 'selectHovered-multi')
       })
+
+      checkHover()
       return
     }
 
-    hoveredElements.forEach((el) => {
-      // Check if element is already selected before adding it
-      if (!editor.selected.includes(el)) {
+    backupHovered.forEach((el) => {
+      // Check if element is already selected before adding it using node identity
+      if (!editor.selected.some((item) => item.node === el.node)) {
         editor.selected.push(el)
         console.log('Added element to selection:', el.type)
       } else {
@@ -715,7 +743,7 @@ function Viewport(editor) {
     })
 
     // Only dispatch the signal once after all elements are processed
-    if (hoveredElements.length > 0) {
+    if (backupHovered.length > 0) {
       editor.signals.updatedSelection.dispatch()
     }
   }

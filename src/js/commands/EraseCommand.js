@@ -27,6 +27,7 @@ class EraseCommand extends Command {
             msg: `Select elements to erase and press Enter to confirm.`,
         })
         document.addEventListener('keydown', this.boundOnKeyDown)
+        this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
         this.editor.suppressHandlers = true
     }
 
@@ -65,6 +66,7 @@ class EraseCommand extends Command {
 
     cleanup() {
         document.removeEventListener('keydown', this.boundOnKeyDown)
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.isInteracting = false
         this.editor.suppressHandlers = false
     }

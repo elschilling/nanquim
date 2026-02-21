@@ -22,6 +22,7 @@ class OffsetCommand extends Command {
     this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Enter a distance to offset <${lastDistance}>:` })
     this.editor.isInteracting = true
     this.editor.signals.inputValue.addOnce(this.onDistanceInput, this)
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
     document.addEventListener('keydown', this.boundOnKeyDown)
   }
 
@@ -130,10 +131,10 @@ class OffsetCommand extends Command {
   }
 
   onKeyDown(e) {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
       this.editor.signals.offsetGhostingStopped.dispatch()
       this.cleanup()
-      this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
     }
   }
 
@@ -141,6 +142,7 @@ class OffsetCommand extends Command {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     this.editor.signals.pointCaptured.remove(this.boundOnConfirmPoint)
+    this.editor.signals.commandCancelled.remove(this.cleanup, this)
     this.editor.isInteracting = false
     this.editor.selectSingleElement = false
     this.editor.distance = null

@@ -32,6 +32,7 @@ class MatchPropertiesCommand extends Command {
         // Prevent default selection via Outliner.js
         this.editor.preventSelection = true
         this.editor.signals.toogledSelect.add(this.boundOnSelection)
+        this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
         this.editor.isInteracting = true
     }
 
@@ -136,6 +137,7 @@ class MatchPropertiesCommand extends Command {
         document.removeEventListener('keydown', this.boundOnKeyDown)
         document.removeEventListener('contextmenu', this.boundOnRightClick)
         this.editor.signals.toogledSelect.remove(this.boundOnSelection)
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
         // Also remove target selection listener if it was added
         if (this.boundOnTargetSelection) {
             this.editor.signals.updatedSelection.remove(this.boundOnTargetSelection)

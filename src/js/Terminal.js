@@ -56,6 +56,9 @@ function Terminal(editor) {
 
       for (const [command, { execute, aliases }] of Object.entries(commands)) {
         if (aliases.includes(typedCommand)) {
+          // Cancel any active command before starting a new one
+          signals.commandCancelled.dispatch()
+
           // Set default repeat behavior: execute the command factory again
           // Individual commands can override this if they want to reuse the instance
           editor.lastCommand = { execute: () => execute(editor) }
@@ -100,6 +103,7 @@ function Terminal(editor) {
 
       terminalText.value = ''
       editor.svg.fire('cancelDrawing', e)
+      signals.commandCancelled.dispatch()
       signals.clearSelection.dispatch()
       editor.selected = []
       signals.updatedProperties.dispatch()

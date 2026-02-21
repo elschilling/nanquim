@@ -15,16 +15,21 @@ class ExtendCommand extends Command {
         this.boundOnMouseOver = this.onMouseOver.bind(this)
         this.boundOnMouseOut = this.onMouseOut.bind(this)
         this.ghostLine = null
+        this.isExtending = false
     }
 
     execute() {
         this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+
+        this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
+        document.addEventListener('keydown', this.boundOnKeyDown)
 
         // Check if elements are already pre-selected
         if (this.editor.selected.length > 0) {
             this.boundaryElements = [...this.editor.selected]
             this.editor.signals.clearSelection.dispatch()
             this.startExtendingLines()
+            this.editor.signals.requestHoverCheck.dispatch()
             return
         }
 
@@ -35,7 +40,6 @@ class ExtendCommand extends Command {
 
         this.editor.isInteracting = true
         this.editor.selectSingleElement = true
-        document.addEventListener('keydown', this.boundOnKeyDown)
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
     }
 
@@ -43,6 +47,12 @@ class ExtendCommand extends Command {
         if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
             event.preventDefault()
             this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
+
+            if (this.isExtending) {
+                this.cleanup()
+                this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
+                return
+            }
 
             if (this.boundaryElements.length === 0) {
                 this.autoExtendMode = true
@@ -52,6 +62,7 @@ class ExtendCommand extends Command {
                 this.editor.signals.terminalLogged.dispatch({ msg: `Extending to ${this.boundaryElements.length} boundaries. Click lines to extend.` })
             }
             this.startExtendingLines()
+            this.editor.signals.requestHoverCheck.dispatch()
         } else if (event.key === 'Escape') {
             this.cleanup()
             this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
@@ -69,9 +80,11 @@ class ExtendCommand extends Command {
     }
 
     startExtendingLines() {
+        this.isExtending = true
         this.editor.isInteracting = true
         this.editor.selectSingleElement = false
         // In this phase, selecting an element means we want to extend it
+        this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.toogledSelect.add(this.boundOnLineClicked)
 
         // Setup hover events for ghosting
@@ -107,9 +120,9 @@ class ExtendCommand extends Command {
 
         let candidateBoundaries = []
         if (this.autoExtendMode) {
-            // In auto mode, check against all elements EXCEPT the line itself
+            // In auto mode, check against all elements EXCEPT the line itself and ghost previews
             this.editor.drawing.children().each((child) => {
-                if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis')) {
+                if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
                     candidateBoundaries.push(child)
                 }
             })
@@ -120,10 +133,16 @@ class ExtendCommand extends Command {
         // Ray calculation
         const dx = lineEq.x2 - lineEq.x1
         const dy = lineEq.y2 - lineEq.y1
+        const lineLen = Math.hypot(dx, dy)
+        if (lineLen < 1e-6) return null
+
+        // Normalize direction
+        const ux = dx / lineLen
+        const uy = dy / lineLen
 
         // If extending start, direction is from End to Start
-        const dirX = extendStart ? -dx : dx
-        const dirY = extendStart ? -dy : dy
+        const dirX = extendStart ? -ux : ux
+        const dirY = extendStart ? -uy : uy
 
         const rayBaseX = extendStart ? lineEq.x1 : lineEq.x2
         const rayBaseY = extendStart ? lineEq.y1 : lineEq.y2
@@ -231,37 +250,55 @@ class ExtendCommand extends Command {
         }
     }
 
-    onLineClicked(el) {
-        if (!el || el.type !== 'line') {
-            this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines can be extended.' })
+    onLineClicked(el, source) {
+        // Debounce: prevent same element from being extended twice in rapid succession (multi-select dispatch overlaps)
+        const now = Date.now()
+        if (this.lastExtendedNode === el.node && (now - this.lastExtendedTime) < 200) {
             return
         }
 
-        const clickPos = this.editor.lastClick || this.editor.coordinates
-        if (!clickPos) return
+        try {
+            if (!el || el.type !== 'line' || el.hasClass('ghostLine')) {
+                if (el && !el.hasClass('ghostLine')) {
+                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines can be extended.' })
+                }
+                return
+            }
 
-        const extension = this.calculateExtension(el, clickPos)
-        this.clearGhost() // clear hover ghost on commit
+            this.clearGhost() // clear hover ghost immediately to avoid it being detected as a boundary
 
-        if (!extension) {
-            this.editor.signals.terminalLogged.dispatch({ msg: 'No intersecting boundaries found in that direction.' })
-            return
+            const clickPos = this.editor.lastClick || this.editor.coordinates
+            if (!clickPos) return
+
+            const extension = this.calculateExtension(el, clickPos)
+
+            if (!extension) {
+                this.editor.signals.terminalLogged.dispatch({ msg: 'No intersecting boundaries found in that direction.' })
+                return
+            }
+
+            // Apply change using EditVertexCommand for undo support
+            const editCommand = new EditVertexCommand(
+                this.editor,
+                el,
+                extension.vertexIndex,
+                extension.oldPosition.x,
+                extension.oldPosition.y,
+                extension.newPosition.x,
+                extension.newPosition.y
+            )
+
+            this.editor.execute(editCommand)
+            this.editor.signals.clearSelection.dispatch()
+            this.editor.signals.requestHoverCheck.dispatch()
+
+            this.lastExtendedNode = el.node
+            this.lastExtendedTime = Date.now()
+
+            // Do NOT call this.cleanup(). Let the user keep extending other lines.
+        } catch (error) {
+            console.error("ExtendCommand error:", error)
         }
-
-        // Apply change using EditVertexCommand for undo support
-        const editCommand = new EditVertexCommand(
-            this.editor,
-            el,
-            extension.vertexIndex,
-            extension.oldPosition.x,
-            extension.oldPosition.y,
-            extension.newPosition.x,
-            extension.newPosition.y
-        )
-
-        this.editor.execute(editCommand)
-        this.editor.signals.clearSelection.dispatch()
-        // Do NOT call this.cleanup(). Let the user keep extending other lines.
     }
 
     cleanup() {
@@ -269,8 +306,10 @@ class ExtendCommand extends Command {
         document.removeEventListener('keydown', this.boundOnKeyDown)
         this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.isInteracting = false
         this.editor.selectSingleElement = false
+        this.isExtending = false
 
         // Remove mouse listeners for ghosting
         const elements = this.editor.drawing.children()
