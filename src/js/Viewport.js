@@ -433,6 +433,7 @@ function Viewport(editor) {
   function checkHover() {
     if (!editor.isDrawing) {
       drawing.children().each((el) => {
+        if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle')) return
         let distance
         if (el.type === 'line') {
           let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
@@ -476,6 +477,7 @@ function Viewport(editor) {
     }
   }
   function handleMousedown(e) {
+    console.log('[DEBUG handleMousedown] isDrawing=', editor.isDrawing, 'isInteracting=', editor.isInteracting, 'isEditingVertex=', editor.isEditingVertex)
     if (editor.isDrawing) return
 
     // Handle vertex editing commit
@@ -707,7 +709,6 @@ function Viewport(editor) {
 
   function selectHovered() {
     const backupHovered = [...hoveredElements]
-    hoveredElements = []
 
     // During interaction tools that support multi-selection (like Extend), dispatch toogledSelect directly
     if (editor.isInteracting && !editor.selectSingleElement) {
@@ -728,9 +729,12 @@ function Viewport(editor) {
         signals.toogledSelect.dispatch(el, 'selectHovered-multi')
       })
 
-      checkHover()
+      // Ensure hover state is properly updated after extend operations
+      signals.requestHoverCheck.dispatch()
       return
     }
+
+    hoveredElements = []
 
     backupHovered.forEach((el) => {
       // Check if element is already selected before adding it using node identity

@@ -14,6 +14,7 @@ class ExtendCommand extends Command {
         this.boundOnLineClicked = this.onLineClicked.bind(this)
         this.boundOnMouseOver = this.onMouseOver.bind(this)
         this.boundOnMouseOut = this.onMouseOut.bind(this)
+        this.boundOnMouseMove = this.onMouseMove.bind(this)
         this.ghostLine = null
         this.isExtending = false
     }
@@ -23,6 +24,7 @@ class ExtendCommand extends Command {
 
         this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
         document.addEventListener('keydown', this.boundOnKeyDown)
+        document.addEventListener('mousemove', this.boundOnMouseMove)
 
         // Check if elements are already pre-selected
         if (this.editor.selected.length > 0) {
@@ -41,6 +43,12 @@ class ExtendCommand extends Command {
         this.editor.isInteracting = true
         this.editor.selectSingleElement = true
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
+    }
+
+    boundOnCanvasClick(e) {
+        // This is a fallback click handler to ensure clicks are processed
+        // Trigger hover check to update hoveredElements
+        this.editor.signals.requestHoverCheck.dispatch()
     }
 
     onKeyDown(event) {
@@ -83,14 +91,22 @@ class ExtendCommand extends Command {
         this.isExtending = true
         this.editor.isInteracting = true
         this.editor.selectSingleElement = false
+
+        // Re-attach event handlers in case they were detached
+        this.setupHoverEventListeners()
+
         // In this phase, selecting an element means we want to extend it
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.toogledSelect.add(this.boundOnLineClicked)
+    }
 
+    setupHoverEventListeners() {
         // Setup hover events for ghosting
         const elements = this.editor.drawing.children()
         elements.forEach(el => {
             if (el.type === 'line') {
+                el.node.removeEventListener('mouseover', this.boundOnMouseOver)
+                el.node.removeEventListener('mouseout', this.boundOnMouseOut)
                 el.node.addEventListener('mouseover', this.boundOnMouseOver)
                 el.node.addEventListener('mouseout', this.boundOnMouseOut)
             }
@@ -243,20 +259,23 @@ class ExtendCommand extends Command {
         this.clearGhost()
     }
 
+    onMouseMove(e) {
+        // Force hover check on mouse move to ensure we can detect elements for rectangle selection
+        if (this.isExtending && this.editor.isInteracting) {
+            this.editor.signals.requestHoverCheck.dispatch()
+        }
+    }
+
     clearGhost() {
         if (this.ghostLine) {
             this.ghostLine.remove()
             this.ghostLine = null
         }
+        // Also clear any ghost lines that might be in the drawing
+        this.editor.drawing.find('.ghostLine').forEach(el => el.remove())
     }
 
     onLineClicked(el, source) {
-        // Debounce: prevent same element from being extended twice in rapid succession (multi-select dispatch overlaps)
-        const now = Date.now()
-        if (this.lastExtendedNode === el.node && (now - this.lastExtendedTime) < 200) {
-            return
-        }
-
         try {
             if (!el || el.type !== 'line' || el.hasClass('ghostLine')) {
                 if (el && !el.hasClass('ghostLine')) {
@@ -289,8 +308,18 @@ class ExtendCommand extends Command {
             )
 
             this.editor.execute(editCommand)
-            this.editor.signals.clearSelection.dispatch()
+            el.removeClass('elementHover')
+
+            // Reset hover state after extend
             this.editor.signals.requestHoverCheck.dispatch()
+
+            // If this was from rectangle selection (multi-select), ensure state is fully reset
+            if (source === 'selectHovered-multi') {
+                // Force a brief delay to allow the UI to update before next interaction
+                setTimeout(() => {
+                    this.editor.signals.requestHoverCheck.dispatch()
+                }, 50)
+            }
 
             this.lastExtendedNode = el.node
             this.lastExtendedTime = Date.now()
@@ -304,6 +333,7 @@ class ExtendCommand extends Command {
     cleanup() {
         this.clearGhost()
         document.removeEventListener('keydown', this.boundOnKeyDown)
+        document.removeEventListener('mousemove', this.boundOnMouseMove)
         this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.commandCancelled.remove(this.cleanup, this)
