@@ -105,6 +105,14 @@ function Outliner(editor) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { x: rx, y: ry, width: rw, height: rh } })
             }
           })
+        } else if (s.type === 'path' && s.data('circleTrimData')) {
+          const arc = s.data('circleTrimData')
+          if (Math.abs(arc.startPt.x - x) < tolerance && Math.abs(arc.startPt.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
+          }
+          if (Math.abs(arc.endPt.x - x) < tolerance && Math.abs(arc.endPt.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
+          }
         }
       })
       return vertices
@@ -197,6 +205,22 @@ function Outliner(editor) {
               signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
             })
         })
+      } else if (el.type === 'path' && el.data('circleTrimData')) {
+        const arc = el.data('circleTrimData')
+        const points = [
+          { x: arc.startPt.x, y: arc.startPt.y, index: 0 },
+          { x: arc.endPt.x, y: arc.endPt.y, index: 1 }
+        ]
+        points.forEach((p) => {
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.x, p.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+            })
+        })
       }
     })
   }
@@ -245,6 +269,7 @@ function Outliner(editor) {
     ul.appendChild(li)
     group.children().each((child) => {
       // console.log('child', child)
+      if (child.hasClass && child.hasClass('ghostLine')) return
       if (child.type === 'g') childElements(child, ul)
       else {
         const childUl = document.createElement('ul')

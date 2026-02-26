@@ -215,3 +215,25 @@ export function getLineRectIntersections(line, rect) {
 
   return intersections;
 }
+
+export function getCircleCircleIntersections(c1, c2) {
+  const dx = c2.cx - c1.cx;
+  const dy = c2.cy - c1.cy;
+  const d = Math.sqrt(dx * dx + dy * dy);
+
+  if (d > (c1.r + c2.r)) return [];
+  if (d < Math.abs(c1.r - c2.r)) return [];
+  if (d === 0 && c1.r === c2.r) return [];
+
+  const a = (c1.r * c1.r - c2.r * c2.r + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, c1.r * c1.r - a * a));
+
+  const cx2 = c1.cx + (dx * a) / d;
+  const cy2 = c1.cy + (dy * a) / d;
+
+  const int1 = { x: cx2 + (h * dy) / d, y: cy2 - (h * dx) / d };
+  const int2 = { x: cx2 - (h * dy) / d, y: cy2 + (h * dx) / d };
+
+  if (h === 0) return [int1];
+  return [int1, int2];
+}

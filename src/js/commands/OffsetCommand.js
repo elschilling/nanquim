@@ -109,19 +109,20 @@ class OffsetCommand extends Command {
         if (clone.transform) clone.transform(t).translate(dx, dy)
       }
     }
-
     // Assign id/name
     clone.attr('id', this.editor.elementIndex++)
     if (this.selectedElement.attr && this.selectedElement.attr('name')) {
       clone.attr('name', this.selectedElement.attr('name'))
     }
 
+    // Stop ghosting for this element and allow another selection
+    // Do this BEFORE executing AddElementCommand to prevent ghost from appearing in Outliner
+    this.editor.signals.offsetGhostingStopped.dispatch()
+
     // Record into history for undo/redo
     this.editor.execute(new AddElementCommand(this.editor, clone))
     this.updatedOutliner()
 
-    // Stop ghosting for this element and allow another selection
-    this.editor.signals.offsetGhostingStopped.dispatch()
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element. Select next element or press Esc to finish.` })
 
     // Continue: loop back to element selection with the same distance
@@ -131,7 +132,7 @@ class OffsetCommand extends Command {
   }
 
   onKeyDown(e) {
-    if (e.key === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+    if (e.key === 'Escape') {
       this.editor.signals.offsetGhostingStopped.dispatch()
       this.cleanup()
       this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })

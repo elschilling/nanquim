@@ -432,8 +432,9 @@ function Viewport(editor) {
   }
   function checkHover() {
     if (!editor.isDrawing) {
+      const distances = new Map()
       drawing.children().each((el) => {
-        if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle')) return
+        if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
         let distance
         if (el.type === 'line') {
           let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
@@ -453,7 +454,8 @@ function Viewport(editor) {
             distance = Infinity
           } else {
             let minDistance = Infinity
-            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
+            // Sample densely to ensure accurate hits, max 5px gaps
+            const step = Math.min(5, Math.max(1, pathLength / 20))
             for (let i = 0; i <= pathLength; i += step) {
               const p = el.pointAt(i)
               const d = calculateDistance(coordinates, p)
@@ -465,6 +467,7 @@ function Viewport(editor) {
           }
         }
         if (distance < hoverTreshold) {
+          distances.set(el.node, distance)
           if (!hoveredElements.some((item) => item.node === el.node)) {
             el.addClass('elementHover')
             hoveredElements.push(el)
@@ -474,6 +477,14 @@ function Viewport(editor) {
           hoveredElements = hoveredElements.filter((item) => item.node !== el.node)
         }
       })
+
+      hoveredElements.sort((a, b) => {
+        const distA = distances.get(a.node) ?? Infinity
+        const distB = distances.get(b.node) ?? Infinity
+        return distA - distB
+      })
+
+      editor.hoveredElements = hoveredElements
     }
   }
   function handleMousedown(e) {
@@ -617,8 +628,8 @@ function Viewport(editor) {
 
   function findElements(rect, selectionMode) {
     drawing.children().each((el) => {
-      // Skip selection rectangle and ghost elements
-      if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine')) return
+      // Skip background/ghost elements
+      if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) return
 
       const bbox = el.bbox()
 

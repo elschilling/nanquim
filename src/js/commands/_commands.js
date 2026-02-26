@@ -10,6 +10,7 @@ import { scaleCommand } from './ScaleCommand'
 import { matchPropertiesCommand } from './MatchPropertiesCommand'
 import { eraseCommand } from './EraseCommand'
 import { extendCommand } from './ExtendCommand'
+import { trimCommand } from './TrimCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -60,6 +61,10 @@ const commands = {
   EXTEND: {
     execute: extendCommand,
     aliases: ['ex'],
+  },
+  TRIM: {
+    execute: trimCommand,
+    aliases: ['tr', 'trim'],
   },
   // Add more commands and functions as needed
 }

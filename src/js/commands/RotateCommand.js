@@ -30,7 +30,7 @@ class RotateCommand extends Command {
 
   onKeyDown(event) {
     if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
-      this.cleanup()
+      document.removeEventListener('keydown', this.boundOnKeyDown)
       this.editor.isInteracting = true
       this.onSelectionConfirmed()
     } else if (event.key === 'Escape') {
@@ -46,6 +46,9 @@ class RotateCommand extends Command {
       this.cleanup()
       return
     }
+
+    // Disable rectangle selection during transform operations
+    this.editor.selectSingleElement = true
 
     // Store original states AND original coordinates for each element BEFORE any rotation
     this.originalStates = this.selectedElements.map((element) => this.getElementState(element))
@@ -466,6 +469,9 @@ class RotateCommand extends Command {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
     this.editor.suppressHandlers = false
+    setTimeout(() => {
+      this.editor.selectSingleElement = false
+    }, 10)
     this.editor.signals.rotateGhostingStopped.dispatch()
   }
 

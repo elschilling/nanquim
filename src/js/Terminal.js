@@ -2,7 +2,7 @@ import commands from './commands/_commands'
 import { RemoveElementCommand } from './commands/RemoveElementCommand'
 
 function isNumericString(str) {
-  return /^\d+(\.\d+)?$/.test(str)
+  return /^-?(\d+(\.\d*)?|\.\d+)$/.test(str)
 }
 
 function Terminal(editor) {

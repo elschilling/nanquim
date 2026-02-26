@@ -106,6 +106,7 @@ class FilletCommand extends Command {
       }
 
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}. Select next elements or press Esc to finish.` })
+      this.editor.signals.updatedOutliner.dispatch()
     } catch (error) {
       this.editor.signals.terminalLogged.dispatch({ msg: `Fillet failed: ${error.message}` })
       // Restore original states on error
@@ -470,7 +471,7 @@ class FilletCommand extends Command {
   }
 
   onKeyDown(e) {
-    if (e.key === 'Escape' || e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') {
+    if (e.key === 'Escape') {
       this.cleanup()
       this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
     }

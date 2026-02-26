@@ -36,7 +36,7 @@ class MoveCommand extends Command {
 
   onKeyDown(event) {
     if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
-      this.cleanup()
+      document.removeEventListener('keydown', this.boundOnKeyDown)
       this.editor.isInteracting = true
       this.onSelectionConfirmed()
     } else if (event.key === 'Escape') {
@@ -53,6 +53,9 @@ class MoveCommand extends Command {
       this.cleanup()
       return
     }
+
+    // Disable rectangle selection during transform operations
+    this.editor.selectSingleElement = true
 
     // Store original positions for each element
     this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
@@ -132,6 +135,7 @@ class MoveCommand extends Command {
     }
     this.moveElements(dx, dy)
     this.editor.distance = null
+    this.cleanup()
   }
 
   // Helper method to get consistent position data for any element type
@@ -170,6 +174,9 @@ class MoveCommand extends Command {
     }
     this.editor.isInteracting = false
     this.editor.suppressHandlers = false
+    setTimeout(() => {
+      this.editor.selectSingleElement = false
+    }, 10)
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 
