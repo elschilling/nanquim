@@ -11,6 +11,7 @@ import { matchPropertiesCommand } from './MatchPropertiesCommand'
 import { eraseCommand } from './EraseCommand'
 import { extendCommand } from './ExtendCommand'
 import { trimCommand } from './TrimCommand'
+import { drawArcCommand } from './DrawArcCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -65,6 +66,10 @@ const commands = {
   TRIM: {
     execute: trimCommand,
     aliases: ['tr', 'trim'],
+  },
+  ARC: {
+    execute: drawArcCommand,
+    aliases: ['a'],
   },
   // Add more commands and functions as needed
 }
