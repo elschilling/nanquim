@@ -414,10 +414,68 @@ function Viewport(editor) {
           else if (index === 6) {
             setRectFromPoints(original.x, original.y, original.x + original.width, point.y)
           }
-          // Case 7: Left Edge
-          else if (index === 7) {
-            setRectFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+        } else if (element.type === 'path' && element.data('arcData')) {
+          const arcData = element.data('arcData')
+          const values = {
+            p1: { x: arcData.p1.x, y: arcData.p1.y },
+            p2: { x: arcData.p2.x, y: arcData.p2.y },
+            p3: { x: arcData.p3.x, y: arcData.p3.y }
           }
+          if (vertexIndex === 0) values.p1 = { x: point.x, y: point.y }
+          else if (vertexIndex === 1) values.p2 = { x: point.x, y: point.y }
+          else if (vertexIndex === 2) values.p3 = { x: point.x, y: point.y }
+
+          const p1 = values.p1
+          const p2 = values.p2
+          const p3 = values.p3
+
+          const A = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
+          if (Math.abs(A) < 0.1) {
+            element.plot(`M ${p1.x} ${p1.y} L ${p3.x} ${p3.y}`)
+          } else {
+            const p1sq = p1.x * p1.x + p1.y * p1.y
+            const p2sq = p2.x * p2.x + p2.y * p2.y
+            const p3sq = p3.x * p3.x + p3.y * p3.y
+
+            const B = p1sq * (p3.y - p2.y) + p2sq * (p1.y - p3.y) + p3sq * (p2.y - p1.y)
+            const C = p1sq * (p2.x - p3.x) + p2sq * (p3.x - p1.x) + p3sq * (p1.x - p2.x)
+
+            const cx = -B / (2 * A)
+            const cy = -C / (2 * A)
+
+            let radius = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2)
+            radius = Math.min(radius, 100000)
+
+            let startAngle = Math.atan2(p1.y - cy, p1.x - cx)
+            let midAngle = Math.atan2(p2.y - cy, p2.x - cx)
+            let endAngle = Math.atan2(p3.y - cy, p3.x - cx)
+
+            if (startAngle < 0) startAngle += 2 * Math.PI
+            if (midAngle < 0) midAngle += 2 * Math.PI
+            if (endAngle < 0) endAngle += 2 * Math.PI
+
+            let sweepFlag = 0
+            let largeArcFlag = 0
+
+            let ccwDistance = endAngle - startAngle
+            if (ccwDistance < 0) ccwDistance += 2 * Math.PI
+
+            let midCcwDistance = midAngle - startAngle
+            if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
+
+            if (midCcwDistance < ccwDistance) {
+              sweepFlag = 1
+              largeArcFlag = ccwDistance > Math.PI ? 1 : 0
+            } else {
+              sweepFlag = 0
+              let cwDistance = 2 * Math.PI - ccwDistance
+              largeArcFlag = cwDistance > Math.PI ? 1 : 0
+            }
+
+            element.plot(`M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${p3.x} ${p3.y}`)
+          }
+
+          element.data('arcData', values)
         }
       })
 
@@ -502,6 +560,7 @@ function Viewport(editor) {
       // Separate line updates and circle updates
       const lineUpdates = []
       const circleUpdates = []
+      const arcUpdates = []
 
       editor.editingVertices.forEach(v => {
         if (v.element.type === 'line') {
@@ -531,6 +590,24 @@ function Viewport(editor) {
             oldValues: { cx: v.originalPosition.cx, cy: v.originalPosition.cy, r: v.originalPosition.r },
             newValues: { cx: newCx, cy: newCy, r: newR }
           })
+        } else if (v.element.type === 'path' && v.element.data('arcData')) {
+          const arcData = v.element.data('arcData')
+          const oldValues = {
+            p1: { x: arcData.p1.x, y: arcData.p1.y },
+            p2: { x: arcData.p2.x, y: arcData.p2.y },
+            p3: { x: arcData.p3.x, y: arcData.p3.y }
+          }
+          const newValues = {
+            p1: { x: arcData.p1.x, y: arcData.p1.y },
+            p2: { x: arcData.p2.x, y: arcData.p2.y },
+            p3: { x: arcData.p3.x, y: arcData.p3.y }
+          }
+
+          if (v.vertexIndex === 0) newValues.p1 = { x: point.x, y: point.y }
+          else if (v.vertexIndex === 1) newValues.p2 = { x: point.x, y: point.y }
+          else if (v.vertexIndex === 2) newValues.p3 = { x: point.x, y: point.y }
+
+          arcUpdates.push({ element: v.element, oldValues, newValues })
         }
       })
 
@@ -549,6 +626,15 @@ function Viewport(editor) {
           // For now, assume single circle editing or multiple independent circle edits
           circleUpdates.forEach(update => {
             editor.execute(new EditCircleCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (arcUpdates.length > 0) {
+        import('./commands/EditArcCommand.js').then(({ EditArcCommand }) => {
+          arcUpdates.forEach(update => {
+            editor.execute(new EditArcCommand(editor, update.element, update.oldValues, update.newValues))
           })
           signals.updatedSelection.dispatch()
         })
@@ -827,6 +913,17 @@ function Viewport(editor) {
           { x: rx + rw, y: ry + rh / 2 },
           { x: rx + rw / 2, y: ry + rh },
           { x: rx, y: ry + rh / 2 }
+        ]
+
+        points.forEach(p => {
+          targets.push(worldToScreen(p, editor.svg))
+        })
+      } else if (el.type === 'path' && el.data('arcData')) {
+        const arcData = el.data('arcData')
+        const points = [
+          { x: arcData.p1.x, y: arcData.p1.y },
+          { x: arcData.p2.x, y: arcData.p2.y },
+          { x: arcData.p3.x, y: arcData.p3.y }
         ]
 
         points.forEach(p => {

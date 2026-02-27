@@ -144,7 +144,13 @@ class DrawArcCommand extends Command {
         // Save the final path
         this.arcPath.attr('id', this.editor.elementIndex++)
         this.arcPath.attr('name', 'Arc')
-        this.arcPath.removeClass('newDrawing') // Remove the preview class
+
+        // Save the defining points so we can edit the arc later
+        this.arcPath.data('arcData', {
+            p1: { x: this.points[0].x, y: this.points[0].y },
+            p2: { x: this.points[2].x, y: this.points[2].y },
+            p3: { x: this.points[1].x, y: this.points[1].y }
+        })
 
         // Add to history
         this.editor.history.undos.push(new AddElementCommand(this.editor, this.arcPath))

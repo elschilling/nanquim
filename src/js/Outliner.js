@@ -113,6 +113,17 @@ function Outliner(editor) {
           if (Math.abs(arc.endPt.x - x) < tolerance && Math.abs(arc.endPt.y - y) < tolerance) {
             vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
           }
+        } else if (s.type === 'path' && s.data('arcData')) {
+          const arc = s.data('arcData')
+          if (Math.abs(arc.p1.x - x) < tolerance && Math.abs(arc.p1.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: arc })
+          }
+          if (Math.abs(arc.p2.x - x) < tolerance && Math.abs(arc.p2.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: arc })
+          }
+          if (Math.abs(arc.p3.x - x) < tolerance && Math.abs(arc.p3.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 2, originalPosition: arc })
+          }
         }
       })
       return vertices
@@ -210,6 +221,23 @@ function Outliner(editor) {
         const points = [
           { x: arc.startPt.x, y: arc.startPt.y, index: 0 },
           { x: arc.endPt.x, y: arc.endPt.y, index: 1 }
+        ]
+        points.forEach((p) => {
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.x, p.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+            })
+        })
+      } else if (el.type === 'path' && el.data('arcData')) {
+        const arc = el.data('arcData')
+        const points = [
+          { x: arc.p1.x, y: arc.p1.y, index: 0 },
+          { x: arc.p2.x, y: arc.p2.y, index: 1 },
+          { x: arc.p3.x, y: arc.p3.y, index: 2 }
         ]
         points.forEach((p) => {
           editor.handlers

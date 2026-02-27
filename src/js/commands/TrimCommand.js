@@ -2,16 +2,21 @@ import { Command } from '../Command'
 import { TrimLineCommand } from './TrimLineCommand'
 import { TrimRectCommand } from './TrimRectCommand'
 import { TrimCircleCommand } from './TrimCircleCommand'
+import { TrimArcCommand } from './TrimArcCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
 
 function isPointInArc(pt, arcData) {
-    const { cx, cy, theta1, theta2 } = arcData
+    const { cx, cy, theta1, theta2, ccw } = arcData
     let angle = Math.atan2(pt.y - cy, pt.x - cx)
     if (angle < 0) angle += 2 * Math.PI
-    let sweep = theta1 - theta2
+
+    // theta2 is start (p1), theta1 is end (p3)
+    let sweep = ccw ? (theta1 - theta2) : (theta2 - theta1)
     if (sweep < 0) sweep += 2 * Math.PI
-    let aDiff = angle - theta2
+
+    let aDiff = ccw ? (angle - theta2) : (theta2 - angle)
     if (aDiff < 0) aDiff += 2 * Math.PI
+
     return aDiff <= sweep + 1e-4
 }
 
@@ -190,10 +195,10 @@ class TrimCommand extends Command {
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, rectBounds).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'path' && boundary.data('circleTrimData')) {
-                const arcData = boundary.data('circleTrimData')
-                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, arcData).forEach(pt => {
-                    if (isPointInArc(pt, arcData)) checkAndAddIntersection(pt)
+            } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
+                const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
+                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, bArcData).forEach(pt => {
+                    if (isPointInArc(pt, bArcData)) checkAndAddIntersection(pt)
                 })
             }
         }
@@ -295,34 +300,43 @@ class TrimCommand extends Command {
     }
 
     calculateCircleTrim(el, point) {
-        let cx, cy, r
+        let cx, cy, r, isArc = false, arcGeo = null
         if (el.type === 'circle') {
             cx = el.cx ? el.cx() : parseFloat(el.attr('cx'))
             cy = el.cy ? el.cy() : parseFloat(el.attr('cy'))
             r = el.radius ? el.radius() : parseFloat(el.attr('r'))
-        } else if (el.type === 'path' && el.data('circleTrimData')) {
-            const arcData = el.data('circleTrimData')
-            cx = arcData.cx
-            cy = arcData.cy
-            r = arcData.r
+        } else if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData'))) {
+            arcGeo = el.data('circleTrimData') || this.getArcGeometry(el.data('arcData'))
+            if (!arcGeo) return null
+            cx = arcGeo.cx
+            cy = arcGeo.cy
+            r = arcGeo.r
+            isArc = true
         } else {
             return null
         }
 
         const candidateBoundaries = this.getCandidateBoundaries(el)
-
         const intersections = []
+
+        const checkPointOnArc = (pt) => {
+            if (!isArc) return true
+            return isPointInArc(pt, arcGeo)
+        }
+
         const checkAndAddIntersection = (intersect) => {
             if (!intersect) return
+            if (!checkPointOnArc(intersect)) return
+
             let theta = Math.atan2(intersect.y - cy, intersect.x - cx)
             if (theta < 0) theta += 2 * Math.PI
             intersections.push({ theta, x: intersect.x, y: intersect.y })
         }
 
-        if (el.type === 'path' && el.data('circleTrimData')) {
-            const arcData = el.data('circleTrimData')
-            intersections.push({ theta: arcData.theta1, x: arcData.endPt.x, y: arcData.endPt.y })
-            intersections.push({ theta: arcData.theta2, x: arcData.startPt.x, y: arcData.startPt.y })
+        // Add endpoints if it's an arc
+        if (isArc) {
+            intersections.push({ theta: arcGeo.theta2, x: arcGeo.startPt ? arcGeo.startPt.x : (cx + r * Math.cos(arcGeo.theta2)), y: arcGeo.startPt ? arcGeo.startPt.y : (cy + r * Math.sin(arcGeo.theta2)) })
+            intersections.push({ theta: arcGeo.theta1, x: arcGeo.endPt ? arcGeo.endPt.x : (cx + r * Math.cos(arcGeo.theta1)), y: arcGeo.endPt ? arcGeo.endPt.y : (cy + r * Math.sin(arcGeo.theta1)) })
         }
 
         for (const boundary of candidateBoundaries) {
@@ -341,15 +355,16 @@ class TrimCommand extends Command {
                 })
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
-                const segments = [
-                    { x1: rectBounds.x, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y },
-                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y + rectBounds.height },
-                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y + rectBounds.height },
-                    { x1: rectBounds.x, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y }
+                const h = rectBounds.height;
+                const w = rectBounds.width;
+                const rectSegments = [
+                    { x1: rectBounds.x, y1: rectBounds.y, x2: rectBounds.x + w, y2: rectBounds.y },
+                    { x1: rectBounds.x + w, y1: rectBounds.y, x2: rectBounds.x + w, y2: rectBounds.y + h },
+                    { x1: rectBounds.x + w, y1: rectBounds.y + h, x2: rectBounds.x, y2: rectBounds.y + h },
+                    { x1: rectBounds.x, y1: rectBounds.y + h, x2: rectBounds.x, y2: rectBounds.y }
                 ]
-                segments.forEach(seg => {
-                    const intersects = getLineCircleIntersections(seg, { cx, cy, r })
-                    intersects.forEach(pt => {
+                rectSegments.forEach(seg => {
+                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
                         const intersectMinX = Math.min(seg.x1, seg.x2) - 1e-4;
                         const intersectMaxX = Math.max(seg.x1, seg.x2) + 1e-4;
                         const intersectMinY = Math.min(seg.y1, seg.y2) - 1e-4;
@@ -359,36 +374,33 @@ class TrimCommand extends Command {
                         }
                     })
                 })
-            } else if (boundary.type === 'path' && boundary.data('circleTrimData')) {
-                const arcData = boundary.data('circleTrimData')
-                getCircleCircleIntersections(arcData, { cx, cy, r }).forEach(pt => {
-                    checkAndAddIntersection(pt)
+            } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
+                const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
+                getCircleCircleIntersections(bArcData, { cx, cy, r }).forEach(pt => {
+                    if (isPointInArc(pt, bArcData)) checkAndAddIntersection(pt)
                 })
+            } else if (boundary.type === 'circle') {
+                const bcx = boundary.cx(), bcy = boundary.cy(), br = boundary.radius ? boundary.radius() : parseFloat(boundary.attr('r'))
+                getCircleCircleIntersections({ cx: bcx, cy: bcy, r: br }, { cx, cy, r }).forEach(checkAndAddIntersection)
             }
         }
 
-        intersections.sort((a, b) => a.theta - b.theta)
+        const ccw = isArc ? arcGeo.ccw : true
+        const startTheta = isArc ? arcGeo.theta2 : 0
+
+        const getDist = (theta) => {
+            let d = ccw ? (theta - startTheta) : (startTheta - theta)
+            if (d < 0) d += 2 * Math.PI
+            return d
+        }
+
+        intersections.forEach(inter => inter.dist = getDist(inter.theta))
+        intersections.sort((a, b) => a.dist - b.dist)
 
         const uniqueIntersects = []
         for (const inter of intersections) {
-            if (uniqueIntersects.length === 0) {
+            if (uniqueIntersects.length === 0 || Math.abs(inter.dist - uniqueIntersects[uniqueIntersects.length - 1].dist) > 1e-4) {
                 uniqueIntersects.push(inter)
-            } else {
-                const prev = uniqueIntersects[uniqueIntersects.length - 1]
-                let diff = Math.abs(inter.theta - prev.theta)
-                if (diff > Math.PI) diff = 2 * Math.PI - diff
-                if (diff > 1e-4) {
-                    uniqueIntersects.push(inter)
-                }
-            }
-        }
-        if (uniqueIntersects.length > 1) {
-            const first = uniqueIntersects[0]
-            const last = uniqueIntersects[uniqueIntersects.length - 1]
-            let diff = Math.abs(first.theta - last.theta)
-            if (diff > Math.PI) diff = 2 * Math.PI - diff
-            if (diff <= 1e-4) {
-                uniqueIntersects.pop()
             }
         }
 
@@ -396,63 +408,120 @@ class TrimCommand extends Command {
 
         let theta_mouse = Math.atan2(point.y - cy, point.x - cx)
         if (theta_mouse < 0) theta_mouse += 2 * Math.PI
+        let dist_mouse = getDist(theta_mouse)
 
-        let p1, p2
-        let found = false
+        // Find the segment containing the mouse
+        let p1, p2, mouseSegIdx = -1
         for (let i = 0; i < uniqueIntersects.length - 1; i++) {
-            if (theta_mouse >= uniqueIntersects[i].theta && theta_mouse <= uniqueIntersects[i + 1].theta) {
+            if (dist_mouse >= uniqueIntersects[i].dist && dist_mouse <= uniqueIntersects[i + 1].dist) {
                 p1 = uniqueIntersects[i]
                 p2 = uniqueIntersects[i + 1]
-                found = true
+                mouseSegIdx = i
                 break
             }
         }
-        if (!found) {
+
+        if (mouseSegIdx === -1 && !isArc) {
+            // For circles, could be in the wrap-around segment
             p1 = uniqueIntersects[uniqueIntersects.length - 1]
             p2 = uniqueIntersects[0]
+            mouseSegIdx = uniqueIntersects.length - 1
         }
 
-        if (el.type === 'path' && el.data('circleTrimData')) {
-            if (!isPointInArc(point, el.data('circleTrimData'))) return null;
-        }
+        if (mouseSegIdx === -1) return null
 
         let arcsToKeep = []
-        if (el.type === 'path' && el.data('circleTrimData')) {
-            const arcData = el.data('circleTrimData')
+        function isAngleSignificant(tA, tB) {
+            let diff = Math.abs(tA - tB);
+            if (diff > Math.PI) diff = 2 * Math.PI - diff;
+            return diff > 1e-4;
+        }
 
-            function isAngleSignificant(tA, tB) {
-                let diff = tA - tB;
-                if (diff < 0) diff += 2 * Math.PI;
-                return diff > 1e-4;
+        // Keep all segments except the mouseSegIdx
+        for (let i = 0; i < uniqueIntersects.length - 1; i++) {
+            if (i === mouseSegIdx) continue
+            const s1 = uniqueIntersects[i], s2 = uniqueIntersects[i + 1]
+            if (isAngleSignificant(s1.theta, s2.theta)) {
+                arcsToKeep.push(this.createArcDataFromAngles(cx, cy, r, s1.theta, s2.theta, ccw))
             }
+        }
 
-            if (isAngleSignificant(p1.theta, arcData.theta2)) {
-                arcsToKeep.push({
-                    cx, cy, r,
-                    theta2: arcData.theta2, theta1: p1.theta,
-                    startPt: { x: arcData.startPt.x, y: arcData.startPt.y },
-                    endPt: { x: p1.x, y: p1.y }
-                })
+        if (!isArc && mouseSegIdx !== uniqueIntersects.length - 1) {
+            const s1 = uniqueIntersects[uniqueIntersects.length - 1], s2 = uniqueIntersects[0]
+            if (isAngleSignificant(s1.theta, s2.theta)) {
+                arcsToKeep.push(this.createArcDataFromAngles(cx, cy, r, s1.theta, s2.theta, ccw))
             }
-            if (isAngleSignificant(arcData.theta1, p2.theta)) {
-                arcsToKeep.push({
-                    cx, cy, r,
-                    theta2: p2.theta, theta1: arcData.theta1,
-                    startPt: { x: p2.x, y: p2.y },
-                    endPt: { x: arcData.endPt.x, y: arcData.endPt.y }
-                })
-            }
-            if (arcsToKeep.length === 0) {
-                return { type: 'circle', action: { type: 'remove' } }
-            }
-        } else {
-            arcsToKeep.push({ cx, cy, r, theta2: p2.theta, theta1: p1.theta, startPt: { x: p2.x, y: p2.y }, endPt: { x: p1.x, y: p1.y } })
+        }
+
+        if (arcsToKeep.length === 0) {
+            return { type: 'circle', action: { type: 'remove' } }
         }
 
         return {
             type: 'circle',
             action: { type: 'arcs', arcs: arcsToKeep },
-            preview: { type: 'arc', cx, cy, r, theta2: p1.theta, theta1: p2.theta, startPt: { x: p1.x, y: p1.y }, endPt: { x: p2.x, y: p2.y } }
+            preview: { type: 'arc', cx, cy, r, theta2: p1.theta, theta1: p2.theta, startPt: { x: p1.x, y: p1.y }, endPt: { x: p2.x, y: p2.y }, ccw }
+        }
+    }
+
+    getArcGeometry(data) {
+        const { p1, p2, p3 } = data
+        const A = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
+        if (Math.abs(A) < 0.1) return null
+
+        const p1sq = p1.x * p1.x + p1.y * p1.y
+        const p2sq = p2.x * p2.x + p2.y * p2.y
+        const p3sq = p3.x * p3.x + p3.y * p3.y
+
+        const B = p1sq * (p3.y - p2.y) + p2sq * (p1.y - p3.y) + p3sq * (p2.y - p1.y)
+        const C = p1sq * (p2.x - p3.x) + p2sq * (p3.x - p1.x) + p3sq * (p1.x - p2.x)
+
+        const cx = -B / (2 * A)
+        const cy = -C / (2 * A)
+        const r = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2)
+
+        let theta1 = Math.atan2(p3.y - cy, p3.x - cx) // End
+        let theta2 = Math.atan2(p1.y - cy, p1.x - cx) // Start
+        let thetaMid = Math.atan2(p2.y - cy, p2.x - cx) // Mid
+        if (theta1 < 0) theta1 += 2 * Math.PI
+        if (theta2 < 0) theta2 += 2 * Math.PI
+        if (thetaMid < 0) thetaMid += 2 * Math.PI
+
+        let ccw = true
+        let ccwDistance = theta1 - theta2
+        if (ccwDistance < 0) ccwDistance += 2 * Math.PI
+
+        let midCcwDistance = thetaMid - theta2
+        if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
+
+        if (midCcwDistance > ccwDistance) {
+            ccw = false
+        }
+
+        return { cx, cy, r, theta1, theta2, ccw }
+    }
+
+    isPointInArcData(pt, data) {
+        const geo = this.getArcGeometry(data)
+        if (!geo) return false
+        return isPointInArc(pt, geo)
+    }
+
+    createArcDataFromAngles(cx, cy, r, startAngle, endAngle, ccw = true) {
+        const startPt = { x: cx + r * Math.cos(startAngle), y: cy + r * Math.sin(startAngle) }
+        const endPt = { x: cx + r * Math.cos(endAngle), y: cy + r * Math.sin(endAngle) }
+
+        // Find mid point for our p1, p2, p3 format
+        let diff = ccw ? (endAngle - startAngle) : (startAngle - endAngle)
+        if (diff < 0) diff += 2 * Math.PI
+        const midAngle = ccw ? (startAngle + diff / 2) : (startAngle - diff / 2)
+        const midPt = { x: cx + r * Math.cos(midAngle), y: cy + r * Math.sin(midAngle) }
+
+        return {
+            cx, cy, r,
+            theta2: startAngle, theta1: endAngle,
+            startPt, endPt, midPt, // Including midPt for easy reconstruction
+            ccw // Pass ccw through
         }
     }
 
@@ -460,7 +529,7 @@ class TrimCommand extends Command {
         if (!el || !point) return null
         if (el.type === 'line') return this.calculateLineTrim(el, point)
         if (el.type === 'rect') return this.calculateRectTrim(el, point)
-        if (el.type === 'circle' || (el.type === 'path' && el.data('circleTrimData'))) return this.calculateCircleTrim(el, point)
+        if (el.type === 'circle' || (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData')))) return this.calculateCircleTrim(el, point)
         return null
     }
 
@@ -475,7 +544,7 @@ class TrimCommand extends Command {
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
 
             let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
-            if (el.type === 'path' && el.data('circleTrimData')) isValidHover = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData'))) isValidHover = true
 
             if (isValidHover) {
                 targetEl = el
@@ -497,10 +566,12 @@ class TrimCommand extends Command {
             if (p.type === 'arc') {
                 this.ghostLine.hide()
 
-                let diff = p.theta1 - p.theta2
+                const ccw = p.ccw !== undefined ? p.ccw : true
+                const sweep = ccw ? 1 : 0
+                let diff = ccw ? (p.theta1 - p.theta2) : (p.theta2 - p.theta1)
                 if (diff < 0) diff += 2 * Math.PI
                 const largeArc = diff > Math.PI ? 1 : 0
-                const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.r} ${p.r} 0 ${largeArc} 1 ${p.endPt.x} ${p.endPt.y} `
+                const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.r} ${p.r} 0 ${largeArc} ${sweep} ${p.endPt.x} ${p.endPt.y}`
 
                 this.ghostArc.plot(d).show().front()
             } else {
@@ -521,7 +592,7 @@ class TrimCommand extends Command {
         try {
             if (!el || el.hasClass('ghostLine')) return
             let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
-            if (el.type === 'path' && el.data('circleTrimData')) isValid = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData'))) isValid = true
 
             if (!isValid) {
                 this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, and circles/arcs can be trimmed.' })
@@ -542,7 +613,11 @@ class TrimCommand extends Command {
             } else if (trimData.type === 'rect') {
                 trimCommand = new TrimRectCommand(this.editor, el, trimData)
             } else if (trimData.type === 'circle') {
-                trimCommand = new TrimCircleCommand(this.editor, el, trimData.action)
+                if (el.data('arcData')) {
+                    trimCommand = new TrimArcCommand(this.editor, el, trimData.action)
+                } else {
+                    trimCommand = new TrimCircleCommand(this.editor, el, trimData.action)
+                }
             }
 
             if (trimCommand) this.editor.execute(trimCommand)

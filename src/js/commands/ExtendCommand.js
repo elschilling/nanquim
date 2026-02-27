@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections } from '../utils/intersection'
+import { ExtendArcCommand } from './ExtendArcCommand'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
 
 class ExtendCommand extends Command {
     constructor(editor) {
@@ -104,7 +105,7 @@ class ExtendCommand extends Command {
         // Setup hover events for ghosting
         const elements = this.editor.drawing.children()
         elements.forEach(el => {
-            if (el.type === 'line') {
+            if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
                 el.node.addEventListener('mouseover', this.boundOnMouseOver)
@@ -122,8 +123,13 @@ class ExtendCommand extends Command {
             point = point || this.editor.coordinates
         }
 
-        if (!el || el.type !== 'line' || !point) return null
+        if (!el || !point) return null
+        if (el.type === 'line') return this.calculateLineExtension(el, point)
+        if (el.type === 'path' && el.data('arcData')) return this.calculateArcExtension(el, point)
+        return null
+    }
 
+    calculateLineExtension(el, point) {
         const lineEq = getLineEquation(el)
 
         // Determine which end of the line was clicked/hovered
@@ -222,12 +228,169 @@ class ExtendCommand extends Command {
         }
     }
 
+    getArcGeometry(data) {
+        const { p1, p2, p3 } = data
+        const A = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
+        if (Math.abs(A) < 0.1) return null
+
+        const p1sq = p1.x * p1.x + p1.y * p1.y
+        const p2sq = p2.x * p2.x + p2.y * p2.y
+        const p3sq = p3.x * p3.x + p3.y * p3.y
+
+        const B = p1sq * (p3.y - p2.y) + p2sq * (p1.y - p3.y) + p3sq * (p2.y - p1.y)
+        const C = p1sq * (p2.x - p3.x) + p2sq * (p3.x - p1.x) + p3sq * (p1.x - p2.x)
+
+        const cx = -B / (2 * A)
+        const cy = -C / (2 * A)
+        const r = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2)
+
+        let theta1 = Math.atan2(p1.y - cy, p1.x - cx) // Start
+        let theta2 = Math.atan2(p2.y - cy, p2.x - cx) // Mid
+        let theta3 = Math.atan2(p3.y - cy, p3.x - cx) // End
+        if (theta1 < 0) theta1 += 2 * Math.PI
+        if (theta2 < 0) theta2 += 2 * Math.PI
+        if (theta3 < 0) theta3 += 2 * Math.PI
+
+        let ccw = true
+        let ccwDistance = theta3 - theta1
+        if (ccwDistance < 0) ccwDistance += 2 * Math.PI
+
+        let midCcwDistance = theta2 - theta1
+        if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
+
+        if (midCcwDistance > ccwDistance) {
+            ccw = false
+        }
+
+        return { cx, cy, r, theta1, theta3, ccw }
+    }
+
+    calculateArcExtension(el, point) {
+        const arcData = el.data('arcData')
+        const geo = this.getArcGeometry(arcData)
+        if (!geo) return null
+
+        const { cx, cy, r, theta1, theta3, ccw } = geo
+
+        // Determine which end of the arc was clicked/hovered
+        const distToStart = Math.hypot(point.x - arcData.p1.x, point.y - arcData.p1.y)
+        const distToEnd = Math.hypot(point.x - arcData.p3.x, point.y - arcData.p3.y)
+        const extendStart = distToStart < distToEnd
+
+        // Intersection circle
+        const circle = { cx, cy, r }
+        const intersections = []
+
+        let candidateBoundaries = []
+        if (this.autoExtendMode) {
+            this.editor.drawing.children().each((child) => {
+                if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
+                    candidateBoundaries.push(child)
+                }
+            })
+        } else {
+            candidateBoundaries = this.boundaryElements
+        }
+
+        const checkAndAddIntersection = (intersect) => {
+            if (!intersect) return
+            // Calculate angle of intersection
+            let theta = Math.atan2(intersect.y - cy, intersect.x - cx)
+            if (theta < 0) theta += 2 * Math.PI
+
+            // We want to find an intersection that is "outside" the current arc
+            // and in the direction of the extension.
+
+            let sweep = theta3 - theta1
+            if (!ccw) {
+                sweep = theta1 - theta3
+            }
+            if (sweep < 0) sweep += 2 * Math.PI
+
+            let diff = theta - theta1
+            if (!ccw) {
+                diff = theta1 - theta
+            }
+            if (diff < 0) diff += 2 * Math.PI
+
+            const isInside = diff > 1e-4 && diff < sweep - 1e-4
+
+            if (!isInside) {
+                // Determine if it's "ahead" of theta1 or theta3
+                let distToTarget
+                if (extendStart) {
+                    distToTarget = ccw ? (theta1 - theta) : (theta - theta1)
+                } else {
+                    distToTarget = ccw ? (theta - theta3) : (theta3 - theta)
+                }
+
+                if (distToTarget < 0) distToTarget += 2 * Math.PI
+
+                if (distToTarget > 1e-4) {
+                    intersections.push({ point: intersect, dist: distToTarget })
+                }
+            }
+        }
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary.node === el.node) continue
+            if (boundary.type === 'line') {
+                const bEq = getLineEquation(boundary)
+                getLineCircleIntersections(bEq, circle).forEach(pt => {
+                    const minX = Math.min(bEq.x1, bEq.x2) - 1e-4
+                    const maxX = Math.max(bEq.x1, bEq.x2) + 1e-4
+                    const minY = Math.min(bEq.y1, bEq.y2) - 1e-4
+                    const maxY = Math.max(bEq.y1, bEq.y2) + 1e-4
+                    if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                        checkAndAddIntersection(pt)
+                    }
+                })
+            } else if (boundary.type === 'circle') {
+                const bcx = boundary.cx(), bcy = boundary.cy(), br = boundary.radius ? boundary.radius() : parseFloat(boundary.attr('r'))
+                getCircleCircleIntersections(circle, { cx: bcx, cy: bcy, r: br }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'rect') {
+                const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
+                const segments = [
+                    { x1: rectBounds.x, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y },
+                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y + rectBounds.height },
+                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y + rectBounds.height },
+                    { x1: rectBounds.x, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y }
+                ]
+                segments.forEach(seg => {
+                    getLineCircleIntersections(seg, circle).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
+                })
+            }
+        }
+
+        if (intersections.length === 0) return null
+        intersections.sort((a, b) => a.dist - b.dist)
+        const closestIntersect = intersections[0].point
+
+        return {
+            type: 'arc',
+            extendStart,
+            vertexIndex: extendStart ? 0 : 2, // p1 is 0, p3 is 2 in our arcData usage
+            oldPosition: extendStart ? arcData.p1 : arcData.p3,
+            newPosition: closestIntersect,
+            arcGeo: geo,
+            arcData: arcData
+        }
+    }
+
     onMouseOver(e) {
         if (!this.editor.isInteracting) return
 
         // Find the precise SVG element associated with the event
         const el = SVG(e.target)
-        if (!el || el.type !== 'line') return
+        if (!el || (el.type !== 'line' && !(el.type === 'path' && el.data('arcData')))) return
 
         // Need the mouse point translated to SVG coordinates
         const pt = this.editor.svg.node.createSVGPoint()
@@ -242,16 +405,40 @@ class ExtendCommand extends Command {
             // Remove previous ghost if any
             this.clearGhost()
 
-            // Create ghost line
-            const x1 = extension.extendStart ? extension.newPosition.x : extension.lineEq.x1
-            const y1 = extension.extendStart ? extension.newPosition.y : extension.lineEq.y1
-            const x2 = extension.extendStart ? extension.lineEq.x2 : extension.newPosition.x
-            const y2 = extension.extendStart ? extension.lineEq.y2 : extension.newPosition.y
+            if (extension.type === 'arc') {
+                const { cx, cy, r } = extension.arcGeo
+                const p1 = extension.extendStart ? extension.newPosition : extension.arcData.p1
+                const p3 = extension.extendStart ? extension.arcData.p3 : extension.newPosition
 
-            this.ghostLine = this.editor.drawing.line(x1, y1, x2, y2)
-                .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }) // styling as a preview
-                .addClass('newDrawing')
-                .addClass('ghostLine')
+                let tStartAngle = Math.atan2(p1.y - cy, p1.x - cx)
+                let tEndAngle = Math.atan2(p3.y - cy, p3.x - cx)
+                if (tStartAngle < 0) tStartAngle += 2 * Math.PI
+                if (tEndAngle < 0) tEndAngle += 2 * Math.PI
+
+                const ccw = extension.arcGeo.ccw
+                const sweep = ccw ? 1 : 0
+                let diff = ccw ? (tEndAngle - tStartAngle) : (tStartAngle - tEndAngle)
+                if (diff < 0) diff += 2 * Math.PI
+                const largeArc = diff > Math.PI ? 1 : 0
+
+                const d = `M ${p1.x} ${p1.y} A ${r} ${r} 0 ${largeArc} ${sweep} ${p3.x} ${p3.y}`
+
+                this.ghostLine = this.editor.drawing.path(d)
+                    .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none') // styling as a preview
+                    .addClass('newDrawing')
+                    .addClass('ghostLine')
+            } else {
+                // Create ghost line
+                const x1 = extension.extendStart ? extension.newPosition.x : extension.lineEq.x1
+                const y1 = extension.extendStart ? extension.newPosition.y : extension.lineEq.y1
+                const x2 = extension.extendStart ? extension.lineEq.x2 : extension.newPosition.x
+                const y2 = extension.extendStart ? extension.lineEq.y2 : extension.newPosition.y
+
+                this.ghostLine = this.editor.drawing.line(x1, y1, x2, y2)
+                    .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }) // styling as a preview
+                    .addClass('newDrawing')
+                    .addClass('ghostLine')
+            }
         }
     }
 
@@ -277,9 +464,9 @@ class ExtendCommand extends Command {
 
     onLineClicked(el, source) {
         try {
-            if (!el || el.type !== 'line' || el.hasClass('ghostLine')) {
+            if (!el || (el.type !== 'line' && !(el.type === 'path' && el.data('arcData'))) || el.hasClass('ghostLine')) {
                 if (el && !el.hasClass('ghostLine')) {
-                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines can be extended.' })
+                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines and arcs can be extended.' })
                 }
                 return
             }
@@ -296,16 +483,26 @@ class ExtendCommand extends Command {
                 return
             }
 
-            // Apply change using EditVertexCommand for undo support
-            const editCommand = new EditVertexCommand(
-                this.editor,
-                el,
-                extension.vertexIndex,
-                extension.oldPosition.x,
-                extension.oldPosition.y,
-                extension.newPosition.x,
-                extension.newPosition.y
-            )
+            // Apply change using appropriate command
+            let editCommand
+            if (extension.type === 'arc') {
+                editCommand = new ExtendArcCommand(
+                    this.editor,
+                    el,
+                    extension.extendStart,
+                    extension.newPosition
+                )
+            } else {
+                editCommand = new EditVertexCommand(
+                    this.editor,
+                    el,
+                    extension.vertexIndex,
+                    extension.oldPosition.x,
+                    extension.oldPosition.y,
+                    extension.newPosition.x,
+                    extension.newPosition.y
+                )
+            }
 
             this.editor.execute(editCommand)
             el.removeClass('elementHover')
@@ -344,7 +541,7 @@ class ExtendCommand extends Command {
         // Remove mouse listeners for ghosting
         const elements = this.editor.drawing.children()
         elements.forEach(el => {
-            if (el.type === 'line') {
+            if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
             }
