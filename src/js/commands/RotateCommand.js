@@ -163,23 +163,31 @@ class RotateCommand extends Command {
   }
 
   getElementCoordinates(element) {
+    const data = {
+      arcData: element.data('arcData'),
+      circleTrimData: element.data('circleTrimData')
+    }
+
     // Store just the coordinate data that we need for rotation
     if (element.type === 'line' || element.type === 'polyline' || element.type === 'polygon') {
       return {
         type: 'points',
         points: element.array().map((point) => [...point]), // Deep copy of points
+        ...data
       }
     } else if (element.type === 'circle') {
       return {
         type: 'circle',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
       }
     } else if (element.type === 'ellipse') {
       return {
         type: 'ellipse',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
       }
     } else if (element.type === 'rect') {
       return {
@@ -188,23 +196,27 @@ class RotateCommand extends Command {
         y: element.y(),
         width: element.width(),
         height: element.height(),
+        ...data
       }
     } else if (element.type === 'text') {
       return {
         type: 'text',
         x: element.x(),
         y: element.y(),
+        ...data
       }
     } else if (element.type === 'path') {
       return {
         type: 'path',
         d: element.attr('d'),
+        ...data
       }
     } else {
       return {
         type: 'generic',
         x: element.x ? element.x() : 0,
         y: element.y ? element.y() : 0,
+        ...data
       }
     }
   }
@@ -226,6 +238,30 @@ class RotateCommand extends Command {
         x: rotatedX,
         y: rotatedY,
       }
+    }
+
+    // Update arcData if it exists
+    if (originalCoords.arcData) {
+      const ad = originalCoords.arcData
+      const p1 = rotatePoint(ad.p1.x, ad.p1.y)
+      const p2 = rotatePoint(ad.p2.x, ad.p2.y)
+      const p3 = rotatePoint(ad.p3.x, ad.p3.y)
+      element.data('arcData', { p1, p2, p3 })
+    }
+
+    // Update circleTrimData if it exists
+    if (originalCoords.circleTrimData) {
+      const ctd = originalCoords.circleTrimData
+      const center = rotatePoint(ctd.cx, ctd.cy)
+      const sPt = rotatePoint(ctd.startPt.x, ctd.startPt.y)
+      const ePt = rotatePoint(ctd.endPt.x, ctd.endPt.y)
+      element.data('circleTrimData', {
+        ...ctd,
+        cx: center.x,
+        cy: center.y,
+        startPt: sPt,
+        endPt: ePt
+      })
     }
 
     if (originalCoords.type === 'points') {

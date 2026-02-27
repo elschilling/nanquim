@@ -26,6 +26,28 @@ export function applyOffsetToElement(element, dx, dy) {
       if (element.transform) element.transform(t).translate(dx, dy)
     }
   }
+
+  // Update arcData if it exists
+  const ad = element.data('arcData')
+  if (ad) {
+    element.data('arcData', {
+      p1: { x: ad.p1.x + dx, y: ad.p1.y + dy },
+      p2: { x: ad.p2.x + dx, y: ad.p2.y + dy },
+      p3: { x: ad.p3.x + dx, y: ad.p3.y + dy }
+    })
+  }
+
+  // Update circleTrimData if it exists
+  const ctd = element.data('circleTrimData')
+  if (ctd) {
+    element.data('circleTrimData', {
+      ...ctd,
+      cx: ctd.cx + dx,
+      cy: ctd.cy + dy,
+      startPt: { x: ctd.startPt.x + dx, y: ctd.startPt.y + dy },
+      endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
+    })
+  }
 }
 
 export function computeOffsetVector(element, mouse, distance) {

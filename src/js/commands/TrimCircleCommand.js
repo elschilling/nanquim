@@ -49,7 +49,17 @@ class TrimCircleCommand extends Command {
                 const d = `M ${startPt.x} ${startPt.y} A ${r} ${r} 0 ${largeArcFlag} ${sweepFlag} ${endPt.x} ${endPt.y}`
 
                 let newArc = this.editor.drawing.path(d)
+
+                // Calculate midPt for 3-point handlers
+                const midAngle = theta2 + diff / 2
+                const midPt = {
+                    x: cx + r * Math.cos(midAngle),
+                    y: cy + r * Math.sin(midAngle)
+                }
+
                 newArc.data('circleTrimData', arc)
+                newArc.data('arcData', { p1: startPt, p2: midPt, p3: endPt })
+
                 this.copyStyles(this.element, newArc)
                 newArc.attr('name', 'Arc ' + newArc.node.id.replace('SvgjsPath', ''))
                 this.arcPaths.push(newArc)

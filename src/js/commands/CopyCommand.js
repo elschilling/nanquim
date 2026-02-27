@@ -80,12 +80,12 @@ class CopyCommand extends Command {
     if (this.editor.distance) {
       if (this.editor.ortho) {
         if (Math.abs(dx) > Math.abs(dy)) {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
+          ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: secondPoint.x, y: this.basePoint.y }, this.editor.distance))
         } else {
-          ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, this.editor.distance))
+          ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, { x: this.basePoint.x, y: secondPoint.y }, this.editor.distance))
         }
       } else {
-        ;({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, this.editor.distance))
+        ; ({ dx, dy } = calculateDeltaFromBasepoint(this.basePoint, secondPoint, this.editor.distance))
       }
     }
     if (this.editor.ortho) {
@@ -111,6 +111,8 @@ class CopyCommand extends Command {
       } else {
         clone.move(originalPos.x + dx, originalPos.y + dy)
       }
+
+      this.updateArcData(clone, originalPos, dx, dy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements copied.' })
@@ -126,23 +128,52 @@ class CopyCommand extends Command {
     this.editor.distance = null
   }
 
+  updateArcData(element, originalPos, dx, dy) {
+    if (originalPos.arcData) {
+      const ad = originalPos.arcData
+      element.data('arcData', {
+        p1: { x: ad.p1.x + dx, y: ad.p1.y + dy },
+        p2: { x: ad.p2.x + dx, y: ad.p2.y + dy },
+        p3: { x: ad.p3.x + dx, y: ad.p3.y + dy }
+      })
+    }
+    if (originalPos.circleTrimData) {
+      const ctd = originalPos.circleTrimData
+      element.data('circleTrimData', {
+        ...ctd,
+        cx: ctd.cx + dx,
+        cy: ctd.cy + dy,
+        startPt: { x: ctd.startPt.x + dx, y: ctd.startPt.y + dy },
+        endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
+      })
+    }
+  }
+
   getElementPosition(element) {
+    const data = {
+      arcData: element.data('arcData'),
+      circleTrimData: element.data('circleTrimData')
+    }
+
     if (element.type === 'line') {
       return {
         type: 'line',
         points: element.array().slice(),
+        ...data
       }
     } else if (element.type === 'circle' || element.type === 'ellipse') {
       return {
         type: 'center',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
       }
     } else {
       return {
         type: 'position',
         x: element.x(),
         y: element.y(),
+        ...data
       }
     }
   }

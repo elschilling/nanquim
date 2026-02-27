@@ -115,8 +115,14 @@ class ScaleCommand extends Command {
   }
 
   getElementPosition(element) {
+    const data = {
+      arcData: element.data('arcData'),
+      circleTrimData: element.data('circleTrimData')
+    }
+
     const pos = {
       type: element.type,
+      ...data
     }
     if (element.type === 'line' || element.type === 'polyline' || element.type === 'polygon' || element.type === 'path') {
       pos.points = element.array().slice()
@@ -143,6 +149,39 @@ class ScaleCommand extends Command {
   }
 
   applyScale(element, originalPos, factor) {
+    // Helper to scale a point relative to basePoint
+    const scalePoint = (p) => {
+      return {
+        x: this.basePoint.x + (p.x - this.basePoint.x) * factor,
+        y: this.basePoint.y + (p.y - this.basePoint.y) * factor
+      }
+    }
+
+    // Update arcData if it exists
+    if (originalPos.arcData) {
+      const ad = originalPos.arcData
+      const p1 = scalePoint(ad.p1)
+      const p2 = scalePoint(ad.p2)
+      const p3 = scalePoint(ad.p3)
+      element.data('arcData', { p1, p2, p3 })
+    }
+
+    // Update circleTrimData if it exists
+    if (originalPos.circleTrimData) {
+      const ctd = originalPos.circleTrimData
+      const center = scalePoint({ x: ctd.cx, y: ctd.cy })
+      const sPt = scalePoint(ctd.startPt)
+      const ePt = scalePoint(ctd.endPt)
+      element.data('circleTrimData', {
+        ...ctd,
+        cx: center.x,
+        cy: center.y,
+        r: ctd.r * factor,
+        startPt: sPt,
+        endPt: ePt
+      })
+    }
+
     if (originalPos.type === 'line' || originalPos.type === 'polyline' || originalPos.type === 'polygon') {
       const newPoints = originalPos.points.map((point) => {
         const newX = this.basePoint.x + (point[0] - this.basePoint.x) * factor

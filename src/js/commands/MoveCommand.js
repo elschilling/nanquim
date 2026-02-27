@@ -140,22 +140,30 @@ class MoveCommand extends Command {
 
   // Helper method to get consistent position data for any element type
   getElementPosition(element) {
+    const data = {
+      arcData: element.data('arcData'),
+      circleTrimData: element.data('circleTrimData')
+    }
+
     if (element.type === 'line') {
       return {
         type: 'line',
         points: element.array().slice(), // Copy the array
+        ...data
       }
     } else if (element.type === 'circle' || element.type === 'ellipse') {
       return {
         type: 'center',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
       }
     } else {
       return {
         type: 'position',
         x: element.x(),
         y: element.y(),
+        ...data
       }
     }
   }
@@ -198,6 +206,8 @@ class MoveCommand extends Command {
         // For other elements, move position
         element.move(originalPos.x + dx, originalPos.y + dy)
       }
+
+      this.updateArcData(element, originalPos, dx, dy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
@@ -209,6 +219,27 @@ class MoveCommand extends Command {
     this.interactiveExecutionDone = true
     this.editor.execute(this)
     this.editor.lastCommand = new MoveCommand(this.editor)
+  }
+
+  updateArcData(element, originalPos, dx, dy) {
+    if (originalPos.arcData) {
+      const ad = originalPos.arcData
+      element.data('arcData', {
+        p1: { x: ad.p1.x + dx, y: ad.p1.y + dy },
+        p2: { x: ad.p2.x + dx, y: ad.p2.y + dy },
+        p3: { x: ad.p3.x + dx, y: ad.p3.y + dy }
+      })
+    }
+    if (originalPos.circleTrimData) {
+      const ctd = originalPos.circleTrimData
+      element.data('circleTrimData', {
+        ...ctd,
+        cx: ctd.cx + dx,
+        cy: ctd.cy + dy,
+        startPt: { x: ctd.startPt.x + dx, y: ctd.startPt.y + dy },
+        endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
+      })
+    }
   }
 
   undo() {
@@ -225,6 +256,10 @@ class MoveCommand extends Command {
         // For other elements, move position
         element.move(originalPos.x, originalPos.y)
       }
+
+      // Restore original data
+      if (originalPos.arcData) element.data('arcData', originalPos.arcData)
+      if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })
@@ -245,6 +280,8 @@ class MoveCommand extends Command {
         // For other elements, move position
         element.move(originalPos.x + this.dx, originalPos.y + this.dy)
       }
+
+      this.updateArcData(element, originalPos, this.dx, this.dy)
     })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Elements moved again.' })
   }

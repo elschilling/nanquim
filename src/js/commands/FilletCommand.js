@@ -370,6 +370,7 @@ class FilletCommand extends Command {
     }
 
     // Determine sweep direction based on cross product
+    // Note: Around the arc center, the rotation is opposite to the rotation around the intersection for acute corners.
     const cross = dir1.dx * dir2.dy - dir1.dy * dir2.dx
     const sweepFlag = cross > 0 ? 0 : 1 // 0 for counter-clockwise, 1 for clockwise
 
@@ -389,6 +390,28 @@ class FilletCommand extends Command {
     }
 
     const arcPath = drawContext.path(pathData)
+
+    // Calculate midPt for editability
+    let startAngle = Math.atan2(point1.y - arcCenter.y, point1.x - arcCenter.x)
+    let endAngle = Math.atan2(point2.y - arcCenter.y, point2.x - arcCenter.x)
+
+    // Normalize angles to 0..2PI
+    if (startAngle < 0) startAngle += 2 * Math.PI
+    if (endAngle < 0) endAngle += 2 * Math.PI
+
+    // diff is the absolute angular distance to travel along the arc
+    let diff = (sweepFlag === 1) ? (endAngle - startAngle) : (startAngle - endAngle)
+    if (diff < 0) diff += 2 * Math.PI
+
+    // For CW (1), add half diff; for CCW (0), subtract half diff
+    const midAngle = (sweepFlag === 1) ? (startAngle + diff / 2) : (startAngle - diff / 2)
+    const midPt = {
+      x: arcCenter.x + radius * Math.cos(midAngle),
+      y: arcCenter.y + radius * Math.sin(midAngle)
+    }
+
+    // Attach arcData for editability
+    arcPath.data('arcData', { p1: point1, p2: midPt, p3: point2 })
 
     // Inherit all visual styles from line1 (or line2 if line1 doesn't have them)
     const inheritedStyles = {
@@ -410,8 +433,13 @@ class FilletCommand extends Command {
       }
     })
 
-    // arcPath.attr(inheritedStyles)
+    // Set ID and name for identification
+    arcPath.attr('id', this.editor.elementIndex++)
+    arcPath.attr('name', 'Arc')
+
+    arcPath.attr(inheritedStyles)
     arcPath.addClass('newDrawing')
+    this.editor.signals.updatedOutliner.dispatch()
 
     // Store created arc for undo
     this.createdElements.push(arcPath)
