@@ -17,8 +17,6 @@ function Viewport(editor) {
   let hoveredElements = []
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
-  let GRID_SIZE = 20
-  let GRID_SPACING = 1
   let lastMiddleClickTime = 0
   let middleClickCount = 0
   let snapTolerance = 50
@@ -61,7 +59,10 @@ function Viewport(editor) {
   })
 
   document.addEventListener('contextmenu', handleRightClick)
-  let canvas = document.getElementById('canvas')
+  // Create groups for grid and axis within overlays
+  const gridGroup = editor.overlays.group().addClass('grid')
+  const axisGroup = editor.overlays.group().addClass('axis-group')
+
   svg
     .addClass('canvas')
     .addClass('cartesian')
@@ -70,9 +71,89 @@ function Viewport(editor) {
     // .mouseup(handleClick)
     // .click(handleClick)
     .panZoom({ zoomFactor, panButton: 1 })
-  drawGrid(editor.overlays, GRID_SIZE, GRID_SPACING)
-  drawAxis(editor.overlays, GRID_SIZE)
-  svg.animate(300).viewbox(svg.bbox())
+    .on('zoom', updateGrid)
+    .on('pan', updateGrid)
+
+  svg.viewbox(-5, -5, 10, 10)
+  updateGrid()
+
+  function updateGrid() {
+    const rect = svg.node.getBoundingClientRect()
+    const p1 = svg.point(rect.left, rect.top)
+    const p2 = svg.point(rect.right, rect.top)
+    const p3 = svg.point(rect.left, rect.bottom)
+    const p4 = svg.point(rect.right, rect.bottom)
+
+    const xMin = Math.min(p1.x, p2.x, p3.x, p4.x)
+    const xMax = Math.max(p1.x, p2.x, p3.x, p4.x)
+    const yMin = Math.min(p1.y, p2.y, p3.y, p4.y)
+    const yMax = Math.max(p1.y, p2.y, p3.y, p4.y)
+
+    const vb = {
+      x: xMin,
+      y: yMin,
+      width: xMax - xMin,
+      height: yMax - yMin
+    }
+
+    // Set fixed spacing to 1
+    const spacing = 1
+
+    // Optimization: Don't draw the grid if it's too dense (lines would be < 2px apart)
+    const zoom = svg.zoom()
+    if (spacing * zoom < 2) {
+      gridGroup.clear()
+      axisGroup.clear()
+      drawAxis(axisGroup, vb)
+      return
+    }
+
+    // Clear old drawings
+    gridGroup.clear()
+    axisGroup.clear()
+
+    drawGrid(gridGroup, vb, spacing)
+    drawAxis(axisGroup, vb)
+  }
+
+  function drawAxis(group, vb) {
+    const { x, y, width, height } = vb
+    const xMax = x + width
+    const yMax = y + height
+
+    // Draw X-axis if visible
+    if (y <= 0 && yMax >= 0) {
+      group.line(x, 0, xMax, 0).addClass('axis x-axis')
+    }
+    // Draw Y-axis if visible
+    if (x <= 0 && xMax >= 0) {
+      group.line(0, y, 0, yMax).addClass('axis y-axis')
+    }
+  }
+
+  function drawGrid(group, vb, spacing) {
+    const { x, y, width, height } = vb
+    const xMin = x
+    const xMax = x + width
+    const yMin = y
+    const yMax = y + height
+
+    // Calculate starting points rounded to spacing
+    const startX = Math.floor(xMin / spacing) * spacing
+    const startY = Math.floor(yMin / spacing) * spacing
+
+    for (let gx = startX; gx <= xMax; gx += spacing) {
+      if (Math.abs(gx) > 0.001) { // Avoid drawing over the axis
+        group.line(gx, yMin, gx, yMax).addClass('axis')
+      }
+    }
+
+    for (let gy = startY; gy <= yMax; gy += spacing) {
+      if (Math.abs(gy) > 0.001) { // Avoid drawing over the axis
+        group.line(xMin, gy, xMax, gy).addClass('axis')
+      }
+    }
+  }
 
   function onMoveGhostingStarted(elements, point) {
     isGhostingMove = true
@@ -175,29 +256,6 @@ function Viewport(editor) {
     canvas.animate(300).viewbox(canvas.bbox())
   }
 
-  function drawAxis(svg, size) {
-    const axisGroup = svg.group()
-    axisGroup.addClass('axis')
-    const xAxis = svg.line(-size, 0, size, 0).addClass('axis x-axis').addTo(axisGroup)
-    const yAxis = svg.line(0, size, 0, -size).addClass('axis y-axis').addTo(axisGroup)
-  }
-
-  function drawGrid(svg, gridSize, spacing) {
-    const gridGroup = svg.group()
-    gridGroup.addClass('grid')
-    for (let i = -gridSize; i <= gridSize; i += spacing) {
-      if (i != 0) {
-        const horizontalLines = svg
-          .line(-gridSize * spacing, i * spacing, gridSize * spacing, i * spacing)
-          .addClass('axis')
-          .addTo(gridGroup)
-        const verticalLines = svg
-          .line(i * spacing, -gridSize * spacing, i * spacing, gridSize * spacing)
-          .addClass('axis')
-          .addTo(gridGroup)
-      }
-    }
-  }
   function getOrthoConstrainedPoint(point, vertexData) {
     let baseX = 0, baseY = 0
     const { element, vertexIndex, originalPosition } = vertexData
