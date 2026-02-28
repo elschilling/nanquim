@@ -22,6 +22,8 @@ class CopyCommand extends Command {
       msg: `Select elements to copy and press Enter to confirm.`,
     })
     document.addEventListener('keydown', this.boundOnKeyDown)
+    this.editor.suppressHandlers = true
+    this.editor.handlers.clear()
   }
 
   onKeyDown(event) {
@@ -50,6 +52,9 @@ class CopyCommand extends Command {
 
     this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
     this.originalSelection = this.editor.selected.slice()
+
+    // Disable rectangle selection during base/second point picking
+    this.editor.selectSingleElement = true
 
     this.editor.signals.terminalLogged.dispatch({ msg: `Selected ${selectedElements.length} elements.` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify base point.' })
@@ -181,6 +186,8 @@ class CopyCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
+    this.editor.selectSingleElement = false
+    this.editor.suppressHandlers = false
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 
