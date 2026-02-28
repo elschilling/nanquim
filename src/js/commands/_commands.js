@@ -12,6 +12,7 @@ import { eraseCommand } from './EraseCommand'
 import { extendCommand } from './ExtendCommand'
 import { trimCommand } from './TrimCommand'
 import { drawArcCommand } from './DrawArcCommand'
+import { measureDistanceCommand } from './MeasureDistanceCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -70,6 +71,10 @@ const commands = {
   ARC: {
     execute: drawArcCommand,
     aliases: ['a'],
+  },
+  DIST: {
+    execute: measureDistanceCommand,
+    aliases: ['d', 'dist'],
   },
   // Add more commands and functions as needed
 }
