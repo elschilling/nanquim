@@ -29,6 +29,19 @@ function Terminal(editor) {
   document.addEventListener('keyup', handleKeyUp)
 
   function handleInput(e) {
+    // Ctrl+S — Save SVG
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault()
+      if (window.saveSVG) window.saveSVG()
+      return
+    }
+    // Ctrl+O — Open SVG
+    if (e.ctrlKey && e.key === 'o') {
+      e.preventDefault()
+      if (window.openSVG) window.openSVG()
+      return
+    }
+
     // Don't auto-focus terminal if user is editing a property input
     const activeElement = document.activeElement
     if (activeElement && activeElement.classList.contains('property-input')) {

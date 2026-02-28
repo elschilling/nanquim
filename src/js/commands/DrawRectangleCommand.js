@@ -22,6 +22,7 @@ class DrawRectangleCommand extends Command {
     this.drawing
       .rect()
       .addClass('newDrawing')
+      .fill('none')
       .attr('id', this.editor.elementIndex++)
       .draw()
       .on('drawstop', () => {
