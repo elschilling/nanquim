@@ -24,7 +24,6 @@ function Viewport(editor) {
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
   let lastMiddleClickTime = 0
-  let middleClickCount = 0
   let snapTolerance = 50
   let ghostElements = []
   let basePoint = null
@@ -82,6 +81,35 @@ function Viewport(editor) {
 
   svg.viewbox(-5, -5, 10, 10)
   updateGrid()
+
+  // Zoom to extents (drawing elements only) on double middle click
+  svg.on('mousedown', (e) => {
+    // Check for middle click (button === 1) and double click (detail >= 2, handles rapid clicks by OS)
+    if (e.button === 1 && e.detail >= 2) {
+      e.preventDefault()
+      e.stopPropagation()
+
+      // Hide handlers temporarily so their bounding boxes don't affect the extents
+      const wasHandlersVisible = editor.handlers.visible()
+      if (wasHandlersVisible) editor.handlers.hide()
+
+      const box = editor.drawing.bbox()
+
+      if (wasHandlersVisible) editor.handlers.show()
+
+      // Only zoom if there's actual content
+      if (box.width > 0 || box.height > 0) {
+        const padding = Math.max(box.width, box.height) * 0.1 || 2
+
+        // Disable rendering handlers temporarily while animating
+        svg.animate(300, '>').viewbox(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2).after(() => {
+          updateGrid()
+        })
+
+        // Keep grid updating slightly during animation if needed, or rely on .after
+      }
+    }
+  })
 
   function updateGrid() {
     const rect = svg.node.getBoundingClientRect()
@@ -256,10 +284,6 @@ function Viewport(editor) {
     editor.isEditingVertex = false
     editor.editingVertices = []
     console.log('Vertex edit stopped')
-  }
-
-  function zoomToFit(canvas) {
-    canvas.animate(300).viewbox(canvas.bbox())
   }
 
   function getOrthoConstrainedPoint(point, vertexData) {
@@ -731,8 +755,7 @@ function Viewport(editor) {
     }
 
     if (e.button === 1) {
-      // check middle click
-      handleMiddleClick()
+      // Middle click is handled by the panzoom plugin and the native dblclick listener at the top
     } else if (!editor.isDrawing) {
       console.log('hoveredElements', hoveredElements)
       if (hoveredElements.length > 0) {
@@ -913,20 +936,6 @@ function Viewport(editor) {
     if (backupHovered.length > 0) {
       editor.signals.updatedSelection.dispatch()
     }
-  }
-  function handleMiddleClick() {
-    const currentTime = new Date().getTime()
-    const timeDiff = currentTime - lastMiddleClickTime
-    if (timeDiff < 300) {
-      middleClickCount++
-      if (middleClickCount === 2) {
-        zoomToFit(svg)
-        middleClickCount = 0
-      }
-    } else {
-      middleClickCount = 1
-    }
-    lastMiddleClickTime = currentTime
   }
 
   function checkSnap(coordinates) {

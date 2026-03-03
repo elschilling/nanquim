@@ -210,7 +210,6 @@ main
     // background: #282828
     li
         cursor: default
-        text-indent: 10px
         line-height: 22px
 
         // box-sizing: 
@@ -221,18 +220,16 @@ main
         
 .outliner-list  
     padding: 0
-    ul
-        padding-left: 15px
+
     li
         width: 100%
         cursor: pointer
         display: flex
         flex-direction: row
-        // align-items: center
-        // padding: 0px 20px
-        // height: 22px
-        // list-style-type: none
-        // text-indent: 0
+        height: 22px
+        align-items: center
+        padding: 0 6px 0 0
+        box-sizing: border-box
     li
         &:hover
             background: #464646
@@ -250,6 +247,8 @@ main
 
 .outliner-selected
     background: var(--accent-color) !important
+    width: 100%
+    box-sizing: border-box
     &:hover
         background: #4d6490 !important
 
@@ -257,15 +256,21 @@ main
 .outliner-collection
     padding-left: 0
     list-style: none
+    ul
+        padding-left: 0
+        list-style: none
 
 .collection-row
     display: flex
     align-items: center
     justify-content: space-between
-    padding: 2px 6px 2px 10px
+    height: 22px
+    padding: 0 6px 0 4px
+    box-sizing: border-box
     cursor: pointer
     user-select: none
     border-left: 3px solid transparent
+    width: 100%
     &:hover
         background: #3a3a3a
 

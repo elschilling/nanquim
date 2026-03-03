@@ -199,7 +199,6 @@ function Outliner(editor) {
       // Container for children
       const childrenContainer = document.createElement('div')
       childrenContainer.style.display = data.collapsed ? 'none' : 'block'
-      childrenContainer.style.paddingLeft = '16px' // Indent children
 
       // Render child elements
       data.group.children().each((child) => {
@@ -211,6 +210,20 @@ function Outliner(editor) {
           li.id = 'li' + child.node.id
 
           const childName = child.attr('name') || child.node.nodeName
+
+          // Element type icon
+          const elTypeIcon = document.createElement('div')
+          elTypeIcon.className = 'icon '
+          const elType = child.type || child.node.nodeName.toLowerCase()
+          if (elType === 'line') elTypeIcon.className += 'icon-element-line'
+          else if (elType === 'circle') elTypeIcon.className += 'icon-element-circle'
+          else if (elType === 'path') elTypeIcon.className += 'icon-element-arc'
+          else if (elType === 'rect') elTypeIcon.className += 'icon-element-rect'
+          else if (elType === 'polygon' || elType === 'polyline') elTypeIcon.className += 'icon-element-rect'
+          else elTypeIcon.className += 'icon-element-default'
+          elTypeIcon.style.marginRight = '4px'
+          elTypeIcon.style.flexShrink = '0'
+
           const nameSpan = document.createElement('span')
           nameSpan.className = 'collection-name'
           nameSpan.textContent = childName
@@ -245,10 +258,9 @@ function Outliner(editor) {
           elIcons.appendChild(elEyeIcon)
           elIcons.appendChild(elLockIcon)
 
-          li.style.display = 'flex'
-          li.style.justifyContent = 'space-between'
-          li.style.alignItems = 'center'
+          li.style.paddingLeft = '28px'
 
+          li.appendChild(elTypeIcon)
           li.appendChild(nameSpan)
           li.appendChild(elIcons)
 

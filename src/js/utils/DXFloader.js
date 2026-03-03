@@ -22,10 +22,20 @@ function DXFLoader(editor) {
       // Read Nanquim metadata if present
       const savedElementIndex = svgRoot.getAttribute('data-element-index')
 
+      // Read stroke conversion metadata
+      const convertedStrokes = svgRoot.getAttribute('data-nanquim-converted-strokes') === 'true'
+
       // Clear existing drawing
       editor.drawing.clear()
 
-      const svgContent = svgRoot.innerHTML
+      let svgContent = svgRoot.innerHTML
+
+      // If the file was saved with white strokes converted to black, revert them
+      if (convertedStrokes) {
+        svgContent = svgContent.replace(/stroke\s*=\s*(["'])#000000\1/gi, 'stroke=$1#ffffff$1')
+        svgContent = svgContent.replace(/stroke\s*:\s*#000000/gi, 'stroke: #ffffff')
+      }
+
       console.log('svgContent', svgContent)
       editor.drawing.svg(svgContent)
 

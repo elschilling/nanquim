@@ -13,6 +13,7 @@ import { extendCommand } from './ExtendCommand'
 import { trimCommand } from './TrimCommand'
 import { drawArcCommand } from './DrawArcCommand'
 import { measureDistanceCommand } from './MeasureDistanceCommand'
+import { mirrorCommand } from './MirrorCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -75,6 +76,10 @@ const commands = {
   DIST: {
     execute: measureDistanceCommand,
     aliases: ['d', 'dist'],
+  },
+  MIRROR: {
+    execute: mirrorCommand,
+    aliases: ['mi'],
   },
   // Add more commands and functions as needed
 }

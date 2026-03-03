@@ -18,6 +18,10 @@ function Navbar(editor) {
   window.saveSVG = async function () {
     const filename = 'drawing.svg'
 
+    const convertStrokes = window.confirm(
+      'Convert white strokes to black? (Recommended for viewing the SVG in other programs. They will be converted back to white when opened in Nanquim)'
+    )
+
     // Force in-memory SVG.js data object into DOM data-* attributes so they get serialized
     // Also bake explicitly black strokes into elements using the .newDrawing class,
     // since their white color comes from CSS and won't be visible in standalone SVGs
@@ -44,7 +48,11 @@ function Navbar(editor) {
         // Bake CSS styles into inline attributes so standalone SVGs render correctly
         if (el.hasClass('newDrawing')) {
           el.attr('data-temp-export-baked', 'true')
-          el.stroke({ color: '#000000', width: 0.1, linecap: 'round' })
+          if (convertStrokes) {
+            el.stroke({ color: '#000000', width: 0.1, linecap: 'round' })
+          } else {
+            el.stroke({ color: '#ffffff', width: 0.1, linecap: 'round' })
+          }
 
           // Only override fill if it's not already explicitly set
           if (!el.attr('fill')) {
@@ -85,7 +93,12 @@ function Navbar(editor) {
     })
 
     // Convert any explicit white inline strokes to black for standalone SVG visibility
-    drawingContent = drawingContent.replace(/stroke\s*=\s*["'](?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))["']/gi, 'stroke="#000000"')
+    if (convertStrokes) {
+      // Handle stroke="..." attributes
+      drawingContent = drawingContent.replace(/stroke\s*=\s*["'](?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))["']/gi, 'stroke="#000000"')
+      // Handle stroke: ... inside style="..." attributes
+      drawingContent = drawingContent.replace(/stroke\s*:\s*(?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))/gi, 'stroke: #000000')
+    }
 
     // Get current viewbox to preserve the view
     const vb = editor.svg.viewbox()
@@ -95,7 +108,8 @@ function Navbar(editor) {
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"`,
       `  viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}"`,
       `  data-nanquim-version="1"`,
-      `  data-element-index="${editor.elementIndex}">`,
+      `  data-element-index="${editor.elementIndex}"`,
+      convertStrokes ? `  data-nanquim-converted-strokes="true">` : `>`,
       drawingContent,
       `</svg>`,
     ].join('\n')
