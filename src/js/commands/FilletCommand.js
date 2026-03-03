@@ -377,14 +377,14 @@ class FilletCommand extends Command {
     // Create the arc path
     const pathData = `M ${point1.x} ${point1.y} A ${radius} ${radius} 0 0 ${sweepFlag} ${point2.x} ${point2.y}`
 
-    // Try to find the correct drawing context
+    // Try to find the correct drawing context (same collection as source line)
     let drawContext = null
-    if (this.editor.drawing) {
-      drawContext = this.editor.drawing
-    } else if (this.editor.svg) {
-      drawContext = this.editor.svg
-    } else if (line1.parent) {
+    if (line1.parent() && line1.parent().attr('data-collection') === 'true') {
       drawContext = line1.parent()
+    } else if (this.editor.activeCollection) {
+      drawContext = this.editor.activeCollection
+    } else if (this.editor.drawing) {
+      drawContext = this.editor.drawing
     } else {
       throw new Error('Cannot find SVG drawing context')
     }

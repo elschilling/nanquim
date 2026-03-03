@@ -1,12 +1,13 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawCircleCommand extends Command {
   constructor(editor) {
     super(editor)
     this.type = 'DrawCircleCommand'
     this.name = 'Circle'
-    this.drawing = this.editor.drawing
+    this.drawing = this.editor.activeCollection
   }
 
   execute() {
@@ -22,6 +23,7 @@ class DrawCircleCommand extends Command {
   draw(centerPoint) {
     if (this.isDrawing) {
       let circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw()
+      applyCollectionStyleToElement(this.editor, circle)
       let hasCenter = !!centerPoint
 
       if (centerPoint) {
@@ -29,6 +31,7 @@ class DrawCircleCommand extends Command {
         circle.draw('cancel')
         circle.remove()
         circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw({ startPoint: centerPoint })
+        applyCollectionStyleToElement(this.editor, circle)
         this.editor.signals.terminalLogged.dispatch({
           type: 'span',
           msg: `Center set at (${centerPoint.x.toFixed(2)}, ${centerPoint.y.toFixed(2)}). Click to set radius or type a value. `,
@@ -82,6 +85,7 @@ class DrawCircleCommand extends Command {
               .addClass('newDrawing')
               .fill('transparent')
               .center(centerPoint.x, centerPoint.y)
+            applyCollectionStyleToElement(this.editor, newCircle)
             newCircle.attr('id', this.editor.elementIndex++)
             newCircle.attr('name', 'Circle')
             this.editor.history.undos.push(new AddElementCommand(this.editor, newCircle))

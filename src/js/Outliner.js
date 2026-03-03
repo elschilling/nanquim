@@ -1,27 +1,200 @@
+import {
+  createCollection,
+  setActiveCollection,
+  toggleVisibility,
+  toggleLock,
+  toggleElementVisibility,
+  toggleElementLock,
+} from './Collection'
+
 const drawingTree = document.getElementById('drawing-tree')
 
 function Outliner(editor) {
   const signals = editor.signals
 
+  // "Add Collection" button
+  const addBtn = document.getElementById('btn-add-collection')
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const count = editor.collections.size + 1
+      createCollection(editor, 'Collection ' + count)
+    })
+  }
+
   signals.updatedOutliner.add(() => {
     drawingTree.innerHTML = ''
-    childElements(editor.drawing, drawingTree)
-    // editor.drawing.children().each((el) => {
-    //   const li = document.createElement('li')
-    //   li.id = 'li' + el.node.id
-    //   li.textContent = el.node.nodeName
-    //   li.addEventListener('click', () => signals.toogledSelect.dispatch(el))
-    //   drawingTree.appendChild(li)
-    //   console.log('el', el)
-    //   if ((el.type = 'g')) childElements(el, drawingTree)
-    // })
+    renderCollections()
   })
+
+  signals.updatedCollections.add(() => {
+    drawingTree.innerHTML = ''
+    renderCollections()
+  })
+
+  function renderCollections() {
+    // Iterate collections in DOM order
+    editor.drawing.children().each((child) => {
+      if (child.attr('data-collection') !== 'true') return
+
+      const id = child.attr('id')
+      const data = editor.collections.get(id)
+      if (!data) return
+
+      const isActive = editor.activeCollection === data.group
+
+      // Collection container
+      const collectionUl = document.createElement('ul')
+      collectionUl.className = 'outliner-collection'
+
+      // Collection row
+      const collectionLi = document.createElement('li')
+      collectionLi.id = 'li' + id
+      collectionLi.className = 'collection-row'
+      if (isActive) collectionLi.classList.add('collection-active')
+      if (!data.visible) collectionLi.classList.add('collection-hidden-row')
+      if (data.locked) collectionLi.classList.add('collection-locked-row')
+
+      // Collection name
+      const nameSpan = document.createElement('span')
+      nameSpan.className = 'collection-name'
+      nameSpan.textContent = child.attr('name') || 'Collection'
+      nameSpan.addEventListener('click', (e) => {
+        e.stopPropagation()
+        setActiveCollection(editor, id)
+        // Select the collection group so Properties panel shows it
+        editor.selected = [data.group]
+        signals.updatedSelection.dispatch()
+      })
+      // Double-click to rename
+      nameSpan.addEventListener('dblclick', (e) => {
+        e.stopPropagation()
+        const input = document.createElement('input')
+        input.type = 'text'
+        input.value = child.attr('name') || 'Collection'
+        input.className = 'collection-rename-input'
+        nameSpan.replaceWith(input)
+        input.focus()
+        input.select()
+        const commit = () => {
+          const newName = input.value.trim() || 'Collection'
+          child.attr('name', newName)
+          input.replaceWith(nameSpan)
+          nameSpan.textContent = newName
+        }
+        input.addEventListener('blur', commit)
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') commit()
+          if (ev.key === 'Escape') {
+            input.replaceWith(nameSpan)
+          }
+        })
+      })
+
+      // Icons container (right side)
+      const iconsDiv = document.createElement('div')
+      iconsDiv.className = 'collection-icons'
+
+      // Visibility icon
+      const eyeIcon = document.createElement('div')
+      eyeIcon.className = 'icon collection-icon icon-restrict-screen'
+      if (!data.visible) eyeIcon.classList.add('icon-off')
+      eyeIcon.title = data.visible ? 'Hide' : 'Show'
+      eyeIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        toggleVisibility(editor, id)
+      })
+
+      // Lock icon
+      const lockIcon = document.createElement('div')
+      lockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+      if (data.locked) lockIcon.classList.add('icon-on')
+      else lockIcon.classList.add('icon-off')
+      lockIcon.title = data.locked ? 'Unlock' : 'Lock'
+      lockIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        toggleLock(editor, id)
+      })
+
+      iconsDiv.appendChild(eyeIcon)
+      iconsDiv.appendChild(lockIcon)
+
+      collectionLi.appendChild(nameSpan)
+      collectionLi.appendChild(iconsDiv)
+      collectionUl.appendChild(collectionLi)
+
+      // Render child elements
+      data.group.children().each((child) => {
+        if (child.hasClass && child.hasClass('ghostLine')) return
+        if (child.type === 'g') childElements(child, collectionUl)
+        else {
+          const childUl = document.createElement('ul')
+          const li = document.createElement('li')
+          li.id = 'li' + child.node.id
+
+          const childName = child.attr('name') || child.node.nodeName
+          const nameSpan = document.createElement('span')
+          nameSpan.className = 'collection-name'
+          nameSpan.textContent = childName
+
+          // Element icons container
+          const elIcons = document.createElement('div')
+          elIcons.className = 'collection-icons'
+
+          // Element eye icon
+          const elEyeIcon = document.createElement('div')
+          elEyeIcon.className = 'icon collection-icon icon-restrict-screen'
+          const isHidden = child.attr('data-hidden') === 'true'
+          if (isHidden) elEyeIcon.classList.add('icon-off')
+          elEyeIcon.title = isHidden ? 'Show' : 'Hide'
+          elEyeIcon.addEventListener('click', (e) => {
+            e.stopPropagation()
+            toggleElementVisibility(editor, child)
+          })
+
+          // Element lock icon
+          const elLockIcon = document.createElement('div')
+          elLockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+          const isLocked = child.attr('data-locked') === 'true'
+          if (isLocked) elLockIcon.classList.add('icon-on')
+          else elLockIcon.classList.add('icon-off')
+          elLockIcon.title = isLocked ? 'Unlock' : 'Lock'
+          elLockIcon.addEventListener('click', (e) => {
+            e.stopPropagation()
+            toggleElementLock(editor, child)
+          })
+
+          elIcons.appendChild(elEyeIcon)
+          elIcons.appendChild(elLockIcon)
+
+          li.style.display = 'flex'
+          li.style.justifyContent = 'space-between'
+          li.style.alignItems = 'center'
+
+          li.appendChild(nameSpan)
+          li.appendChild(elIcons)
+
+          li.addEventListener('click', (e) => {
+            e.stopPropagation()
+            if (data.locked || isLocked) return
+            if (isHidden) return
+            signals.toogledSelect.dispatch(child)
+          })
+          childUl.appendChild(li)
+          collectionUl.appendChild(childUl)
+        }
+      })
+
+      drawingTree.appendChild(collectionUl)
+    })
+  }
 
   signals.updatedSelection.add(() => {
     clearSelectionVisuals()
     editor.selected.forEach((el) => {
       const li = document.getElementById('li' + el.node.id)
-      el.addClass('elementSelected')
+      if (el.attr('data-collection') !== 'true') {
+        el.addClass('elementSelected')
+      }
       if (li) li.classList.add('outliner-selected')
     })
     signals.updatedProperties.dispatch()
@@ -37,8 +210,12 @@ function Outliner(editor) {
 
     const selectedItems = drawingTree.querySelectorAll('.outliner-selected')
     selectedItems.forEach(li => li.classList.remove('outliner-selected'))
-    editor.drawing.children().each((el) => {
-      el.removeClass('elementSelected')
+    // Clear elementSelected class from all elements across all collections
+    editor.collections.forEach((data) => {
+      data.group.removeClass('elementSelected')
+      data.group.children().each((el) => {
+        el.removeClass('elementSelected')
+      })
     })
   }
 
@@ -78,7 +255,7 @@ function Outliner(editor) {
           if (Math.abs(cx - x) < tolerance && Math.abs(cy - y) < tolerance) {
             vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
           }
-          // Check Quadrants (approximation for exact float matches might be needed, but handlers are drawn at exact calc points)
+          // Check Quadrants
           if (Math.abs(cx - x) < tolerance && Math.abs((cy - r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
           if (Math.abs((cx + r) - x) < tolerance && Math.abs(cy - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
           if (Math.abs(cx - x) < tolerance && Math.abs((cy + r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
@@ -283,8 +460,8 @@ function Outliner(editor) {
     }
     editor.signals.updatedSelection.dispatch()
   })
+
   function childElements(group, parent) {
-    // console.log('group', group)
     const ul = document.createElement('ul')
     const li = document.createElement('li')
     li.id = 'li' + group.node.id
@@ -296,7 +473,6 @@ function Outliner(editor) {
     })
     ul.appendChild(li)
     group.children().each((child) => {
-      // console.log('child', child)
       if (child.hasClass && child.hasClass('ghostLine')) return
       if (child.type === 'g') childElements(child, ul)
       else {

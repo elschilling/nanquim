@@ -7,11 +7,17 @@ import {
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
+import { getSelectableElements } from './Collection'
 
 function Viewport(editor) {
   const signals = editor.signals
   const svg = editor.svg
   const drawing = editor.drawing
+
+  // Helper: get flat array of selectable drawing elements (visible + unlocked collections)
+  function getSelectableDrawingElements() {
+    return getSelectableElements(editor)
+  }
 
   let hoverTreshold = 0.5
   let hoveredElements = []
@@ -549,7 +555,8 @@ function Viewport(editor) {
   function checkHover() {
     if (!editor.isDrawing) {
       const distances = new Map()
-      drawing.children().each((el) => {
+      const elements = getSelectableDrawingElements()
+      elements.forEach((el) => {
         if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
         let distance
         if (el.type === 'line') {
@@ -771,7 +778,8 @@ function Viewport(editor) {
   }
 
   function findElements(rect, selectionMode) {
-    drawing.children().each((el) => {
+    const elements = getSelectableDrawingElements()
+    elements.forEach((el) => {
       // Skip background/ghost elements
       if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) return
 

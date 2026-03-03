@@ -1,4 +1,5 @@
 import * as Helper from '../libs/dxf/src/Helper'
+import { rebuildCollectionsFromDOM } from '../Collection'
 
 function DXFLoader(editor) {
   this.loadFile = function (file) {
@@ -28,31 +29,35 @@ function DXFLoader(editor) {
       console.log('svgContent', svgContent)
       editor.drawing.svg(svgContent)
 
-      // Restore data attributes (arcData, circleTrimData) from data-* DOM attributes
-      // SVG.js doesn't auto-hydrate data-* attributes when content is inserted via .svg()
-      // We need to manually parse them so SVG.js data() method can access them
-      editor.drawing.children().each((el) => {
-        // Re-hydrate SVG.js data from DOM data-* attributes
+      // Hydrate data attributes recursively (including inside collection groups)
+      const hydrateElement = (el) => {
         const node = el.node
         Array.from(node.attributes).forEach((attr) => {
           if (attr.name.startsWith('data-')) {
-            const key = attr.name.slice(5) // Remove 'data-' prefix
-            // Convert kebab-case to camelCase (e.g., 'arc-data' -> 'arcData')
+            const key = attr.name.slice(5)
             const camelKey = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
             try {
               const value = JSON.parse(attr.value)
               el.data(camelKey, value)
             } catch (err) {
-              // Not JSON, store as string
               el.data(camelKey, attr.value)
             }
           }
         })
-
-        // Track element IDs
         const id = parseInt(el.attr('id'))
         if (!isNaN(id) && id >= editor.elementIndex) {
           editor.elementIndex = id + 1
+        }
+      }
+
+      editor.drawing.children().each((child) => {
+        if (child.type === 'g') {
+          // Hydrate the group itself
+          hydrateElement(child)
+          // Hydrate its children
+          child.children().each(hydrateElement)
+        } else {
+          hydrateElement(child)
         }
       })
 
@@ -63,6 +68,9 @@ function DXFLoader(editor) {
           editor.elementIndex = idx
         }
       }
+
+      // Rebuild collections from DOM (handles legacy and new files)
+      rebuildCollectionsFromDOM(editor)
 
       editor.signals.updatedOutliner.dispatch()
       editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Opened: ${file.name}` })

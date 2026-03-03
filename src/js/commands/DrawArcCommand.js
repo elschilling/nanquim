@@ -1,13 +1,14 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { calculateDistance } from '../utils/calculateDistance'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawArcCommand extends Command {
     constructor(editor) {
         super(editor)
         this.type = 'DrawArcCommand'
         this.name = 'Arc'
-        this.drawing = this.editor.drawing
+        this.drawing = this.editor.activeCollection
         this.points = []
         this.arcPath = null
         this.boundHandleMove = this.handleMove.bind(this)
@@ -50,6 +51,7 @@ class DrawArcCommand extends Command {
                 .addClass('newDrawing')
                 .fill('none')
                 .stroke({ color: 'white', width: 0.1, linecap: 'round' })
+            applyCollectionStyleToElement(this.editor, this.arcPath)
 
         } else if (this.points.length === 2) {
             this.editor.signals.terminalLogged.dispatch({

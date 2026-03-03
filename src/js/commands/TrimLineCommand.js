@@ -33,7 +33,7 @@ class TrimLineCommand extends Command {
 
             // Create a new line for the remaining part
             if (!this.newLine) {
-                this.newLine = this.editor.drawing.line(this.action.splitX2, this.action.splitY2, this.oldX2, this.oldY2)
+                this.newLine = this.editor.activeCollection.line(this.action.splitX2, this.action.splitY2, this.oldX2, this.oldY2)
 
                 // Copy styles (stroke color, width, etc from original)
                 const stroke = this.element.attr('stroke')

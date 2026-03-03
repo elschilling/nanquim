@@ -1,5 +1,6 @@
 import { History as _History } from './History'
 import { DXFLoader } from './utils/DXFloader'
+import { initCollections } from './Collection'
 
 function Editor() {
   const Signal = signals.Signal
@@ -29,6 +30,7 @@ function Editor() {
     refreshHandlers: new Signal(),
     commandCancelled: new Signal(),
     requestHoverCheck: new Signal(),
+    updatedCollections: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -62,6 +64,9 @@ function Editor() {
   this.cmdParams = {
     filletRadius: 0,
   }
+
+  // Initialize collection system (creates default collection)
+  initCollections(this)
 }
 
 Editor.prototype = {

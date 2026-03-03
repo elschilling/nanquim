@@ -70,7 +70,7 @@ class TrimArcCommand extends Command {
 
                 const d = `M ${startPt.x} ${startPt.y} A ${r} ${r} 0 ${largeArcFlag} ${sweepFlag} ${endPt.x} ${endPt.y}`
 
-                let newArc = this.editor.drawing.path(d)
+                let newArc = this.editor.activeCollection.path(d)
 
                 // Set the arcData for editability and snapping
                 // p1 = start point, p2 = mid point, p3 = end point (following our DrawArcCommand convention)

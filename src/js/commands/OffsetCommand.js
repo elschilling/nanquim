@@ -69,7 +69,7 @@ class OffsetCommand extends Command {
     if (!this.selectedElement) return this.cleanup()
 
     const clone = this.selectedElement.clone()
-    clone.putIn(this.editor.drawing)
+    clone.putIn(this.selectedElement.parent() || this.editor.activeCollection)
 
     // For circles/rects, resize instead of translate
     if (this.selectedElement.type === 'circle') {

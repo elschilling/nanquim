@@ -4,6 +4,7 @@ import { TrimRectCommand } from './TrimRectCommand'
 import { TrimCircleCommand } from './TrimCircleCommand'
 import { TrimArcCommand } from './TrimArcCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
+import { getDrawableElements } from '../Collection'
 
 function isPointInArc(pt, arcData) {
     const { cx, cy, theta1, theta2, ccw } = arcData
@@ -97,14 +98,14 @@ class TrimCommand extends Command {
 
     initGhosts() {
         if (!this.ghostLine) {
-            this.ghostLine = this.editor.drawing.line(0, 0, 0, 0)
+            this.ghostLine = this.editor.overlays.line(0, 0, 0, 0)
                 .stroke({ color: '#F44336', width: 0.5, opacity: 0.8, linecap: 'round' })
                 .addClass('ghostLine')
             this.ghostLine.node.style.pointerEvents = 'none'
             this.ghostLine.hide()
         }
         if (!this.ghostArc) {
-            this.ghostArc = this.editor.drawing.path('M 0 0')
+            this.ghostArc = this.editor.overlays.path('M 0 0')
                 .stroke({ color: '#F44336', width: 0.5, opacity: 0.8, linecap: 'round' }).fill('none')
                 .addClass('ghostLine')
             this.ghostArc.node.style.pointerEvents = 'none'
@@ -129,7 +130,8 @@ class TrimCommand extends Command {
     getCandidateBoundaries(originalEl) {
         let candidateBoundaries = []
         if (this.autoTrimMode) {
-            this.editor.drawing.children().each((child) => {
+            const allElements = getDrawableElements(this.editor)
+            allElements.forEach((child) => {
                 if (child.node !== originalEl.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
                     candidateBoundaries.push(child)
                 }

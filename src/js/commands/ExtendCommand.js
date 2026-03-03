@@ -2,6 +2,7 @@ import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
 import { ExtendArcCommand } from './ExtendArcCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
+import { getDrawableElements } from '../Collection'
 
 class ExtendCommand extends Command {
     constructor(editor) {
@@ -103,7 +104,7 @@ class ExtendCommand extends Command {
 
     setupHoverEventListeners() {
         // Setup hover events for ghosting
-        const elements = this.editor.drawing.children()
+        const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
             if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
@@ -143,7 +144,8 @@ class ExtendCommand extends Command {
         let candidateBoundaries = []
         if (this.autoExtendMode) {
             // In auto mode, check against all elements EXCEPT the line itself and ghost previews
-            this.editor.drawing.children().each((child) => {
+            const allElements = getDrawableElements(this.editor)
+            allElements.forEach((child) => {
                 if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
                     candidateBoundaries.push(child)
                 }
@@ -283,7 +285,8 @@ class ExtendCommand extends Command {
 
         let candidateBoundaries = []
         if (this.autoExtendMode) {
-            this.editor.drawing.children().each((child) => {
+            const allElements = getDrawableElements(this.editor)
+            allElements.forEach((child) => {
                 if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
                     candidateBoundaries.push(child)
                 }
@@ -423,7 +426,7 @@ class ExtendCommand extends Command {
 
                 const d = `M ${p1.x} ${p1.y} A ${r} ${r} 0 ${largeArc} ${sweep} ${p3.x} ${p3.y}`
 
-                this.ghostLine = this.editor.drawing.path(d)
+                this.ghostLine = this.editor.overlays.path(d)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none') // styling as a preview
                     .addClass('newDrawing')
                     .addClass('ghostLine')
@@ -434,7 +437,7 @@ class ExtendCommand extends Command {
                 const x2 = extension.extendStart ? extension.lineEq.x2 : extension.newPosition.x
                 const y2 = extension.extendStart ? extension.lineEq.y2 : extension.newPosition.y
 
-                this.ghostLine = this.editor.drawing.line(x1, y1, x2, y2)
+                this.ghostLine = this.editor.overlays.line(x1, y1, x2, y2)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }) // styling as a preview
                     .addClass('newDrawing')
                     .addClass('ghostLine')
@@ -459,7 +462,7 @@ class ExtendCommand extends Command {
             this.ghostLine = null
         }
         // Also clear any ghost lines that might be in the drawing
-        this.editor.drawing.find('.ghostLine').forEach(el => el.remove())
+        this.editor.svg.find('.ghostLine').forEach(el => el.remove())
     }
 
     onLineClicked(el, source) {
@@ -539,7 +542,7 @@ class ExtendCommand extends Command {
         this.isExtending = false
 
         // Remove mouse listeners for ghosting
-        const elements = this.editor.drawing.children()
+        const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
             if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)

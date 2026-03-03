@@ -253,6 +253,72 @@ main
     &:hover
         background: #4d6490 !important
 
+// Collection system styles
+.outliner-collection
+    padding-left: 0
+    list-style: none
+
+.collection-row
+    display: flex
+    align-items: center
+    justify-content: space-between
+    padding: 2px 6px 2px 10px
+    cursor: pointer
+    user-select: none
+    border-left: 3px solid transparent
+    &:hover
+        background: #3a3a3a
+
+.collection-active
+    border-left-color: var(--accent-color) !important
+    background: #323844
+
+.collection-hidden-row
+    opacity: 0.4
+
+.collection-locked-row
+    .collection-name
+        font-style: italic
+
+.collection-name
+    flex: 1
+    font-size: 12px
+    white-space: nowrap
+    overflow: hidden
+    text-overflow: ellipsis
+    line-height: 22px
+
+.collection-icons
+    display: flex
+    gap: 2px
+    align-items: center
+
+.collection-icon
+    cursor: pointer
+    width: 18px
+    height: 18px
+    border-radius: 3px
+    opacity: 0.5
+    &:hover
+        background-color: #555
+        opacity: 1
+    &.icon-off
+        opacity: 0.3
+    &.icon-on
+        opacity: 1
+        background-color: #444
+
+.collection-rename-input
+    flex: 1
+    background: #1f1f1f
+    border: 1px solid var(--accent-color)
+    border-radius: 3px
+    color: #fff
+    font-size: 12px
+    padding: 1px 4px
+    outline: none
+    line-height: 20px
+
 .properties-container
     flex: 1
     background: #303030
@@ -283,6 +349,7 @@ main
     padding: 10px
     border-radius: 5px
     background-color: #3d3d3d
+    overflow: hidden
 
 .properties-content
     display: flex
@@ -294,23 +361,29 @@ main
     flex-direction: row
     align-items: center
     justify-content: space-between
-    gap: 10px
+    gap: 6px
+    overflow: hidden
 
 .property-label
     font-size: 12px
     color: #b8b8b8
-    min-width: 60px
+    min-width: 50px
+    max-width: 60px
     text-align: left
+    flex-shrink: 0
 
 .property-input
     flex: 1
+    min-width: 0
+    max-width: 100%
     background-color: #2a2a2a
     border: 1px solid #1d1d1d
     border-radius: 3px
     color: #ffffff
-    padding: 4px 8px
+    padding: 4px 6px
     font-size: 12px
     outline: none
+    box-sizing: border-box
     &:focus
         border-color: #4d6490
         background-color: #333333

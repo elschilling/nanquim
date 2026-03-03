@@ -38,7 +38,7 @@ class TrimRectCommand extends Command {
             for (let i = 0; i < 4; i++) {
                 if (i !== this.trimData.closestLineIndex) {
                     const l = this.trimData.lines[i]
-                    const newLine = this.editor.drawing.line(l.x1, l.y1, l.x2, l.y2)
+                    const newLine = this.editor.activeCollection.line(l.x1, l.y1, l.x2, l.y2)
                     this.copyStyles(this.element, newLine)
                     this.intactLines.push(newLine)
                 }
@@ -51,15 +51,15 @@ class TrimRectCommand extends Command {
             if (action.type === 'shorten') {
                 let newLine
                 if (action.keep === 'start') {
-                    newLine = this.editor.drawing.line(targetLine.x1, targetLine.y1, action.newX, action.newY)
+                    newLine = this.editor.activeCollection.line(targetLine.x1, targetLine.y1, action.newX, action.newY)
                 } else {
-                    newLine = this.editor.drawing.line(action.newX, action.newY, targetLine.x2, targetLine.y2)
+                    newLine = this.editor.activeCollection.line(action.newX, action.newY, targetLine.x2, targetLine.y2)
                 }
                 this.copyStyles(this.element, newLine)
                 this.trimmedLines.push(newLine)
             } else if (action.type === 'split') {
-                const line1 = this.editor.drawing.line(targetLine.x1, targetLine.y1, action.splitX1, action.splitY1)
-                const line2 = this.editor.drawing.line(action.splitX2, action.splitY2, targetLine.x2, targetLine.y2)
+                const line1 = this.editor.activeCollection.line(targetLine.x1, targetLine.y1, action.splitX1, action.splitY1)
+                const line2 = this.editor.activeCollection.line(action.splitX2, action.splitY2, targetLine.x2, targetLine.y2)
                 this.copyStyles(this.element, line1)
                 this.copyStyles(this.element, line2)
                 this.trimmedLines.push(line1, line2)

@@ -48,7 +48,7 @@ class TrimCircleCommand extends Command {
 
                 const d = `M ${startPt.x} ${startPt.y} A ${r} ${r} 0 ${largeArcFlag} ${sweepFlag} ${endPt.x} ${endPt.y}`
 
-                let newArc = this.editor.drawing.path(d)
+                let newArc = this.editor.activeCollection.path(d)
 
                 // Calculate midPt for 3-point handlers
                 const midAngle = theta2 + diff / 2

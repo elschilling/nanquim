@@ -69,7 +69,8 @@ class CopyCommand extends Command {
     // Clone elements for ghosting
     this.copiedElements = this.originalSelection.map((el) => {
       const clone = el.clone()
-      this.editor.drawing.add(clone)
+      const parent = el.parent() || this.editor.activeCollection
+      parent.add(clone)
       return clone
     })
 
@@ -204,7 +205,8 @@ class CopyCommand extends Command {
 
   redo() {
     this.copiedElements.forEach((element) => {
-      this.editor.drawing.add(element)
+      const parent = element.parent() || this.editor.activeCollection
+      parent.add(element)
     })
 
     this.editor.selected = this.copiedElements.slice()

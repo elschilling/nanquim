@@ -21,26 +21,42 @@ function Navbar(editor) {
     // Force in-memory SVG.js data object into DOM data-* attributes so they get serialized
     // Also bake explicitly black strokes into elements using the .newDrawing class,
     // since their white color comes from CSS and won't be visible in standalone SVGs
-    editor.drawing.children().each((el) => {
-      // Serialize data attributes
-      if (el.data('arcData')) {
-        el.attr('data-arc-data', JSON.stringify(el.data('arcData')))
-      }
-      if (el.data('circleTrimData')) {
-        el.attr('data-circle-trim-data', JSON.stringify(el.data('circleTrimData')))
-      }
-
-      // Bake CSS styles into inline attributes so standalone SVGs render correctly
-      if (el.hasClass('newDrawing')) {
-        el.attr('data-temp-export-baked', 'true')
-        el.stroke({ color: '#000000', width: 0.1, linecap: 'round' })
-
-        // Only override fill if it's not already explicitly set
-        // (DrawRectangleCommand sets it explicitly to 'none', but others rely on CSS)
-        if (!el.attr('fill')) {
-          el.attr('data-temp-fill-export', 'true')
-          el.fill('none')
+    editor.drawing.children().each((group) => {
+      // Serialize collection state
+      if (group.attr('data-collection') === 'true') {
+        const collData = editor.collections.get(group.attr('id'))
+        if (collData) {
+          group.attr('data-locked', collData.locked ? 'true' : 'false')
         }
+      }
+
+      // Iterate through collection children for element baking
+      const children = group.attr('data-collection') === 'true' ? group.children() : [group]
+      const iterFn = (el) => {
+        // Serialize data attributes
+        if (el.data('arcData')) {
+          el.attr('data-arc-data', JSON.stringify(el.data('arcData')))
+        }
+        if (el.data('circleTrimData')) {
+          el.attr('data-circle-trim-data', JSON.stringify(el.data('circleTrimData')))
+        }
+
+        // Bake CSS styles into inline attributes so standalone SVGs render correctly
+        if (el.hasClass('newDrawing')) {
+          el.attr('data-temp-export-baked', 'true')
+          el.stroke({ color: '#000000', width: 0.1, linecap: 'round' })
+
+          // Only override fill if it's not already explicitly set
+          if (!el.attr('fill')) {
+            el.attr('data-temp-fill-export', 'true')
+            el.fill('none')
+          }
+        }
+      }
+      if (group.attr('data-collection') === 'true') {
+        group.children().each(iterFn)
+      } else {
+        iterFn(group)
       }
     })
 
@@ -48,16 +64,23 @@ function Navbar(editor) {
     let drawingContent = editor.drawing.node.innerHTML
 
     // Revert the temporary baked attributes so the live editor goes back to using CSS variables
-    editor.drawing.children().each((el) => {
-      if (el.attr('data-temp-export-baked')) {
-        el.node.removeAttribute('stroke')
-        el.node.removeAttribute('stroke-width')
-        el.node.removeAttribute('stroke-linecap')
-        el.node.removeAttribute('data-temp-export-baked')
+    editor.drawing.children().each((group) => {
+      const revertFn = (el) => {
+        if (el.attr('data-temp-export-baked')) {
+          el.node.removeAttribute('stroke')
+          el.node.removeAttribute('stroke-width')
+          el.node.removeAttribute('stroke-linecap')
+          el.node.removeAttribute('data-temp-export-baked')
+        }
+        if (el.attr('data-temp-fill-export')) {
+          el.node.removeAttribute('fill')
+          el.node.removeAttribute('data-temp-fill-export')
+        }
       }
-      if (el.attr('data-temp-fill-export')) {
-        el.node.removeAttribute('fill')
-        el.node.removeAttribute('data-temp-fill-export')
+      if (group.attr('data-collection') === 'true') {
+        group.children().each(revertFn)
+      } else {
+        revertFn(group)
       }
     })
 

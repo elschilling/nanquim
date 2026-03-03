@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawLineCommand extends Command {
   constructor(editor) {
@@ -7,7 +8,7 @@ class DrawLineCommand extends Command {
     this.type = 'DrawLineCommand'
     this.name = 'Line'
     // this.draw = this.draw.bind(this)
-    this.drawing = this.editor.drawing
+    this.drawing = this.editor.activeCollection
   }
 
   execute() {
@@ -22,6 +23,7 @@ class DrawLineCommand extends Command {
     })
     if (this.isDrawing) {
       let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
+      applyCollectionStyleToElement(this.editor, line)
       line.on('drawstart', (e) => {
         startPoint = e.detail.startPoint
       })
@@ -60,6 +62,7 @@ class DrawLineCommand extends Command {
           } else {
             // Start point exists - draw line to absolute coordinate
             let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y).addClass('newDrawing')
+            applyCollectionStyleToElement(this.editor, newLine)
             newLine.attr('id', this.editor.elementIndex++)
             newLine.attr('name', 'Line')
             this.editor.history.undos.push(new AddElementCommand(this.editor, newLine))

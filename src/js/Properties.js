@@ -1,3 +1,5 @@
+import { setCollectionStyle, getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from './Collection'
+
 const propertiesPanel = document.getElementById('properties-panel')
 
 function Properties(editor) {
@@ -64,10 +66,68 @@ function Properties(editor) {
     propertiesPanel.appendChild(content)
 
     if (activeTab === 'transform') {
-      renderTransformTab(content, element, node)
+      if (element.attr && element.attr('data-collection') === 'true') {
+        renderCollectionTransformTab(content, element)
+      } else {
+        renderTransformTab(content, element, node)
+      }
     } else if (activeTab === 'style') {
-      renderStyleTab(content, element, node)
+      // Check if this is a collection group
+      if (element.attr && element.attr('data-collection') === 'true') {
+        renderCollectionStyleTab(content, element)
+      } else {
+        renderStyleTab(content, element, node)
+      }
     }
+  }
+
+  function renderCollectionStyleTab(container, element) {
+    const id = element.attr('id')
+    const data = editor.collections.get(id)
+    if (!data) return
+
+    // Default stroke color
+    createColorProperty(container, 'Stroke', data.style.stroke || 'white', (value) => {
+      setCollectionStyle(editor, id, { stroke: value })
+    })
+
+    // Default stroke width
+    createPropertyField(container, 'Stroke Width', data.style['stroke-width'] || 0.1, (value) => {
+      const num = parseFloat(value)
+      if (!isNaN(num) && num >= 0) {
+        setCollectionStyle(editor, id, { 'stroke-width': num })
+      }
+    })
+
+    // Default fill
+    createColorProperty(container, 'Fill', data.style.fill || 'transparent', (value) => {
+      setCollectionStyle(editor, id, { fill: value })
+    })
+  }
+
+  function renderCollectionTransformTab(container, element) {
+    const id = element.attr('id')
+    const data = editor.collections.get(id)
+    if (!data) return
+
+    // Collection name (editable)
+    createPropertyField(container, 'Name', element.attr('name') || 'Collection', (value) => {
+      element.attr('name', value)
+      safeDispatch('updatedOutliner')
+    })
+
+    // Type (read-only)
+    createPropertyField(container, 'Type', 'Collection', null, true)
+
+    // Element count (read-only)
+    const childCount = data.group.children().length
+    createPropertyField(container, 'Elements', childCount, null, true)
+
+    // Visibility (read-only)
+    createPropertyField(container, 'Visible', data.visible ? 'Yes' : 'No', null, true)
+
+    // Locked (read-only)
+    createPropertyField(container, 'Locked', data.locked ? 'Yes' : 'No', null, true)
   }
 
   function renderTransformTab(container, element, node) {
@@ -177,46 +237,138 @@ function Properties(editor) {
   function renderStyleTab(container, element, node) {
     const computedStyle = window.getComputedStyle(node)
 
+    // Check if element is inside a collection
+    const parent = element.parent ? element.parent() : null
+    const inCollection = parent && parent.attr && parent.attr('data-collection') === 'true'
+    let collectionData = null
+    if (inCollection) {
+      collectionData = editor.collections.get(parent.attr('id'))
+    }
+    const overrides = inCollection ? getElementOverrides(element) : {}
+
+    // Helper: create a style property row with optional "By Collection" toggle
+    function createStylableProperty(propName, label, currentValue, applyFn, isColor) {
+      const isOverridden = !!overrides[propName]
+
+      if (inCollection && collectionData) {
+        const row = document.createElement('div')
+        row.className = 'property-row'
+
+        const labelEl = document.createElement('label')
+        labelEl.textContent = label
+        labelEl.className = 'property-label'
+
+        const controls = document.createElement('div')
+        controls.style.cssText = 'display:flex;align-items:center;flex:1;gap:3px;min-width:0;overflow:hidden'
+
+        // "By Collection" toggle button
+        const toggleBtn = document.createElement('button')
+        toggleBtn.textContent = isOverridden ? 'O' : 'C'
+        toggleBtn.title = isOverridden ? 'Own style — click to inherit from collection' : 'Collection style — click to override'
+        toggleBtn.style.cssText = 'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' + (isOverridden ? '#555' : 'var(--accent-color)')
+        controls.appendChild(toggleBtn)
+
+        if (isColor) {
+          // Enable/disable checkbox
+          const checkbox = document.createElement('input')
+          checkbox.type = 'checkbox'
+          checkbox.checked = currentValue !== 'none' && currentValue !== 'transparent'
+          checkbox.style.cssText = 'flex-shrink:0;margin:0'
+          checkbox.disabled = !isOverridden
+
+          const colorInput = document.createElement('input')
+          colorInput.type = 'color'
+          colorInput.value = rgbToHex(currentValue)
+          colorInput.className = 'property-input'
+          colorInput.style.cssText = 'height:20px;padding:0 1px;cursor:pointer;flex:1;min-width:0'
+          colorInput.disabled = !isOverridden || !checkbox.checked
+
+          checkbox.addEventListener('change', () => {
+            colorInput.disabled = !checkbox.checked
+            applyFn(checkbox.checked ? colorInput.value : 'none')
+          })
+          colorInput.addEventListener('input', (e) => applyFn(e.target.value))
+          colorInput.addEventListener('change', (e) => applyFn(e.target.value))
+
+          toggleBtn.addEventListener('click', () => {
+            overrides[propName] = !isOverridden
+            setElementOverrides(element, overrides)
+            if (!overrides[propName]) applyCollectionStyleToElement(editor, element)
+            safeDispatch('updatedProperties')
+          })
+
+          controls.appendChild(checkbox)
+          controls.appendChild(colorInput)
+        } else {
+          const textInput = document.createElement('input')
+          textInput.type = 'text'
+          textInput.value = currentValue
+          textInput.className = 'property-input'
+          textInput.style.cssText = 'flex:1;min-width:0'
+          textInput.disabled = !isOverridden
+
+          textInput.addEventListener('change', (e) => applyFn(e.target.value))
+          textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { applyFn(e.target.value); textInput.blur() }
+          })
+
+          toggleBtn.addEventListener('click', () => {
+            overrides[propName] = !isOverridden
+            setElementOverrides(element, overrides)
+            if (!overrides[propName]) applyCollectionStyleToElement(editor, element)
+            safeDispatch('updatedProperties')
+          })
+
+          controls.appendChild(textInput)
+        }
+
+        row.appendChild(labelEl)
+        row.appendChild(controls)
+        container.appendChild(row)
+      } else {
+        // No collection — plain property with checkbox for colors
+        if (isColor) {
+          createColorProperty(container, label, currentValue, applyFn)
+        } else {
+          createPropertyField(container, label, currentValue, applyFn)
+        }
+      }
+    }
+
     // Fill Color (only for closed shapes or paths)
     if (['circle', 'rect', 'path', 'polygon'].includes(node.nodeName)) {
       const currentFill = element.css('fill') || element.attr('fill')
-      // computedStyle.fill gives us the resolved RGB color
       let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
+      if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
 
-      if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') {
-        visualFill = 'none'
-      }
-
-      createColorProperty(container, 'Fill', visualFill, (value) => {
+      createStylableProperty('fill', 'Fill', visualFill, (value) => {
         element.css('fill', value)
         safeDispatch('refreshHandlers')
-      })
+      }, true)
     }
 
     // Stroke Color
     const currentStroke = element.css('stroke') || element.attr('stroke')
     let visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : (currentStroke || '#000000')
+    if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') visualStroke = 'none'
 
-    if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') {
-      visualStroke = 'none'
-    }
-
-    createColorProperty(container, 'Stroke', visualStroke, (value) => {
+    createStylableProperty('stroke', 'Stroke', visualStroke, (value) => {
       element.css('stroke', value)
       safeDispatch('refreshHandlers')
-    })
+    }, true)
 
     // Stroke Width
     const currentWidth = parseFloat(element.css('stroke-width') || element.attr('stroke-width')) || parseFloat(computedStyle.strokeWidth) || 1
-    createPropertyField(container, 'Stroke Width', currentWidth, (value) => {
+
+    createStylableProperty('stroke-width', 'Stroke Width', currentWidth, (value) => {
       const num = parseFloat(value)
       if (!isNaN(num) && num >= 0) {
         element.css('stroke-width', num)
         safeDispatch('refreshHandlers')
       }
-    })
+    }, false)
 
-    // Opacity
+    // Opacity (always element-level, no collection inheritance)
     createPropertyField(container, 'Opacity', parseFloat(element.css('opacity') || element.attr('opacity')) || 1, (value) => {
       const num = parseFloat(value)
       if (!isNaN(num) && num >= 0 && num <= 1) {
