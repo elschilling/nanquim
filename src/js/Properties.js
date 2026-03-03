@@ -276,19 +276,43 @@ function Properties(editor) {
           checkbox.style.cssText = 'flex-shrink:0;margin:0'
           checkbox.disabled = !isOverridden
 
-          const colorInput = document.createElement('input')
-          colorInput.type = 'color'
-          colorInput.value = rgbToHex(currentValue)
-          colorInput.className = 'property-input'
-          colorInput.style.cssText = 'height:20px;padding:0 1px;cursor:pointer;flex:1;min-width:0'
-          colorInput.disabled = !isOverridden || !checkbox.checked
+          const colorBox = document.createElement('div')
+          colorBox.className = 'property-input'
+          colorBox.style.cssText = 'height:20px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
+
+          function updateBoxColor(color) {
+            if (color === 'none' || color === 'transparent') {
+              colorBox.style.background = 'repeating-linear-gradient(45deg, #444 0px, #444 4px, #222 4px, #222 8px)'
+            } else {
+              colorBox.style.background = rgbToHex(color)
+            }
+          }
+          updateBoxColor(currentValue)
+
+          function syncBoxState() {
+            if (!isOverridden || !checkbox.checked) {
+              colorBox.style.opacity = '0.3'
+              colorBox.style.pointerEvents = 'none'
+            } else {
+              colorBox.style.opacity = '1'
+              colorBox.style.pointerEvents = 'auto'
+            }
+          }
+          syncBoxState()
 
           checkbox.addEventListener('change', () => {
-            colorInput.disabled = !checkbox.checked
-            applyFn(checkbox.checked ? colorInput.value : 'none')
+            syncBoxState()
+            const applyVal = checkbox.checked ? (rgbToHex(colorBox.style.background) || '#000000') : 'none'
+            applyFn(applyVal)
           })
-          colorInput.addEventListener('input', (e) => applyFn(e.target.value))
-          colorInput.addEventListener('change', (e) => applyFn(e.target.value))
+
+          colorBox.addEventListener('click', () => {
+            if (!isOverridden || !checkbox.checked) return
+            openColorPicker(colorBox.style.background, (newColor) => {
+              updateBoxColor(newColor)
+              applyFn(newColor)
+            })
+          })
 
           toggleBtn.addEventListener('click', () => {
             overrides[propName] = !isOverridden
@@ -298,7 +322,7 @@ function Properties(editor) {
           })
 
           controls.appendChild(checkbox)
-          controls.appendChild(colorInput)
+          controls.appendChild(colorBox)
         } else {
           const textInput = document.createElement('input')
           textInput.type = 'text'
@@ -377,26 +401,50 @@ function Properties(editor) {
     })
   }
 
-  // Helper to convert rgb(r, g, b) to #rrggbb
-  function rgbToHex(rgb) {
-    if (!rgb || rgb === 'none' || rgb === 'transparent') return '#000000';
-    // Handle hex directly
-    if (rgb.startsWith('#')) return rgb;
+  // Helper to convert any valid CSS color to #rrggbb
+  function rgbToHex(color) {
+    if (!color || color === 'none' || color === 'transparent') return '#000000';
+    if (color.startsWith('#')) {
+      if (color.length === 4) {
+        return '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+      }
+      return color;
+    }
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = color;
+    return ctx.fillStyle;
+  }
 
-    // Choose correct separator
-    const sep = rgb.indexOf(",") > -1 ? "," : " ";
-    // Turn "rgb(r,g,b)" into [r,g,b]
-    const parts = rgb.substr(4).split(")")[0].split(sep);
+  let hiddenColorPicker = null;
 
-    let r = (+parts[0]).toString(16),
-      g = (+parts[1]).toString(16),
-      b = (+parts[2]).toString(16);
+  function openColorPicker(initialColor, onUpdate) {
+    if (!hiddenColorPicker) {
+      hiddenColorPicker = document.createElement('input');
+      hiddenColorPicker.type = 'color';
+      hiddenColorPicker.style.position = 'fixed';
+      hiddenColorPicker.style.left = '40%';
+      hiddenColorPicker.style.top = '40%';
+      hiddenColorPicker.style.opacity = '0';
+      hiddenColorPicker.style.pointerEvents = 'none';
+      hiddenColorPicker.style.zIndex = '-9999';
+      document.body.appendChild(hiddenColorPicker);
+    }
 
-    if (r.length == 1) r = "0" + r;
-    if (g.length == 1) g = "0" + g;
-    if (b.length == 1) b = "0" + b;
+    // Refresh listeners by replacing node
+    const newPicker = hiddenColorPicker.cloneNode(true);
+    hiddenColorPicker.replaceWith(newPicker);
+    hiddenColorPicker = newPicker;
 
-    return "#" + r + g + b;
+    hiddenColorPicker.value = rgbToHex(initialColor);
+
+    hiddenColorPicker.addEventListener('input', (e) => {
+      onUpdate(e.target.value);
+    });
+    hiddenColorPicker.addEventListener('change', (e) => {
+      onUpdate(e.target.value);
+    });
+
+    hiddenColorPicker.click();
   }
 
   function createColorProperty(container, label, value, onChange) {
@@ -417,34 +465,46 @@ function Properties(editor) {
     checkbox.type = 'checkbox'
     checkbox.checked = value !== 'none' && value !== 'transparent'
 
-    const input = document.createElement('input')
-    input.type = 'color'
-    input.value = rgbToHex(value)
-    input.className = 'property-input'
-    input.style.height = '24px'
-    input.style.padding = '0 2px'
-    input.style.cursor = 'pointer'
-    input.disabled = !checkbox.checked
+    const colorBox = document.createElement('div')
+    colorBox.className = 'property-input'
+    colorBox.style.cssText = 'height:24px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
+
+    function updateBoxColor(color) {
+      if (color === 'none' || color === 'transparent') {
+        colorBox.style.background = 'repeating-linear-gradient(45deg, #444 0px, #444 4px, #222 4px, #222 8px)'
+      } else {
+        colorBox.style.background = rgbToHex(color)
+      }
+    }
+    updateBoxColor(value)
+
+    if (!checkbox.checked) {
+      colorBox.style.opacity = '0.3'
+      colorBox.style.pointerEvents = 'none'
+    }
 
     checkbox.addEventListener('change', (e) => {
-      input.disabled = !e.target.checked
       if (e.target.checked) {
-        onChange(input.value)
+        colorBox.style.opacity = '1'
+        colorBox.style.pointerEvents = 'auto'
+        onChange(rgbToHex(colorBox.style.background) || '#000000') // trigger an update
       } else {
+        colorBox.style.opacity = '0.3'
+        colorBox.style.pointerEvents = 'none'
         onChange('none')
       }
     })
 
-    input.addEventListener('input', (e) => {
-      onChange(e.target.value)
-    })
-
-    input.addEventListener('change', (e) => {
-      onChange(e.target.value)
+    colorBox.addEventListener('click', () => {
+      if (!checkbox.checked) return
+      openColorPicker(colorBox.style.background, (newColor) => {
+        updateBoxColor(newColor)
+        onChange(newColor)
+      })
     })
 
     controls.appendChild(checkbox)
-    controls.appendChild(input)
+    controls.appendChild(colorBox)
     row.appendChild(labelEl)
     row.appendChild(controls)
     container.appendChild(row)

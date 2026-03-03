@@ -14,7 +14,7 @@ function initCollections(editor) {
     editor.collections = new Map()
     editor.activeCollection = null
 
-    const defaultCollection = createCollection(editor, 'Default')
+    const defaultCollection = createCollection(editor, 'Collection 1')
     editor.activeCollection = defaultCollection
 }
 

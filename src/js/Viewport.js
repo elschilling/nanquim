@@ -931,9 +931,10 @@ function Viewport(editor) {
 
   function checkSnap(coordinates) {
     let targets = []
-    let snapCandidates = svg.find('.newDrawing')
+    let snapCandidates = getSelectableElements(editor)
     if (editor.isDrawing) {
-      snapCandidates.pop()
+      // Actively drawn elements don't get an ID until drawstop finishes
+      snapCandidates = snapCandidates.filter(el => el.attr('id') !== undefined && el.attr('id') !== null)
     }
     if (editor.isEditingVertex && editor.editingVertices.length > 0) {
       const editingNodes = editor.editingVertices.map(v => v.element.node)
