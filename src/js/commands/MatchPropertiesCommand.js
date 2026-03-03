@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from '../Collection'
 
 class MatchPropertiesCommand extends Command {
     constructor(editor) {
@@ -77,7 +78,9 @@ class MatchPropertiesCommand extends Command {
             fill: computedStyle.fill !== 'none' ? computedStyle.fill : (element.attr('fill') || 'none'),
             stroke: computedStyle.stroke !== 'none' ? computedStyle.stroke : (element.attr('stroke') || 'none'),
             strokeWidth: parseFloat(computedStyle.strokeWidth) || parseFloat(element.attr('stroke-width')) || 1,
-            opacity: parseFloat(computedStyle.opacity) || parseFloat(element.attr('opacity')) || 1
+            opacity: parseFloat(computedStyle.opacity) || parseFloat(element.attr('opacity')) || 1,
+            collectionId: element.parent() && element.parent().attr('data-collection') === 'true' ? element.parent().attr('id') : null,
+            overrides: { ...getElementOverrides(element) }
         }
 
         // Restore hover class if needed (though we're about to move away usually)
@@ -114,6 +117,18 @@ class MatchPropertiesCommand extends Command {
             if (props.stroke) element.css('stroke', props.stroke)
             if (props.strokeWidth) element.css('stroke-width', props.strokeWidth)
             if (props.opacity) element.css('opacity', props.opacity)
+
+            // Move to same collection
+            if (props.collectionId && this.editor.collections.has(props.collectionId)) {
+                this.editor.collections.get(props.collectionId).group.add(element)
+            }
+
+            // Apply same override flags
+            setElementOverrides(element, props.overrides)
+
+            // Reapply collection style base
+            applyCollectionStyleToElement(this.editor, element)
+
             count++
         })
 
@@ -123,6 +138,7 @@ class MatchPropertiesCommand extends Command {
             // Clear selection immediately so they don't remain selected
             this.editor.selected = []
             this.editor.signals.clearSelection.dispatch()
+            this.editor.signals.updatedOutliner.dispatch()
         }
     }
 

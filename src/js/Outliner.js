@@ -1,5 +1,6 @@
 import {
   createCollection,
+  deleteCollection,
   setActiveCollection,
   toggleVisibility,
   toggleLock,
@@ -54,16 +55,89 @@ function Outliner(editor) {
       if (!data.visible) collectionLi.classList.add('collection-hidden-row')
       if (data.locked) collectionLi.classList.add('collection-locked-row')
 
+      // Chevron toggle icon
+      const toggleIcon = document.createElement('div')
+      toggleIcon.className = 'icon ' + (data.collapsed ? 'icon-right' : 'icon-down')
+      toggleIcon.style.marginRight = '4px'
+      toggleIcon.style.cursor = 'pointer'
+      toggleIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        data.collapsed = !data.collapsed
+        signals.updatedOutliner.dispatch()
+      })
+
+      // Collection folder icon
+      const folderIcon = document.createElement('div')
+      folderIcon.className = 'icon icon-collection'
+      folderIcon.style.marginRight = '6px'
+
       // Collection name
       const nameSpan = document.createElement('span')
       nameSpan.className = 'collection-name'
       nameSpan.textContent = child.attr('name') || 'Collection'
-      nameSpan.addEventListener('click', (e) => {
+
+      // Wrapper for left side of the row
+      const leftSide = document.createElement('div')
+      leftSide.style.display = 'flex'
+      leftSide.style.alignItems = 'center'
+      leftSide.style.flex = '1'
+
+      leftSide.appendChild(toggleIcon)
+      leftSide.appendChild(folderIcon)
+      leftSide.appendChild(nameSpan)
+
+      leftSide.addEventListener('click', (e) => {
         e.stopPropagation()
         setActiveCollection(editor, id)
         // Select the collection group so Properties panel shows it
         editor.selected = [data.group]
         signals.updatedSelection.dispatch()
+      })
+      // Right-click to open custom context menu
+      leftSide.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Remove any existing menu
+        const existingMenu = document.querySelector('.collection-context-menu')
+        if (existingMenu) existingMenu.remove()
+
+        const menu = document.createElement('div')
+        menu.className = 'collection-context-menu'
+        menu.style.left = e.clientX + 'px'
+        menu.style.top = e.clientY + 'px'
+
+        const deleteItem = document.createElement('div')
+        deleteItem.className = 'collection-context-menu-item danger'
+        deleteItem.innerHTML = '<span style="margin-right:8px;">🗑️</span> Delete Collection'
+
+        menu.appendChild(deleteItem)
+        document.body.appendChild(menu)
+
+        // Prevent menu click from closing itself immediately
+        menu.addEventListener('click', (ev) => ev.stopPropagation())
+
+        const colName = child.attr('name') || 'Collection'
+
+        deleteItem.addEventListener('click', () => {
+          menu.remove()
+          if (confirm(`Are you sure you want to delete "${colName}" and all its elements?`)) {
+            deleteCollection(editor, id)
+          }
+        })
+
+        // Close menu function
+        const closeMenu = () => {
+          if (menu.parentNode) menu.remove()
+          document.removeEventListener('click', closeMenu)
+          document.removeEventListener('contextmenu', closeMenu)
+        }
+
+        // Delay attaching so it doesn't instantly close
+        setTimeout(() => {
+          document.addEventListener('click', closeMenu)
+          document.addEventListener('contextmenu', closeMenu)
+        }, 10)
       })
       // Double-click to rename
       nameSpan.addEventListener('dblclick', (e) => {
@@ -118,14 +192,19 @@ function Outliner(editor) {
       iconsDiv.appendChild(eyeIcon)
       iconsDiv.appendChild(lockIcon)
 
-      collectionLi.appendChild(nameSpan)
+      collectionLi.appendChild(leftSide)
       collectionLi.appendChild(iconsDiv)
       collectionUl.appendChild(collectionLi)
+
+      // Container for children
+      const childrenContainer = document.createElement('div')
+      childrenContainer.style.display = data.collapsed ? 'none' : 'block'
+      childrenContainer.style.paddingLeft = '16px' // Indent children
 
       // Render child elements
       data.group.children().each((child) => {
         if (child.hasClass && child.hasClass('ghostLine')) return
-        if (child.type === 'g') childElements(child, collectionUl)
+        if (child.type === 'g') childElements(child, childrenContainer)
         else {
           const childUl = document.createElement('ul')
           const li = document.createElement('li')
@@ -180,10 +259,11 @@ function Outliner(editor) {
             signals.toogledSelect.dispatch(child)
           })
           childUl.appendChild(li)
-          collectionUl.appendChild(childUl)
+          childrenContainer.appendChild(childUl)
         }
       })
 
+      collectionUl.appendChild(childrenContainer)
       drawingTree.appendChild(collectionUl)
     })
   }

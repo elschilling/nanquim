@@ -143,6 +143,51 @@ function Properties(editor) {
     // ID field (read-only)
     createPropertyField(container, 'ID', element.attr('id'), null, true)
 
+    // Collection dropdown
+    const currentParentId = element.parent() ? element.parent().attr('id') : null
+
+    // Only show collection dropdown if the element is actually inside one of our collections
+    if (currentParentId && editor.collections.has(currentParentId)) {
+      const row = document.createElement('div')
+      row.className = 'property-row'
+
+      const labelEl = document.createElement('label')
+      labelEl.textContent = 'Collection'
+      labelEl.className = 'property-label'
+
+      const select = document.createElement('select')
+      select.className = 'property-input'
+      select.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+
+      editor.collections.forEach((data, colId) => {
+        const option = document.createElement('option')
+        option.value = colId
+        option.textContent = data.group.attr('name') || 'Collection'
+        if (colId === currentParentId) option.selected = true
+        select.appendChild(option)
+      })
+
+      select.addEventListener('change', (e) => {
+        const newColId = e.target.value
+        const newCollection = editor.collections.get(newColId)
+        if (newCollection && newCollection.group) {
+          // Move the SVG element's DOM node to the new collection's <g> group
+          newCollection.group.add(element)
+
+          // If the element was using default collection styles (not overridden), 
+          // we need to re-apply the new collection's styles because it moved.
+          applyCollectionStyleToElement(editor, element)
+
+          safeDispatch('updatedOutliner')
+          safeDispatch('updatedProperties')
+        }
+      })
+
+      row.appendChild(labelEl)
+      row.appendChild(select)
+      container.appendChild(row)
+    }
+
     // Coordinates based on element type
     if (node.nodeName === 'line') {
       createPropertyField(container, 'X1', parseFloat(element.attr('x1')).toFixed(2), (value) => {

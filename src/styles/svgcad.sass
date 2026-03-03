@@ -470,3 +470,35 @@ svg.cartesian text
     fill: white
     pointer-events: none
     font-family: monospace
+
+// Custom context menu
+.collection-context-menu
+    position: fixed
+    z-index: 1000
+    background-color: var(--editor-header-bg)
+    border: 1px solid var(--editor-border-color)
+    border-radius: 4px
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3)
+    padding: 4px 0
+    font-size: 13px
+    color: #e0e0e0
+    min-width: 150px
+    pointer-events: auto
+
+.collection-context-menu-item
+    padding: 6px 12px
+    cursor: pointer
+    transition: background-color 0.1s
+    display: flex
+    align-items: center
+    
+    &:hover
+        background-color: var(--accent-color)
+        color: white
+        
+.collection-context-menu-item.danger
+    color: #ff5e5e
+    
+    &:hover
+        background-color: #ff5e5e
+        color: white
