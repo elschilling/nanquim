@@ -7,6 +7,7 @@ import {
   toggleElementVisibility,
   toggleElementLock,
 } from './Collection'
+import { getPreferences } from './Preferences'
 
 const drawingTree = document.getElementById('drawing-tree')
 
@@ -318,7 +319,7 @@ function Outliner(editor) {
 
     // Get current zoom level
     const currentZoom = editor.svg.zoom()
-    const handlerScreenSize = 16 // pixels on screen
+    const handlerScreenSize = getPreferences().handlerSize
     const handlerWorldSize = handlerScreenSize / currentZoom
 
     // Helper to find all selected vertices at a given position
@@ -530,6 +531,11 @@ function Outliner(editor) {
 
   // Redraw handlers when zoom changes
   signals.zoomChanged.add(() => {
+    drawHandlers()
+  })
+
+  // Redraw handlers when preferences change
+  signals.preferencesChanged.add(() => {
     drawHandlers()
   })
 

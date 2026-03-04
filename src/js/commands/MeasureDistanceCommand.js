@@ -148,7 +148,6 @@ class MeasureDistanceCommand extends Command {
             .addClass('measure-text')
             .font({ size: fontSize, anchor: 'middle' })
             .center(midX, midY)
-            .transform({ scaleY: -1 }) // Flip back since canvas is cartesian (scaleY -1)
 
         // Register cleanup on next command or cancel
         this.boundOnClearMeasure = () => this.clearMeasurement()

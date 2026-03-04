@@ -8,6 +8,7 @@ import {
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
 import { getSelectableElements } from './Collection'
+import { getPreferences } from './Preferences'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -19,7 +20,9 @@ function Viewport(editor) {
     return getSelectableElements(editor)
   }
 
-  let hoverTreshold = 0.5
+  const prefs = getPreferences()
+  let hoverTreshold = prefs.hoverThreshold
+  let gridSpacing = prefs.gridSize
   let hoveredElements = []
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
@@ -70,7 +73,6 @@ function Viewport(editor) {
 
   svg
     .addClass('canvas')
-    .addClass('cartesian')
     .mousemove(handleMove)
     .mousedown(handleMousedown)
     // .mouseup(handleClick)
@@ -81,6 +83,12 @@ function Viewport(editor) {
 
   svg.viewbox(-5, -5, 10, 10)
   updateGrid()
+
+  signals.preferencesChanged.add((newPrefs) => {
+    hoverTreshold = newPrefs.hoverThreshold
+    gridSpacing = newPrefs.gridSize
+    updateGrid()
+  })
 
   // Zoom to extents (drawing elements only) on double middle click
   svg.on('mousedown', (e) => {
@@ -123,15 +131,20 @@ function Viewport(editor) {
     const yMin = Math.min(p1.y, p2.y, p3.y, p4.y)
     const yMax = Math.max(p1.y, p2.y, p3.y, p4.y)
 
+    // Add a generous margin so the grid extends beyond the visible viewport,
+    // preventing blank borders when zooming out
+    const marginX = (xMax - xMin) * 0.5
+    const marginY = (yMax - yMin) * 0.5
+
     const vb = {
-      x: xMin,
-      y: yMin,
-      width: xMax - xMin,
-      height: yMax - yMin
+      x: xMin - marginX,
+      y: yMin - marginY,
+      width: (xMax - xMin) + marginX * 2,
+      height: (yMax - yMin) + marginY * 2
     }
 
     // Set fixed spacing to 1
-    const spacing = 1
+    const spacing = gridSpacing
 
     // Optimization: Don't draw the grid if it's too dense (lines would be < 2px apart)
     const zoom = svg.zoom()

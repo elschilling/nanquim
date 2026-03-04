@@ -31,6 +31,7 @@ function Editor() {
     commandCancelled: new Signal(),
     requestHoverCheck: new Signal(),
     updatedCollections: new Signal(),
+    preferencesChanged: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')

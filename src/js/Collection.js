@@ -4,6 +4,8 @@
  * together. Each collection has visibility, lock, and default style properties.
  */
 
+import { getPreferences } from './Preferences'
+
 let collectionCounter = 0
 
 /**
@@ -38,7 +40,7 @@ function createCollection(editor, name) {
         locked: false,
         style: {
             stroke: 'white',
-            'stroke-width': 0.1,
+            'stroke-width': getPreferences().defaultStrokeWidth,
             'stroke-linecap': 'round',
             fill: 'transparent',
         },

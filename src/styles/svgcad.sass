@@ -164,7 +164,7 @@ main
 .elementHover
     // stroke: orange
     opacity: .4 !important
-    stroke-width: .4 !important   
+    stroke-width: var(--hover-stroke-width, 0.4) !important   
 .elementSelected
     // stroke: yellow
     opacity: .4 !important
@@ -444,13 +444,6 @@ main
     z-index: 10
 
 
-/* Flip the vertical axis in <g> to emulate cartesian. */
-svg.cartesian
-  transform: scaleY(-1)
-
-/* Re-flip all <text> element descendants to their original side up. */
-svg.cartesian text
-  transform: scaleY(-1)
 
 .is-active
     background-color: var(--accent-color)
@@ -507,3 +500,87 @@ svg.cartesian text
     &:hover
         background-color: #ff5e5e
         color: white
+
+// Preferences modal
+.prefs-overlay
+    position: fixed
+    inset: 0
+    z-index: 100
+    background: rgba(0, 0, 0, 0.5)
+    display: flex
+    align-items: center
+    justify-content: center
+
+.prefs-dialog
+    background: #2a2a2a
+    border: 1px solid #444
+    border-radius: 12px
+    padding: 24px
+    min-width: 340px
+    max-width: 420px
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5)
+    color: #e0e0e0
+
+.prefs-title
+    margin: 0 0 18px 0
+    font-size: 16px
+    font-weight: 600
+    color: #fff
+    border-bottom: 1px solid #444
+    padding-bottom: 12px
+
+.prefs-row
+    display: flex
+    align-items: center
+    justify-content: space-between
+    margin-bottom: 12px
+    gap: 12px
+
+.prefs-label
+    font-size: 13px
+    color: #b8b8b8
+    flex: 1
+    white-space: nowrap
+
+.prefs-input
+    width: 80px
+    background: #1d1d1d
+    border: 1px solid #555
+    border-radius: 4px
+    color: #fff
+    padding: 5px 8px
+    font-size: 13px
+    outline: none
+    text-align: right
+    &:focus
+        border-color: var(--accent-color)
+        background: #333
+
+.prefs-buttons
+    display: flex
+    justify-content: flex-end
+    gap: 8px
+    margin-top: 20px
+    padding-top: 12px
+    border-top: 1px solid #444
+
+.prefs-btn
+    padding: 6px 18px
+    border-radius: 5px
+    border: none
+    font-size: 13px
+    font-weight: 500
+    cursor: pointer
+    transition: background-color 0.15s
+
+.prefs-btn-save
+    background: var(--accent-color)
+    color: white
+    &:hover
+        filter: brightness(1.2)
+
+.prefs-btn-cancel
+    background: #444
+    color: #ccc
+    &:hover
+        background: #555
