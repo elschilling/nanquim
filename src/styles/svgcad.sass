@@ -161,14 +161,17 @@ main
     fill: transparent
     // &:hover
     //     stroke: red
+.non-scaling-stroke *
+    vector-effect: non-scaling-stroke
+    stroke-width: 1px !important
 .elementHover
     // stroke: orange
     opacity: .4 !important
-    stroke-width: var(--hover-stroke-width, 0.4) !important   
+    stroke-width: var(--hover-stroke-width, 0.4) 
 .elementSelected
     // stroke: yellow
     opacity: .4 !important
-    stroke-width: .4    
+    stroke-width: var(--hover-stroke-width, 0.4) 
     // filter: drop-shadow(0px 0px 1px yellow);
 .ghostLine
     stroke: #F44336 !important

@@ -7,7 +7,7 @@ import {
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
-import { getSelectableElements } from './Collection'
+import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
 
 function Viewport(editor) {
@@ -584,65 +584,199 @@ function Viewport(editor) {
       signals.updatedSelection.dispatch()
     }
     updateCoordinates(coordinates)
-    checkHover()
+    scheduleHoverCheck()
   }
   function updateCoordinates(coordinates) {
     editor.signals.updatedCoordinates.dispatch(coordinates)
   }
+
+  // Throttle hover checks to one per animation frame for performance
+  let hoverCheckScheduled = false
+  function scheduleHoverCheck() {
+    if (!hoverCheckScheduled) {
+      hoverCheckScheduled = true
+      requestAnimationFrame(() => {
+        hoverCheckScheduled = false
+        checkHover()
+      })
+    }
+  }
+  // Helper to add/remove hover class recursively for groups
+  function addHoverClass(el) {
+    el.addClass('elementHover')
+    if (el.type === 'g' && el.children) {
+      el.children().each(child => addHoverClass(child))
+    }
+  }
+  function removeHoverClass(el) {
+    el.removeClass('elementHover')
+    if (el.type === 'g' && el.children) {
+      el.children().each(child => removeHoverClass(child))
+    }
+  }
+
   function checkHover() {
     if (!editor.isDrawing) {
       const candidates = []
       const elements = getSelectableDrawingElements()
+      const svgNode = svg.node
+
+      // Compute inverted SVG root CTM once per frame (not per element)
+      const svgCTM = svgNode.getCTM()
+      let svgInvDet = 1
+      let hasSvgCTM = false
+      if (svgCTM) {
+        svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
+        hasSvgCTM = Math.abs(svgInvDet) > 1e-10
+      }
+
+      // Pre-compute padding for bbox pre-filter (the hover threshold in SVG units)
+      const pad = hoverTreshold
+
       elements.forEach((el) => {
         if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
+
+        // ---- BBOX PRE-FILTER ----
+        // Use the element's screen-space bbox to quickly skip elements far from cursor.
+        // getBBox() is faster than getCTM() per element, and we only call getCTM()
+        // on elements that pass this coarse filter.
+        try {
+          const bbox = el.node.getBBox()
+          const ctm = el.node.getCTM()
+          if (ctm && hasSvgCTM) {
+            // Transform bbox center to root space for a quick distance check
+            const cx = bbox.x + bbox.width / 2
+            const cy = bbox.y + bbox.height / 2
+            const ex = ctm.a * cx + ctm.c * cy + ctm.e
+            const ey = ctm.b * cx + ctm.d * cy + ctm.f
+            const rootCx = (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet
+            const rootCy = (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet
+
+            // Estimate the max extent of the element in root space
+            const halfW = Math.max(bbox.width, bbox.height) * Math.max(Math.abs(ctm.a), Math.abs(ctm.d)) / 2
+            const coarseDist = Math.max(
+              Math.abs(coordinates.x - rootCx) - halfW,
+              Math.abs(coordinates.y - rootCy) - halfW,
+              0
+            )
+            // Skip if even the coarse check shows it's way too far
+            if (coarseDist > pad * 3) return
+          }
+        } catch (e) {
+          // getBBox can throw for elements not in the DOM; skip pre-filter
+        }
+
+        // ---- PRECISE DISTANCE ----
         let distance
+        const ctm = el.node.getCTM()
+
+        // Build toRootSpace closure for this element's CTM
+        const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
+          const ex = ctm.a * lx + ctm.c * ly + ctm.e
+          const ey = ctm.b * lx + ctm.d * ly + ctm.f
+          return {
+            x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
+            y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
+          }
+        } : (lx, ly) => ({ x: lx, y: ly })
+
         if (el.type === 'line') {
-          let p1 = { x: el.node.x1.baseVal.value, y: el.node.y1.baseVal.value }
-          let p2 = { x: el.node.x2.baseVal.value, y: el.node.y2.baseVal.value }
+          let p1 = toRootSpace(el.node.x1.baseVal.value, el.node.y1.baseVal.value)
+          let p2 = toRootSpace(el.node.x2.baseVal.value, el.node.y2.baseVal.value)
           distance = distanceFromPointToLine(coordinates, p1, p2)
         } else if (el.type === 'circle') {
-          distance = distanceFromPointToCircle(
-            coordinates,
-            { x: el.node.cx.baseVal.value, y: el.node.cy.baseVal.value },
-            el.node.r.baseVal.value
+          const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
+          const edgePoint = toRootSpace(
+            el.node.cx.baseVal.value + el.node.r.baseVal.value,
+            el.node.cy.baseVal.value
           )
+          const transformedRadius = calculateDistance(center, edgePoint)
+          distance = distanceFromPointToCircle(coordinates, center, transformedRadius)
         } else if (el.type === 'rect') {
-          distance = distancePointToRectangleStroke(coordinates, el.node)
+          const x = el.node.x.baseVal.value
+          const y = el.node.y.baseVal.value
+          const w = el.node.width.baseVal.value
+          const h = el.node.height.baseVal.value
+          const corners = [
+            toRootSpace(x, y), toRootSpace(x + w, y),
+            toRootSpace(x + w, y + h), toRootSpace(x, y + h)
+          ]
+          let minDist = Infinity
+          for (let i = 0; i < 4; i++) {
+            const d = distanceFromPointToLine(coordinates, corners[i], corners[(i + 1) % 4])
+            if (d < minDist) minDist = d
+          }
+          distance = minDist
         } else if (el.type === 'path') {
           const pathLength = el.length()
           if (pathLength === 0) {
             distance = Infinity
           } else {
             let minDistance = Infinity
-            // Sample densely to ensure accurate hits, max 5px gaps
             const step = Math.min(5, Math.max(1, pathLength / 20))
             for (let i = 0; i <= pathLength; i += step) {
               const p = el.pointAt(i)
-              const d = calculateDistance(coordinates, p)
+              const rp = toRootSpace(p.x, p.y)
+              const d = calculateDistance(coordinates, rp)
               if (d < minDistance) {
                 minDistance = d
               }
             }
             distance = minDistance
           }
+        } else if (el.type === 'polygon' || el.type === 'polyline') {
+          const points = el.node.points
+          let minDist = Infinity
+          for (let i = 0; i < points.numberOfItems; i++) {
+            const pt = points.getItem(i)
+            const rp = toRootSpace(pt.x, pt.y)
+            const d = calculateDistance(coordinates, rp)
+            if (d < minDist) minDist = d
+          }
+          for (let i = 0; i < points.numberOfItems - 1; i++) {
+            const pt1 = points.getItem(i)
+            const pt2 = points.getItem(i + 1)
+            const rp1 = toRootSpace(pt1.x, pt1.y)
+            const rp2 = toRootSpace(pt2.x, pt2.y)
+            const d = distanceFromPointToLine(coordinates, rp1, rp2)
+            if (d < minDist) minDist = d
+          }
+          distance = minDist
+        } else if (el.type === 'ellipse') {
+          const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
+          distance = calculateDistance(coordinates, center)
         }
-        if (distance < hoverTreshold) {
+
+        if (distance !== undefined && distance < hoverTreshold) {
           candidates.push({ el, distance })
         }
       })
 
       // Remove hover from all previously hovered elements
-      hoveredElements.forEach((el) => el.removeClass('elementHover'))
+      hoveredElements.forEach((el) => removeHoverClass(el))
 
-      // Sort by distance and only highlight the nearest one
+      // Sort leaf candidates by distance
       candidates.sort((a, b) => a.distance - b.distance)
 
-      if (candidates.length > 0) {
-        candidates[0].el.addClass('elementHover')
+      // Resolve leaf elements to their group ancestors (if any)
+      // and deduplicate so hovering any child of a group selects the group
+      const resolvedCandidates = []
+      const seen = new Set()
+      candidates.forEach(c => {
+        const ancestor = findSelectableAncestor(c.el)
+        const key = ancestor.node
+        if (!seen.has(key)) {
+          seen.add(key)
+          resolvedCandidates.push({ el: ancestor, distance: c.distance })
+        }
+      })
+
+      if (resolvedCandidates.length > 0) {
+        addHoverClass(resolvedCandidates[0].el)
       }
 
       // Store all within-threshold elements sorted by distance (for Trim/Extend)
-      hoveredElements = candidates.map((c) => c.el)
+      hoveredElements = resolvedCandidates.map((c) => c.el)
       editor.hoveredElements = hoveredElements
     }
   }
@@ -814,6 +948,8 @@ function Viewport(editor) {
 
   function findElements(rect, selectionMode) {
     const elements = getSelectableDrawingElements()
+    const groupCandidates = new Set() // Track ancestors to prevent duplicate hover classes
+
     elements.forEach((el) => {
       // Skip background/ghost elements
       if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) return
@@ -892,15 +1028,38 @@ function Viewport(editor) {
       }
 
       if (isInsideOrIntersecting) {
-        el.addClass('elementHover')
+        const selectableAncestor = findSelectableAncestor(el)
 
-        // Check if element is already in hoveredElements using node identity
-        if (!hoveredElements.some((item) => item.node === el.node)) {
-          hoveredElements.push(el)
+        if (!groupCandidates.has(selectableAncestor.node)) {
+          groupCandidates.add(selectableAncestor.node)
+
+          // Apply hover visually to all children recursively if it's a group
+          const applyHoverRecursive = (node) => {
+            node.addClass('elementHover')
+            if (node.type === 'g' && node.children) {
+              node.children().each(applyHoverRecursive)
+            }
+          }
+          applyHoverRecursive(selectableAncestor)
+
+          // Check if element is already in hoveredElements using node identity
+          if (!hoveredElements.some((item) => item.node === selectableAncestor.node)) {
+            hoveredElements.push(selectableAncestor)
+          }
         }
       } else {
-        el.removeClass('elementHover')
-        hoveredElements = hoveredElements.filter((item) => item.node !== el.node)
+        // Only strip hover if this element's selectable ancestor isn't already marked by another child
+        const selectableAncestor = findSelectableAncestor(el)
+        if (!groupCandidates.has(selectableAncestor.node)) {
+          const removeHoverRecursive = (node) => {
+            node.removeClass('elementHover')
+            if (node.type === 'g' && node.children) {
+              node.children().each(removeHoverRecursive)
+            }
+          }
+          removeHoverRecursive(selectableAncestor)
+          hoveredElements = hoveredElements.filter((item) => item.node !== selectableAncestor.node)
+        }
       }
     })
   }
@@ -1214,4 +1373,15 @@ window.handleToogleOverlay = handleToogleOverlay
 window.handleToogleOrtho = handleToogleOrtho
 window.handleToogleSnap = handleToogleSnap
 window.menuOverlay = menuOverlay
+
+function handleToggleNonScalingStroke(enabled) {
+  const svgEl = document.getElementById('canvas').querySelector('svg')
+  if (enabled) {
+    svgEl.classList.add('non-scaling-stroke')
+  } else {
+    svgEl.classList.remove('non-scaling-stroke')
+  }
+}
+window.handleToggleNonScalingStroke = handleToggleNonScalingStroke
+
 export { Viewport }

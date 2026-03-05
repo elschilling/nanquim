@@ -17,6 +17,9 @@
         .overlay-menu
           | Grid
           | Axis
+          label.overlay-menu-item(style='display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 0')
+            input(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
+            | Non-scaling stroke
 
   .layout-editor#canvas
     include Terminal

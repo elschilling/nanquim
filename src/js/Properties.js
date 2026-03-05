@@ -150,7 +150,12 @@ function Properties(editor) {
     createPropertyField(container, 'ID', element.attr('id'), null, true)
 
     // Collection dropdown
-    const currentParentId = element.parent() ? element.parent().attr('id') : null
+    let collectionAncestor = element.parent()
+    while (collectionAncestor && collectionAncestor.node && collectionAncestor.node.nodeName !== 'svg') {
+      if (collectionAncestor.attr('data-collection') === 'true') break
+      collectionAncestor = collectionAncestor.parent()
+    }
+    const currentParentId = (collectionAncestor && collectionAncestor.attr('data-collection') === 'true') ? collectionAncestor.attr('id') : null
 
     // Only show collection dropdown if the element is actually inside one of our collections
     if (currentParentId && editor.collections.has(currentParentId)) {
@@ -289,11 +294,15 @@ function Properties(editor) {
     const computedStyle = window.getComputedStyle(node)
 
     // Check if element is inside a collection
-    const parent = element.parent ? element.parent() : null
-    const inCollection = parent && parent.attr && parent.attr('data-collection') === 'true'
+    let collectionAncestor = element.parent ? element.parent() : null
+    while (collectionAncestor && collectionAncestor.node && collectionAncestor.node.nodeName !== 'svg') {
+      if (collectionAncestor.attr && collectionAncestor.attr('data-collection') === 'true') break
+      collectionAncestor = collectionAncestor.parent()
+    }
+    const inCollection = collectionAncestor && collectionAncestor.attr && collectionAncestor.attr('data-collection') === 'true'
     let collectionData = null
     if (inCollection) {
-      collectionData = editor.collections.get(parent.attr('id'))
+      collectionData = editor.collections.get(collectionAncestor.attr('id'))
     }
     const overrides = inCollection ? getElementOverrides(element) : {}
 

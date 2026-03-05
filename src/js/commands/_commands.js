@@ -14,6 +14,8 @@ import { trimCommand } from './TrimCommand'
 import { drawArcCommand } from './DrawArcCommand'
 import { measureDistanceCommand } from './MeasureDistanceCommand'
 import { mirrorCommand } from './MirrorCommand'
+import { groupCommand } from './GroupCommand'
+import { ungroupCommand } from './UngroupCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -80,6 +82,14 @@ const commands = {
   MIRROR: {
     execute: mirrorCommand,
     aliases: ['mi'],
+  },
+  GROUP: {
+    execute: groupCommand,
+    aliases: ['g', 'group'],
+  },
+  UNGROUP: {
+    execute: ungroupCommand,
+    aliases: ['ug', 'ungroup'],
   },
   // Add more commands and functions as needed
 }

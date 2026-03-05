@@ -137,14 +137,21 @@ function setCollectionStyle(editor, id, style) {
     Object.assign(data.style, style)
     applyCollectionStyle(data.group, data.style)
 
-    // Apply to child elements that don't override the property
-    data.group.children().each((child) => {
-        const overrides = getElementOverrides(child)
-        Object.entries(style).forEach(([prop, value]) => {
-            if (overrides[prop]) return // skip overridden properties
-            child.css(prop, value)
+    // Helper to recursively apply styles down the tree
+    const applyToChildren = (parent) => {
+        parent.children().each((child) => {
+            if (child.type === 'g') {
+                applyToChildren(child) // Recurse into groups
+            } else {
+                const overrides = getElementOverrides(child)
+                Object.entries(style).forEach(([prop, value]) => {
+                    if (overrides[prop]) return // skip overridden properties
+                    child.css(prop, value)
+                })
+            }
         })
-    })
+    }
+    applyToChildren(data.group)
 
     editor.signals.updatedOutliner.dispatch()
 }
@@ -180,7 +187,11 @@ function setElementOverrides(element, overrides) {
  * Apply collection style to a single element for non-overridden properties.
  */
 function applyCollectionStyleToElement(editor, element) {
-    const parent = element.parent()
+    let parent = element.parent()
+    while (parent && parent.node && parent.node.nodeName !== 'svg') {
+        if (parent.attr('data-collection') === 'true') break
+        parent = parent.parent()
+    }
     if (!parent || parent.attr('data-collection') !== 'true') return
     const data = editor.collections.get(parent.attr('id'))
     if (!data) return
@@ -205,7 +216,11 @@ function applyCollectionStyle(group, style) {
  * Check if an element belongs to a hidden collection.
  */
 function isElementHidden(editor, element) {
-    const parent = element.parent()
+    let parent = element.parent()
+    while (parent && parent.node && parent.node.nodeName !== 'svg') {
+        if (parent.attr('data-collection') === 'true') break
+        parent = parent.parent()
+    }
     if (parent && parent.attr('data-collection') === 'true') {
         const data = editor.collections.get(parent.attr('id'))
         if (data && !data.visible) return true
@@ -217,7 +232,11 @@ function isElementHidden(editor, element) {
  * Check if an element belongs to a locked collection.
  */
 function isElementLocked(editor, element) {
-    const parent = element.parent()
+    let parent = element.parent()
+    while (parent && parent.node && parent.node.nodeName !== 'svg') {
+        if (parent.attr('data-collection') === 'true') break
+        parent = parent.parent()
+    }
     if (parent && parent.attr('data-collection') === 'true') {
         const data = editor.collections.get(parent.attr('id'))
         if (data && data.locked) return true
@@ -227,34 +246,71 @@ function isElementLocked(editor, element) {
 
 /**
  * Get all drawable elements across all visible collections.
- * Returns a flat array of SVG elements.
+ * Returns a flat array of SVG leaf elements, recursing into groups.
  */
 function getDrawableElements(editor) {
     const elements = []
+    const collectLeaves = (parent) => {
+        parent.children().each((child) => {
+            if (child.attr('data-hidden') === 'true') return
+            if (child.type === 'g') {
+                collectLeaves(child)
+            } else {
+                elements.push(child)
+            }
+        })
+    }
     editor.collections.forEach((data) => {
         if (!data.visible) return
-        data.group.children().each((child) => {
-            if (child.attr('data-hidden') === 'true') return
-            elements.push(child)
-        })
+        collectLeaves(data.group)
     })
     return elements
 }
 
 /**
- * Get all selectable elements (visible and not locked).
+ * Get all selectable leaf elements (visible and not locked).
+ * Recursively walks into nested <g> tags to find actual drawable geometry.
  */
 function getSelectableElements(editor) {
     const elements = []
-    editor.collections.forEach((data) => {
-        if (!data.visible || data.locked) return
-        data.group.children().each((child) => {
+    const collectLeaves = (parent) => {
+        parent.children().each((child) => {
             if (child.attr('data-hidden') === 'true') return
             if (child.attr('data-locked') === 'true') return
-            elements.push(child)
+            if (child.type === 'g') {
+                // Recurse into groups (both data-group and styling wrappers)
+                collectLeaves(child)
+            } else {
+                elements.push(child)
+            }
         })
+    }
+    editor.collections.forEach((data) => {
+        if (!data.visible || data.locked) return
+        collectLeaves(data.group)
     })
     return elements
+}
+
+/**
+ * Given a leaf element, find its nearest selectable ancestor.
+ * If the element is inside a <g data-group="true">, return that group.
+ * Otherwise return the element itself.
+ * Stops at collection boundaries (data-collection="true").
+ */
+function findSelectableAncestor(element) {
+    let current = element
+    let groupAncestor = null
+    while (current && current.type === 'g' || (current && current.parent && current.parent())) {
+        const parent = current.parent()
+        if (!parent) break
+        if (parent.attr('data-collection') === 'true') break
+        if (parent.attr('data-group') === 'true') {
+            groupAncestor = parent
+        }
+        current = parent
+    }
+    return groupAncestor || element
 }
 
 /**
@@ -370,6 +426,7 @@ export {
     isElementLocked,
     getDrawableElements,
     getSelectableElements,
+    findSelectableAncestor,
     toggleElementVisibility,
     toggleElementLock,
     getElementOverrides,

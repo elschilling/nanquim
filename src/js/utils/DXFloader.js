@@ -39,6 +39,12 @@ function DXFLoader(editor) {
       console.log('svgContent', svgContent)
       editor.drawing.svg(svgContent)
 
+      // For DXF imports: flatten inline styling groups so leaf elements
+      // sit directly inside collections (but keep transform groups intact)
+      if (file.name.endsWith('.dxf')) {
+        flattenDXFStylingGroups(editor)
+      }
+
       // Hydrate data attributes recursively (including inside collection groups)
       const hydrateElement = (el) => {
         const node = el.node
@@ -54,22 +60,30 @@ function DXFLoader(editor) {
             }
           }
         })
-        const id = parseInt(el.attr('id'))
-        if (!isNaN(id) && id >= editor.elementIndex) {
+
+        let id = parseInt(el.attr('id'))
+        if (isNaN(id)) {
+          id = editor.elementIndex++
+          el.attr('id', id)
+        } else if (id >= editor.elementIndex) {
           editor.elementIndex = id + 1
+        }
+
+        if (!el.attr('name')) {
+          const nodeName = el.node.nodeName
+          const typeName = nodeName.charAt(0).toUpperCase() + nodeName.slice(1)
+          el.attr('name', typeName + ' ' + id)
         }
       }
 
-      editor.drawing.children().each((child) => {
-        if (child.type === 'g') {
-          // Hydrate the group itself
-          hydrateElement(child)
-          // Hydrate its children
-          child.children().each(hydrateElement)
-        } else {
-          hydrateElement(child)
+      const hydrateTree = (el) => {
+        hydrateElement(el)
+        if (el.children) {
+          el.children().each(child => hydrateTree(child))
         }
-      })
+      }
+
+      editor.drawing.children().each(child => hydrateTree(child))
 
       // If saved elementIndex exists and is higher, use it
       if (savedElementIndex) {
@@ -83,10 +97,63 @@ function DXFLoader(editor) {
       rebuildCollectionsFromDOM(editor)
 
       editor.signals.updatedOutliner.dispatch()
-      editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Opened: ${file.name}` })
+      editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Opened: ' + file.name })
     }
     reader.readAsText(file)
   }
+}
+
+/**
+ * Flatten DXF inline styling groups:
+ * The DXF parser wraps each entity in <g stroke="..."> for per-entity color.
+ * We unwrap these by pushing the stroke attribute directly onto the child
+ * elements and moving them up to the parent.
+ * 
+ * IMPORTANT: We do NOT flatten <g transform="..."> groups because those
+ * represent block references/inserts and are needed for correct positioning.
+ * We only flatten groups whose sole purpose is to carry a stroke color.
+ */
+function flattenDXFStylingGroups(editor) {
+  const flattenInGroup = (parent) => {
+    // We need to iterate carefully since we modify the DOM during iteration
+    const children = [...parent.children()]
+    children.forEach(child => {
+      if (child.type !== 'g') return
+      // Skip collection groups and explicit groups
+      if (child.attr('data-collection') === 'true') return
+      if (child.attr('data-group') === 'true') return
+
+      // Check if this is a pure styling wrapper:
+      // it has a stroke attribute but NO transform attribute
+      const hasStroke = child.attr('stroke')
+      const hasTransform = child.attr('transform')
+
+      if (hasStroke && !hasTransform) {
+        // This is an inline styling wrapper - flatten it
+        const innerChildren = [...child.children()]
+        innerChildren.forEach(innerChild => {
+          // Push stroke color down to inner child if it doesn't have one
+          if (hasStroke && !innerChild.attr('stroke')) {
+            innerChild.attr('stroke', hasStroke)
+          }
+          // Move inner child up to parent
+          parent.add(innerChild)
+        })
+        // Remove the now-empty wrapper
+        child.remove()
+      } else {
+        // This is a transform group or complex group - recurse into it
+        // to flatten any styling wrappers inside
+        flattenInGroup(child)
+      }
+    })
+  }
+
+  editor.drawing.children().each(collectionGroup => {
+    if (collectionGroup.type === 'g') {
+      flattenInGroup(collectionGroup)
+    }
+  })
 }
 
 export { DXFLoader }

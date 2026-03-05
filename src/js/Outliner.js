@@ -303,12 +303,17 @@ function Outliner(editor) {
 
     const selectedItems = drawingTree.querySelectorAll('.outliner-selected')
     selectedItems.forEach(li => li.classList.remove('outliner-selected'))
-    // Clear elementSelected class from all elements across all collections
+
+    // Clear elementSelected class from all elements across all collections recursively
+    const removeSelectedClass = (el) => {
+      el.removeClass('elementSelected')
+      if (el.type === 'g' && el.children) {
+        el.children().each(child => removeSelectedClass(child))
+      }
+    }
+
     editor.collections.forEach((data) => {
-      data.group.removeClass('elementSelected')
-      data.group.children().each((el) => {
-        el.removeClass('elementSelected')
-      })
+      removeSelectedClass(data.group)
     })
   }
 
@@ -559,35 +564,112 @@ function Outliner(editor) {
     editor.signals.updatedSelection.dispatch()
   })
 
-  function childElements(group, parent) {
-    const ul = document.createElement('ul')
-    const li = document.createElement('li')
-    li.id = 'li' + group.node.id
-    const groupName = group.attr('name') || group.node.nodeName
-    li.textContent = groupName + ' ' + group.node.id
-    li.addEventListener('click', (e) => {
+  function childElements(group, parent, level = 1) {
+    const groupUl = document.createElement('ul')
+    const groupLi = document.createElement('li')
+    groupLi.id = 'li' + group.node.id
+
+    // Group toggle icon (let's assume it's expanded for now, or just give it a folder icon)
+    const folderIcon = document.createElement('div')
+    folderIcon.className = 'icon icon-group' // Reuse collection icon for group
+    folderIcon.style.marginRight = '4px'
+    folderIcon.style.flexShrink = '0'
+
+    const groupNameSpan = document.createElement('span')
+    groupNameSpan.className = 'collection-name'
+    groupNameSpan.textContent = group.attr('name') || 'Group'
+
+    groupLi.style.paddingLeft = (18 + level * 10) + 'px'
+    groupLi.appendChild(folderIcon)
+    groupLi.appendChild(groupNameSpan)
+
+    groupLi.addEventListener('click', (e) => {
       e.stopPropagation()
       signals.toogledSelect.dispatch(group)
     })
-    ul.appendChild(li)
+
+    groupUl.appendChild(groupLi)
+
+    // Container for children
+    const childrenContainer = document.createElement('div')
+
     group.children().each((child) => {
       if (child.hasClass && child.hasClass('ghostLine')) return
-      if (child.type === 'g') childElements(child, ul)
-      else {
+      if (child.type === 'g') {
+        childElements(child, childrenContainer, level + 1)
+      } else {
         const childUl = document.createElement('ul')
         const li = document.createElement('li')
         li.id = 'li' + child.node.id
+
         const childName = child.attr('name') || child.node.nodeName
-        li.textContent = childName
+
+        // Element type icon
+        const elTypeIcon = document.createElement('div')
+        elTypeIcon.className = 'icon '
+        const elType = child.type || child.node.nodeName.toLowerCase()
+        if (elType === 'line') elTypeIcon.className += 'icon-element-line'
+        else if (elType === 'circle') elTypeIcon.className += 'icon-element-circle'
+        else if (elType === 'path') elTypeIcon.className += 'icon-element-arc'
+        else if (elType === 'rect') elTypeIcon.className += 'icon-element-rect'
+        else if (elType === 'polygon' || elType === 'polyline') elTypeIcon.className += 'icon-element-rect'
+        else elTypeIcon.className += 'icon-element-default'
+        elTypeIcon.style.marginRight = '4px'
+        elTypeIcon.style.flexShrink = '0'
+
+        const nameSpan = document.createElement('span')
+        nameSpan.className = 'collection-name'
+        nameSpan.textContent = childName
+
+        // Element icons container
+        const elIcons = document.createElement('div')
+        elIcons.className = 'collection-icons'
+
+        // Element eye icon
+        const elEyeIcon = document.createElement('div')
+        elEyeIcon.className = 'icon collection-icon icon-restrict-screen'
+        const isHidden = child.attr('data-hidden') === 'true'
+        if (isHidden) elEyeIcon.classList.add('icon-off')
+        elEyeIcon.title = isHidden ? 'Show' : 'Hide'
+        elEyeIcon.addEventListener('click', (e) => {
+          e.stopPropagation()
+          toggleElementVisibility(editor, child)
+        })
+
+        // Element lock icon
+        const elLockIcon = document.createElement('div')
+        elLockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+        const isLocked = child.attr('data-locked') === 'true'
+        if (isLocked) elLockIcon.classList.add('icon-on')
+        else elLockIcon.classList.add('icon-off')
+        elLockIcon.title = isLocked ? 'Unlock' : 'Lock'
+        elLockIcon.addEventListener('click', (e) => {
+          e.stopPropagation()
+          toggleElementLock(editor, child)
+        })
+
+        elIcons.appendChild(elEyeIcon)
+        elIcons.appendChild(elLockIcon)
+
+        li.style.paddingLeft = (28 + level * 10) + 'px'
+
+        li.appendChild(elTypeIcon)
+        li.appendChild(nameSpan)
+        li.appendChild(elIcons)
+
         li.addEventListener('click', (e) => {
           e.stopPropagation()
+          if (isLocked || isHidden) return
           signals.toogledSelect.dispatch(child)
         })
+
         childUl.appendChild(li)
-        ul.appendChild(childUl)
+        childrenContainer.appendChild(childUl)
       }
     })
-    parent.appendChild(ul)
+
+    groupUl.appendChild(childrenContainer)
+    parent.appendChild(groupUl)
   }
 }
 

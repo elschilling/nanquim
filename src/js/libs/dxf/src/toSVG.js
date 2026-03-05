@@ -102,9 +102,8 @@ const ellipseOrArc = (
   ) {
     // Use a native <ellipse> when start and end angles are the same, and
     // arc paths with same start and end points don't render (at least on Safari)
-    const element = `<g transform="rotate(${
-      (rotationAngle / Math.PI) * 180
-    } ${cx}, ${cy})">
+    const element = `<g transform="rotate(${(rotationAngle / Math.PI) * 180
+      } ${cx}, ${cy})">
       <ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" />
     </g>`
     return { bbox, element }
@@ -133,11 +132,27 @@ const ellipseOrArc = (
     }
     const adjustedEndAngle =
       endAngle < startAngle ? endAngle + Math.PI * 2 : endAngle
+
+    const midAngle = startAngle + (adjustedEndAngle - startAngle) / 2
+    const midOffset = rotate(
+      {
+        x: Math.cos(midAngle) * rx,
+        y: Math.sin(midAngle) * ry,
+      },
+      rotationAngle,
+    )
+    const midPoint = {
+      x: cx + midOffset.x,
+      y: cy + midOffset.y,
+    }
+
     const largeArcFlag = adjustedEndAngle - startAngle < Math.PI ? 0 : 1
-    const d = `M ${startPoint.x} ${startPoint.y} A ${rx} ${ry} ${
-      (rotationAngle / Math.PI) * 180
-    } ${largeArcFlag} 1 ${endPoint.x} ${endPoint.y}`
-    const element = `<path d="${d}" />`
+    const d = `M ${startPoint.x} ${startPoint.y} A ${rx} ${ry} ${(rotationAngle / Math.PI) * 180
+      } ${largeArcFlag} 1 ${endPoint.x} ${endPoint.y}`
+
+    const arcDataStr = JSON.stringify({ p1: startPoint, p2: midPoint, p3: endPoint }).replace(/"/g, '&quot;')
+    const element = `<path d="${d}" data-arc-data="${arcDataStr}" />`
+
     return { bbox, element }
   }
 }
@@ -332,43 +347,87 @@ const entityToBoundsAndElement = (entity) => {
 
 export default (parsed) => {
   const entities = denormalise(parsed)
-  const { bbox, elements } = entities.reduce(
-    (acc, entity, i) => {
+
+  // Group entities by layer
+  const groupedEntities = entities.reduce((acc, entity) => {
+    const layer = entity.layer || 'Default'
+    if (!acc[layer]) {
+      acc[layer] = []
+    }
+    acc[layer].push(entity)
+    return acc
+  }, {})
+
+  let globalBbox = new Box2()
+  const layerGroups = []
+  let collectionIndex = 1
+
+  // Process each layer
+  Object.keys(groupedEntities).forEach(layerName => {
+    const layerEntities = groupedEntities[layerName]
+    const layerElements = []
+
+    // Find layer attributes from the header tables if available
+    let layerColor = '#ffffff'
+    if (parsed.tables && parsed.tables.layers && parsed.tables.layers[layerName]) {
+      const layerData = parsed.tables.layers[layerName]
+      layerColor = rgbToColorAttribute(getRGBForEntity(parsed.tables.layers, { layer: layerName, colorNumber: layerData.colorNumber }))
+    }
+
+    layerEntities.forEach((entity) => {
       const rgb = getRGBForEntity(parsed.tables.layers, entity)
       const boundsAndElement = entityToBoundsAndElement(entity)
-      // Ignore entities like MTEXT that don't produce SVG elements
+
       if (boundsAndElement) {
         const { bbox, element } = boundsAndElement
-        // Ignore invalid bounding boxes
         if (bbox.valid) {
-          acc.bbox.expandByPoint(bbox.min)
-          acc.bbox.expandByPoint(bbox.max)
+          globalBbox.expandByPoint(bbox.min)
+          globalBbox.expandByPoint(bbox.max)
         }
-        acc.elements.push(
-          `<g stroke="${rgbToColorAttribute(rgb)}">${element}</g>`,
+
+        // Entity inherits layer color by default, unless it specifies its own
+        const strokeColor = rgbToColorAttribute(rgb)
+        layerElements.push(
+          `<g stroke="${strokeColor}">${element}</g>`
         )
       }
-      return acc
-    },
-    {
-      bbox: new Box2(),
-      elements: [],
-    },
-  )
+    })
 
-  const viewBox = bbox.valid
+    if (layerElements.length > 0) {
+      // Build the nanquim-compatible collection group wrapper
+      // Apply the DXF Y-inversion matrix directly to the collection group so they remain root-level layers
+      const safeLayerName = layerName.replace(/[^a-zA-Z0-9_\-]/g, '_')
+      layerGroups.push(`
+        <g 
+          id="collection-${Date.now()}-${collectionIndex++}" 
+          data-collection="true" 
+          name="${layerName}"
+          stroke="${layerColor}"
+          stroke-width="0.1"
+          stroke-linecap="round"
+          fill="transparent"
+          transform="matrix(1,0,0,-1,0,0)"
+        >
+          ${layerElements.join('\n')}
+        </g>
+      `)
+    }
+  })
+
+  const viewBox = globalBbox.valid
     ? {
-        x: bbox.min.x,
-        y: -bbox.max.y,
-        width: bbox.max.x - bbox.min.x,
-        height: bbox.max.y - bbox.min.y,
-      }
+      x: globalBbox.min.x,
+      y: -globalBbox.max.y,
+      width: globalBbox.max.x - globalBbox.min.x,
+      height: globalBbox.max.y - globalBbox.min.y,
+    }
     : {
-        x: 0,
-        y: 0,
-        width: 0,
-        height: 0,
-      }
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    }
+
   return `<?xml version="1.0"?>
 <svg
   xmlns="http://www.w3.org/2000/svg"
@@ -377,11 +436,7 @@ export default (parsed) => {
   viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"
   width="100%" height="100%"
 >
-<g stroke="#000000" stroke-width="0.1%" fill="none" transform="matrix(1,0,0,-1,0,0)">
-  
-    ${elements.join('\n')}
-    </g>
-
+${layerGroups.join('\n')}
 </svg>`
 }
 
