@@ -327,37 +327,60 @@ function Outliner(editor) {
     const handlerScreenSize = getPreferences().handlerSize
     const handlerWorldSize = handlerScreenSize / currentZoom
 
+    const svgNode = editor.svg.node
+
+    // Helper to transform a local element point to world coordinates
+    const localToWorld = (element, x, y) => {
+      const pt = svgNode.createSVGPoint()
+      pt.x = x
+      pt.y = y
+      const elementCTM = element.node.getCTM()
+      const svgCTM = svgNode.getCTM()
+      if (!elementCTM || !svgCTM) return { x, y }
+
+      // We want the point relative to the SVG root drawing area, not the screen
+      const screenPt = pt.matrixTransform(elementCTM)
+
+      // Invert the SVG root's CTM (which handles pan/zoom) to get world coords
+      const invSvgCTM = svgCTM.inverse()
+      const worldPt = screenPt.matrixTransform(invSvgCTM)
+
+      return { x: worldPt.x, y: worldPt.y }
+    }
+
     // Helper to find all selected vertices at a given position
     function getCoincidentVertices(x, y) {
       const vertices = []
       const tolerance = 0.1
       editor.selected.forEach((s) => {
         if (s.type === 'line') {
-          const sx1 = s.node.x1.baseVal.value
-          const sy1 = s.node.y1.baseVal.value
-          const sx2 = s.node.x2.baseVal.value
-          const sy2 = s.node.y2.baseVal.value
+          const pt1 = localToWorld(s, s.node.x1.baseVal.value, s.node.y1.baseVal.value)
+          const pt2 = localToWorld(s, s.node.x2.baseVal.value, s.node.y2.baseVal.value)
 
-          if (Math.abs(sx1 - x) < tolerance && Math.abs(sy1 - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: sx1, y: sy1 } })
+          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: s.node.x1.baseVal.value, y: s.node.y1.baseVal.value } })
           }
-          if (Math.abs(sx2 - x) < tolerance && Math.abs(sy2 - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: sx2, y: sy2 } })
+          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: s.node.x2.baseVal.value, y: s.node.y2.baseVal.value } })
           }
         } else if (s.type === 'circle') {
           const cx = s.node.cx.baseVal.value
           const cy = s.node.cy.baseVal.value
           const r = s.node.r.baseVal.value
 
+          const pCenter = localToWorld(s, cx, cy)
+          const pTop = localToWorld(s, cx, cy - r)
+          const pRight = localToWorld(s, cx + r, cy)
+          const pBottom = localToWorld(s, cx, cy + r)
+          const pLeft = localToWorld(s, cx - r, cy)
+
           // Check Center
-          if (Math.abs(cx - x) < tolerance && Math.abs(cy - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
-          }
+          if (Math.abs(pCenter.x - x) < tolerance && Math.abs(pCenter.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
           // Check Quadrants
-          if (Math.abs(cx - x) < tolerance && Math.abs((cy - r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
-          if (Math.abs((cx + r) - x) < tolerance && Math.abs(cy - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
-          if (Math.abs(cx - x) < tolerance && Math.abs((cy + r) - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
-          if (Math.abs((cx - r) - x) < tolerance && Math.abs(cy - y) < tolerance) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+          if (Math.abs(pTop.x - x) < tolerance && Math.abs(pTop.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
+          if (Math.abs(pRight.x - x) < tolerance && Math.abs(pRight.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
+          if (Math.abs(pBottom.x - x) < tolerance && Math.abs(pBottom.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
+          if (Math.abs(pLeft.x - x) < tolerance && Math.abs(pLeft.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
         } else if (s.type === 'rect') {
           const rx = s.node.x.baseVal.value
           const ry = s.node.y.baseVal.value
@@ -365,40 +388,37 @@ function Outliner(editor) {
           const rh = s.node.height.baseVal.value
 
           const rectPoints = [
-            { x: rx, y: ry, index: 0 },
-            { x: rx + rw, y: ry, index: 1 },
-            { x: rx + rw, y: ry + rh, index: 2 },
-            { x: rx, y: ry + rh, index: 3 },
-            { x: rx + rw / 2, y: ry, index: 4 },
-            { x: rx + rw, y: ry + rh / 2, index: 5 },
-            { x: rx + rw / 2, y: ry + rh, index: 6 },
-            { x: rx, y: ry + rh / 2, index: 7 }
+            { pt: localToWorld(s, rx, ry), index: 0 },
+            { pt: localToWorld(s, rx + rw, ry), index: 1 },
+            { pt: localToWorld(s, rx + rw, ry + rh), index: 2 },
+            { pt: localToWorld(s, rx, ry + rh), index: 3 },
+            { pt: localToWorld(s, rx + rw / 2, ry), index: 4 },
+            { pt: localToWorld(s, rx + rw, ry + rh / 2), index: 5 },
+            { pt: localToWorld(s, rx + rw / 2, ry + rh), index: 6 },
+            { pt: localToWorld(s, rx, ry + rh / 2), index: 7 }
           ]
 
           rectPoints.forEach(p => {
-            if (Math.abs(p.x - x) < tolerance && Math.abs(p.y - y) < tolerance) {
+            if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { x: rx, y: ry, width: rw, height: rh } })
             }
           })
         } else if (s.type === 'path' && s.data('arcData')) {
           const arc = s.data('arcData')
-          if (Math.abs(arc.p1.x - x) < tolerance && Math.abs(arc.p1.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 0, originalPosition: arc })
-          }
-          if (Math.abs(arc.p2.x - x) < tolerance && Math.abs(arc.p2.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 1, originalPosition: arc })
-          }
-          if (Math.abs(arc.p3.x - x) < tolerance && Math.abs(arc.p3.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 2, originalPosition: arc })
-          }
+          const pt1 = localToWorld(s, arc.p1.x, arc.p1.y)
+          const pt2 = localToWorld(s, arc.p2.x, arc.p2.y)
+          const pt3 = localToWorld(s, arc.p3.x, arc.p3.y)
+
+          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: arc })
+          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: arc })
+          if (Math.abs(pt3.x - x) < tolerance && Math.abs(pt3.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: arc })
         } else if (s.type === 'path' && s.data('circleTrimData')) {
           const arc = s.data('circleTrimData')
-          if (Math.abs(arc.startPt.x - x) < tolerance && Math.abs(arc.startPt.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
-          }
-          if (Math.abs(arc.endPt.x - x) < tolerance && Math.abs(arc.endPt.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
-          }
+          const pt1 = localToWorld(s, arc.startPt.x, arc.startPt.y)
+          const pt2 = localToWorld(s, arc.endPt.x, arc.endPt.y)
+
+          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
+          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
         }
       })
       return vertices
@@ -406,30 +426,34 @@ function Outliner(editor) {
 
     // Draw handlers for each selected element
     editor.selected.forEach((el) => {
+      // NOTE: We only draw handlers for atomic elements, not for group elements directly
+      if (el.type === 'g' && el.attr('data-group') === 'true') {
+        // Optionally, a future update could draw a bounding-box handler for the entire group here
+        return
+      }
+
       if (el.type === 'line') {
-        const x1 = el.node.x1.baseVal.value
-        const y1 = el.node.y1.baseVal.value
-        const x2 = el.node.x2.baseVal.value
-        const y2 = el.node.y2.baseVal.value
+        const pt1 = localToWorld(el, el.node.x1.baseVal.value, el.node.y1.baseVal.value)
+        const pt2 = localToWorld(el, el.node.x2.baseVal.value, el.node.y2.baseVal.value)
 
         // Draw handler at first vertex
         editor.handlers
           .rect(handlerWorldSize, handlerWorldSize)
-          .center(x1, y1)
+          .center(pt1.x, pt1.y)
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(getCoincidentVertices(x1, y1))
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt1.x, pt1.y))
           })
 
         // Draw handler at second vertex
         editor.handlers
           .rect(handlerWorldSize, handlerWorldSize)
-          .center(x2, y2)
+          .center(pt2.x, pt2.y)
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(getCoincidentVertices(x2, y2))
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt2.x, pt2.y))
           })
 
       } else if (el.type === 'circle') {
@@ -438,21 +462,21 @@ function Outliner(editor) {
         const r = el.node.r.baseVal.value
 
         const points = [
-          { x: cx, y: cy, index: 0 }, // Center
-          { x: cx, y: cy - r, index: 1 }, // Top
-          { x: cx + r, y: cy, index: 2 }, // Right
-          { x: cx, y: cy + r, index: 3 }, // Bottom
-          { x: cx - r, y: cy, index: 4 }, // Left
+          { pt: localToWorld(el, cx, cy), index: 0 }, // Center
+          { pt: localToWorld(el, cx, cy - r), index: 1 }, // Top
+          { pt: localToWorld(el, cx + r, cy), index: 2 }, // Right
+          { pt: localToWorld(el, cx, cy + r), index: 3 }, // Bottom
+          { pt: localToWorld(el, cx - r, cy), index: 4 }, // Left
         ]
 
         points.forEach((p) => {
           editor.handlers
             .rect(handlerWorldSize, handlerWorldSize)
-            .center(p.x, p.y)
-            .addClass('selection-handler')
+            .center(p.pt.x, p.pt.y)
+            .addClass('selection-handler-circle')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
       } else if (el.type === 'rect') {
@@ -462,14 +486,14 @@ function Outliner(editor) {
         const rh = el.node.height.baseVal.value
 
         const points = [
-          { x: rx, y: ry, index: 0, isCorner: true }, // TL
-          { x: rx + rw, y: ry, index: 1, isCorner: true }, // TR
-          { x: rx + rw, y: ry + rh, index: 2, isCorner: true }, // BR
-          { x: rx, y: ry + rh, index: 3, isCorner: true }, // BL
-          { x: rx + rw / 2, y: ry, index: 4, isCorner: false }, // Top
-          { x: rx + rw, y: ry + rh / 2, index: 5, isCorner: false }, // Right
-          { x: rx + rw / 2, y: ry + rh, index: 6, isCorner: false }, // Bottom
-          { x: rx, y: ry + rh / 2, index: 7, isCorner: false } // Left
+          { pt: localToWorld(el, rx, ry), index: 0 },
+          { pt: localToWorld(el, rx + rw, ry), index: 1 },
+          { pt: localToWorld(el, rx + rw, ry + rh), index: 2 },
+          { pt: localToWorld(el, rx, ry + rh), index: 3 },
+          { pt: localToWorld(el, rx + rw / 2, ry), index: 4 },
+          { pt: localToWorld(el, rx + rw, ry + rh / 2), index: 5 },
+          { pt: localToWorld(el, rx + rw / 2, ry + rh), index: 6 },
+          { pt: localToWorld(el, rx, ry + rh / 2), index: 7 }
         ]
 
         points.forEach((p) => {
@@ -484,44 +508,46 @@ function Outliner(editor) {
           }
           editor.handlers
             .rect(width, height)
-            .center(p.x, p.y)
+            .center(p.pt.x, p.pt.y)
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
       } else if (el.type === 'path' && el.data('arcData')) {
         const arc = el.data('arcData')
         const points = [
-          { x: arc.p1.x, y: arc.p1.y, index: 0 },
-          { x: arc.p2.x, y: arc.p2.y, index: 1 },
-          { x: arc.p3.x, y: arc.p3.y, index: 2 }
+          { pt: localToWorld(el, arc.p1.x, arc.p1.y) },
+          { pt: localToWorld(el, arc.p2.x, arc.p2.y) },
+          { pt: localToWorld(el, arc.p3.x, arc.p3.y) }
         ]
+
         points.forEach((p) => {
           editor.handlers
             .rect(handlerWorldSize, handlerWorldSize)
-            .center(p.x, p.y)
+            .center(p.pt.x, p.pt.y)
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
       } else if (el.type === 'path' && el.data('circleTrimData')) {
         const arc = el.data('circleTrimData')
         const points = [
-          { x: arc.startPt.x, y: arc.startPt.y, index: 0 },
-          { x: arc.endPt.x, y: arc.endPt.y, index: 1 }
+          { pt: localToWorld(el, arc.startPt.x, arc.startPt.y) },
+          { pt: localToWorld(el, arc.endPt.x, arc.endPt.y) }
         ]
+
         points.forEach((p) => {
           editor.handlers
             .rect(handlerWorldSize, handlerWorldSize)
-            .center(p.x, p.y)
+            .center(p.pt.x, p.pt.y)
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.x, p.y))
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
       }
@@ -565,38 +591,50 @@ function Outliner(editor) {
   })
 
   function childElements(group, parent, level = 1) {
-    const groupUl = document.createElement('ul')
-    const groupLi = document.createElement('li')
-    groupLi.id = 'li' + group.node.id
+    let childrenContainer = parent
+    let nextLevel = level
 
-    // Group toggle icon (let's assume it's expanded for now, or just give it a folder icon)
-    const folderIcon = document.createElement('div')
-    folderIcon.className = 'icon icon-group' // Reuse collection icon for group
-    folderIcon.style.marginRight = '4px'
-    folderIcon.style.flexShrink = '0'
+    const isExplicitGroup = group.attr('data-group') === 'true'
 
-    const groupNameSpan = document.createElement('span')
-    groupNameSpan.className = 'collection-name'
-    groupNameSpan.textContent = group.attr('name') || 'Group'
+    if (isExplicitGroup) {
+      const groupUl = document.createElement('ul')
+      const groupLi = document.createElement('li')
+      groupLi.id = 'li' + group.node.id
 
-    groupLi.style.paddingLeft = (18 + level * 10) + 'px'
-    groupLi.appendChild(folderIcon)
-    groupLi.appendChild(groupNameSpan)
+      // Group toggle icon
+      const folderIcon = document.createElement('div')
+      folderIcon.className = 'icon icon-group'
+      folderIcon.style.marginRight = '4px'
+      folderIcon.style.flexShrink = '0'
 
-    groupLi.addEventListener('click', (e) => {
-      e.stopPropagation()
-      signals.toogledSelect.dispatch(group)
-    })
+      const groupNameSpan = document.createElement('span')
+      groupNameSpan.className = 'collection-name'
+      groupNameSpan.textContent = group.attr('name') || 'Group'
 
-    groupUl.appendChild(groupLi)
+      groupLi.style.paddingLeft = (18 + level * 10) + 'px'
+      groupLi.appendChild(folderIcon)
+      groupLi.appendChild(groupNameSpan)
 
-    // Container for children
-    const childrenContainer = document.createElement('div')
+      groupLi.addEventListener('click', (e) => {
+        e.stopPropagation()
+        signals.toogledSelect.dispatch(group)
+      })
 
+      groupUl.appendChild(groupLi)
+
+      // Container for children
+      childrenContainer = document.createElement('div')
+      groupUl.appendChild(childrenContainer)
+      parent.appendChild(groupUl)
+
+      nextLevel = level + 1
+    }
+
+    // Render children into the appropriate container
     group.children().each((child) => {
       if (child.hasClass && child.hasClass('ghostLine')) return
       if (child.type === 'g') {
-        childElements(child, childrenContainer, level + 1)
+        childElements(child, childrenContainer, nextLevel)
       } else {
         const childUl = document.createElement('ul')
         const li = document.createElement('li')
@@ -667,9 +705,6 @@ function Outliner(editor) {
         childrenContainer.appendChild(childUl)
       }
     })
-
-    groupUl.appendChild(childrenContainer)
-    parent.appendChild(groupUl)
   }
 }
 

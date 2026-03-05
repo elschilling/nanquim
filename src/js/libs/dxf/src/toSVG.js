@@ -374,6 +374,8 @@ export default (parsed) => {
       layerColor = rgbToColorAttribute(getRGBForEntity(parsed.tables.layers, { layer: layerName, colorNumber: layerData.colorNumber }))
     }
 
+    const insertGroups = {}
+
     layerEntities.forEach((entity) => {
       const rgb = getRGBForEntity(parsed.tables.layers, entity)
       const boundsAndElement = entityToBoundsAndElement(entity)
@@ -387,10 +389,28 @@ export default (parsed) => {
 
         // Entity inherits layer color by default, unless it specifies its own
         const strokeColor = rgbToColorAttribute(rgb)
-        layerElements.push(
-          `<g stroke="${strokeColor}">${element}</g>`
-        )
+        const svgString = `<g stroke="${strokeColor}">${element}</g>`
+
+        if (entity.insertGroup) {
+          if (!insertGroups[entity.insertGroup]) {
+            insertGroups[entity.insertGroup] = { name: entity.insertName, elements: [] }
+          }
+          insertGroups[entity.insertGroup].elements.push(svgString)
+        } else {
+          layerElements.push(svgString)
+        }
       }
+    })
+
+    // Add block insert groups to the layer
+    Object.keys(insertGroups).forEach(groupId => {
+      const groupData = insertGroups[groupId]
+      const sanitizedName = (groupData.name || 'Block').replace(/"/g, '&quot;')
+      layerElements.push(`
+        <g id="${groupId.replace(/[^a-zA-Z0-9_\-]/g, '_')}" data-group="true" name="${sanitizedName}">
+          ${groupData.elements.join('\n')}
+        </g>
+      `)
     })
 
     if (layerElements.length > 0) {

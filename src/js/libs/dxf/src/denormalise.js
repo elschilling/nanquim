@@ -96,6 +96,10 @@ export default (parseResult) => {
                   break
                 }
               }
+              // Tag with a unique insert group ID and name so the SVG exporter can group them
+              be2.insertGroup = insert.handle || `insert_${insert.x}_${insert.y}_${Date.now()}`
+              be2.insertName = insert.block
+
               return be2
             })
             current = current.concat(gatherEntities(blockEntities, transforms2))
