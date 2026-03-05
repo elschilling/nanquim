@@ -44,7 +44,7 @@ function Terminal(editor) {
 
     // Don't auto-focus terminal if user is editing a property input
     const activeElement = document.activeElement
-    if (activeElement && activeElement.classList.contains('property-input')) {
+    if (activeElement && (activeElement.classList.contains('property-input') || activeElement.classList.contains('prefs-input'))) {
       return
     }
     terminalInput.focus()

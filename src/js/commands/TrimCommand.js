@@ -5,6 +5,7 @@ import { TrimCircleCommand } from './TrimCircleCommand'
 import { TrimArcCommand } from './TrimArcCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
+import { getPreferences } from '../Preferences'
 
 function isPointInArc(pt, arcData) {
     const { cx, cy, theta1, theta2, ccw } = arcData
@@ -36,6 +37,12 @@ class TrimCommand extends Command {
         this.isTrimming = false
         this.ghostLine = null
         this.ghostArc = null
+
+        this.boundOnPreferencesChanged = (prefs) => {
+            if (this.ghostLine) this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${prefs.hoverStrokeWidth}) !important; pointer-events: none;`)
+            if (this.ghostArc) this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${prefs.hoverStrokeWidth}) !important; pointer-events: none; fill: none !important;`)
+        }
+        this.editor.signals.preferencesChanged.add(this.boundOnPreferencesChanged)
     }
 
     execute() {
@@ -98,17 +105,21 @@ class TrimCommand extends Command {
 
     initGhosts() {
         if (!this.ghostLine) {
+            const width = getPreferences().hoverStrokeWidth
             this.ghostLine = this.editor.overlays.line(0, 0, 0, 0)
-                .stroke({ color: '#F44336', width: 0.5, opacity: 0.8, linecap: 'round' })
+                .stroke({ color: '#F44336', width: width, opacity: 0.8, linecap: 'round' })
                 .addClass('ghostLine')
             this.ghostLine.node.style.pointerEvents = 'none'
+            this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${width}) !important; pointer-events: none;`)
             this.ghostLine.hide()
         }
         if (!this.ghostArc) {
+            const width = getPreferences().hoverStrokeWidth
             this.ghostArc = this.editor.overlays.path('M 0 0')
-                .stroke({ color: '#F44336', width: 0.5, opacity: 0.8, linecap: 'round' }).fill('none')
+                .stroke({ color: '#F44336', width: width, opacity: 0.8, linecap: 'round' }).fill('none')
                 .addClass('ghostLine')
             this.ghostArc.node.style.pointerEvents = 'none'
+            this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${width}) !important; pointer-events: none; fill: none !important;`)
             this.ghostArc.hide()
         }
     }
@@ -576,9 +587,11 @@ class TrimCommand extends Command {
                 const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.r} ${p.r} 0 ${largeArc} ${sweep} ${p.endPt.x} ${p.endPt.y}`
 
                 this.ghostArc.plot(d).show().front()
+                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
             } else {
                 this.ghostArc.hide()
                 this.ghostLine.plot(p.x1, p.y1, p.x2, p.y2).show().front()
+                this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none;`)
             }
         } else {
             this.clearGhost()
@@ -602,6 +615,7 @@ class TrimCommand extends Command {
             }
 
             this.clearGhost()
+            el.removeClass('elementHover') // Remove hover BEFORE calculating or cloning styles
 
             const clickPos = this.editor.lastClick || this.editor.coordinates
             if (!clickPos) return
@@ -624,7 +638,6 @@ class TrimCommand extends Command {
 
             if (trimCommand) this.editor.execute(trimCommand)
 
-            el.removeClass('elementHover')
             this.editor.signals.requestHoverCheck.dispatch()
 
             if (source === 'selectHovered-multi') {
@@ -643,6 +656,7 @@ class TrimCommand extends Command {
         document.removeEventListener('mousemove', this.boundOnMouseMove)
         this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
+        this.editor.signals.preferencesChanged.remove(this.boundOnPreferencesChanged)
 
         if (this.ghostLine) this.ghostLine.remove()
         if (this.ghostArc) this.ghostArc.remove()

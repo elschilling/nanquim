@@ -78,6 +78,7 @@ class MatchPropertiesCommand extends Command {
             fill: computedStyle.fill !== 'none' ? computedStyle.fill : (element.attr('fill') || 'none'),
             stroke: computedStyle.stroke !== 'none' ? computedStyle.stroke : (element.attr('stroke') || 'none'),
             strokeWidth: parseFloat(computedStyle.strokeWidth) || parseFloat(element.attr('stroke-width')) || 1,
+            strokeDasharray: computedStyle.strokeDasharray !== 'none' ? computedStyle.strokeDasharray : (element.attr('stroke-dasharray') || 'none'),
             opacity: parseFloat(computedStyle.opacity) || parseFloat(element.attr('opacity')) || 1,
             collectionId: element.parent() && element.parent().attr('data-collection') === 'true' ? element.parent().attr('id') : null,
             overrides: { ...getElementOverrides(element) }
@@ -116,6 +117,14 @@ class MatchPropertiesCommand extends Command {
             if (props.fill) element.css('fill', props.fill)
             if (props.stroke) element.css('stroke', props.stroke)
             if (props.strokeWidth) element.css('stroke-width', props.strokeWidth)
+            if (props.strokeDasharray) {
+                if (props.strokeDasharray === 'none') {
+                    element.node.style.removeProperty('stroke-dasharray')
+                    element.node.removeAttribute('stroke-dasharray')
+                } else {
+                    element.css('stroke-dasharray', props.strokeDasharray)
+                }
+            }
             if (props.opacity) element.css('opacity', props.opacity)
 
             // Move to same collection

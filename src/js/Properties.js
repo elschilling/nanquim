@@ -99,6 +99,12 @@ function Properties(editor) {
       }
     })
 
+    // Default stroke dasharray
+    createPropertyField(container, 'Dash Array', data.style['stroke-dasharray'] || 'none', (value) => {
+      const val = value.trim()
+      setCollectionStyle(editor, id, { 'stroke-dasharray': val === '' ? 'none' : val })
+    })
+
     // Default fill
     createColorProperty(container, 'Fill', data.style.fill || 'transparent', (value) => {
       setCollectionStyle(editor, id, { fill: value })
@@ -435,6 +441,21 @@ function Properties(editor) {
         element.css('stroke-width', num)
         safeDispatch('refreshHandlers')
       }
+    }, false)
+
+    // Stroke Dasharray
+    const currentDasharray = element.css('stroke-dasharray') || element.attr('stroke-dasharray') || computedStyle.strokeDasharray || 'none'
+    const visualDasharray = (currentDasharray === 'none' || currentDasharray === '') ? '' : currentDasharray
+
+    createStylableProperty('stroke-dasharray', 'Dash Array', visualDasharray, (value) => {
+      const val = value.trim()
+      if (val === '') {
+        element.node.style.removeProperty('stroke-dasharray')
+        element.node.removeAttribute('stroke-dasharray')
+      } else {
+        element.css('stroke-dasharray', val)
+      }
+      safeDispatch('refreshHandlers')
     }, false)
 
     // Opacity (always element-level, no collection inheritance)

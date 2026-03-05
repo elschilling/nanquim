@@ -591,7 +591,7 @@ function Viewport(editor) {
   }
   function checkHover() {
     if (!editor.isDrawing) {
-      const distances = new Map()
+      const candidates = []
       const elements = getSelectableDrawingElements()
       elements.forEach((el) => {
         if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
@@ -627,23 +627,22 @@ function Viewport(editor) {
           }
         }
         if (distance < hoverTreshold) {
-          distances.set(el.node, distance)
-          if (!hoveredElements.some((item) => item.node === el.node)) {
-            el.addClass('elementHover')
-            hoveredElements.push(el)
-          }
-        } else {
-          el.removeClass('elementHover')
-          hoveredElements = hoveredElements.filter((item) => item.node !== el.node)
+          candidates.push({ el, distance })
         }
       })
 
-      hoveredElements.sort((a, b) => {
-        const distA = distances.get(a.node) ?? Infinity
-        const distB = distances.get(b.node) ?? Infinity
-        return distA - distB
-      })
+      // Remove hover from all previously hovered elements
+      hoveredElements.forEach((el) => el.removeClass('elementHover'))
 
+      // Sort by distance and only highlight the nearest one
+      candidates.sort((a, b) => a.distance - b.distance)
+
+      if (candidates.length > 0) {
+        candidates[0].el.addClass('elementHover')
+      }
+
+      // Store all within-threshold elements sorted by distance (for Trim/Extend)
+      hoveredElements = candidates.map((c) => c.el)
       editor.hoveredElements = hoveredElements
     }
   }
@@ -1017,6 +1016,12 @@ function Viewport(editor) {
 
         points.forEach(p => {
           targets.push(worldToScreen(p, editor.svg))
+        })
+      } else if (el.type === 'polygon' || el.type === 'polyline') {
+        el.array().forEach((pointArr) => {
+          let worldPoint = { x: pointArr[0], y: pointArr[1] }
+          let screenPoint = worldToScreen(worldPoint, editor.svg)
+          targets.push(screenPoint)
         })
       }
     })
