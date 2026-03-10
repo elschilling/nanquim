@@ -1,7 +1,6 @@
 import { Command } from '../Command'
 import { calculateDistance } from '../utils/calculateDistance'
-import { SVG } from '@svgdotjs/svg.js'
-import { bakeTransforms } from '../utils/transformGeometry'
+import { bakeTransforms, applyMatrixToPoint } from '../utils/transformGeometry'
 
 class ScaleCommand extends Command {
   constructor(editor) {
@@ -11,7 +10,7 @@ class ScaleCommand extends Command {
     this.boundOnKeyDown = this.onKeyDown.bind(this)
     this.interactiveExecutionDone = false
     this.scaleFactor = 1
-    this.originalPositions = [] // Changed from originalTransforms
+    this.originalPositions = []
   }
 
   execute() {
@@ -74,8 +73,12 @@ class ScaleCommand extends Command {
       // If a scale factor was already provided, apply it immediately
       this.scaleFactor = this.editor.distance
       this.editor.distance = null // Clear it after use
-      this.scaleElements() // Apply the scale
       this.cleanup()
+      this.performScale()
+
+      this.interactiveExecutionDone = true
+      this.editor.execute(this)
+      this.editor.lastCommand = this
     } else {
       // Otherwise, ask for a second point or scale factor
       this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point or enter a scale factor.' })
@@ -86,12 +89,16 @@ class ScaleCommand extends Command {
   }
 
   onScaleFactor(scaleFactor) {
-    console.log('onScaleFactor', scaleFactor)
     this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
     this.scaleFactor = scaleFactor
-    this.editor.distance = null // Clear it after use
-    this.scaleElements()
+    this.editor.distance = null
+
     this.cleanup()
+    this.performScale()
+
+    this.interactiveExecutionDone = true
+    this.editor.execute(this)
+    this.editor.lastCommand = this
   }
 
   onSecondPoint(point) {
@@ -103,8 +110,13 @@ class ScaleCommand extends Command {
       this.scaleFactor = dist
     }
     this.editor.distance = null
-    this.scaleElements()
+
     this.cleanup()
+    this.performScale()
+
+    this.interactiveExecutionDone = true
+    this.editor.execute(this)
+    this.editor.lastCommand = this
   }
 
   cleanup() {
@@ -125,10 +137,14 @@ class ScaleCommand extends Command {
 
     const pos = {
       type: element.type,
+      matrix: element.matrix(), // Store local matrix relative to parent
       ...data
     }
     if (element.type === 'line' || element.type === 'polyline' || element.type === 'polygon' || element.type === 'path') {
       pos.points = element.array().slice()
+      if (element.type === 'path') {
+        pos.d = element.attr('d')
+      }
     } else if (element.type === 'circle') {
       pos.cx = element.cx()
       pos.cy = element.cy()
@@ -143,127 +159,60 @@ class ScaleCommand extends Command {
       pos.y = element.y()
       pos.width = element.width()
       pos.height = element.height()
+      pos.attrs = { ...element.attr() }
     } else {
-      // path, text, etc. - fallback to x, y and rely on SVG.js internal scaling if possible
-      pos.x = element.x()
-      pos.y = element.y()
+      // fallback
+      pos.x = element.x ? element.x() : 0
+      pos.y = element.y ? element.y() : 0
+      pos.transform = element.transform ? element.transform() : null
     }
     return pos
   }
 
   applyScale(element, originalPos, factor) {
-    // Helper to scale a point relative to basePoint
-    const scalePoint = (p) => {
-      return {
-        x: this.basePoint.x + (p.x - this.basePoint.x) * factor,
-        y: this.basePoint.y + (p.y - this.basePoint.y) * factor
-      }
-    }
+    if (typeof factor !== 'number' || isNaN(factor)) return element
 
-    // Update arcData if it exists
-    if (originalPos.arcData) {
-      const ad = originalPos.arcData
-      const p1 = scalePoint(ad.p1)
-      const p2 = scalePoint(ad.p2)
-      const p3 = scalePoint(ad.p3)
-      element.data('arcData', { p1, p2, p3 })
-    }
+    const parent = element.parent()
+    const worldToParent = parent.ctm().inverse().multiply(this.editor.drawing.ctm())
+    const baseInParent = applyMatrixToPoint(worldToParent, this.basePoint.x, this.basePoint.y)
 
-    // Update circleTrimData if it exists
-    if (originalPos.circleTrimData) {
-      const ctd = originalPos.circleTrimData
-      const center = scalePoint({ x: ctd.cx, y: ctd.cy })
-      const sPt = scalePoint(ctd.startPt)
-      const ePt = scalePoint(ctd.endPt)
-      element.data('circleTrimData', {
-        ...ctd,
-        cx: center.x,
-        cy: center.y,
-        r: ctd.r * factor,
-        startPt: sPt,
-        endPt: ePt
-      })
-    }
+    // Create the scaling matrix in the parent's space
+    const sInParent = new SVG.Matrix().scale(factor, factor, baseInParent.x, baseInParent.y)
 
-    if (originalPos.type === 'line' || originalPos.type === 'polyline' || originalPos.type === 'polygon') {
-      const newPoints = originalPos.points.map((point) => {
-        const newX = this.basePoint.x + (point[0] - this.basePoint.x) * factor
-        const newY = this.basePoint.y + (point[1] - this.basePoint.y) * factor
-        return [newX, newY]
-      })
-      element.plot(newPoints)
-    } else if (originalPos.type === 'path') {
-      let newPathString = ''
-      originalPos.points.forEach((segment) => {
-        const command = segment[0]
-        newPathString += command
-        if (command.toUpperCase() === 'A') {
-          const [rx, ry, xAxisRotation, largeArcFlag, sweepFlag, x, y] = segment.slice(1)
-          const newRx = rx * factor
-          const newRy = ry * factor
-          const newX = this.basePoint.x + (x - this.basePoint.x) * factor
-          const newY = this.basePoint.y + (y - this.basePoint.y) * factor
-          newPathString += ` ${newRx} ${newRy} ${xAxisRotation} ${largeArcFlag} ${sweepFlag} ${newX} ${newY}`
-        } else {
-          for (let i = 1; i < segment.length; i += 2) {
-            const newX = this.basePoint.x + (segment[i] - this.basePoint.x) * factor
-            const newY = this.basePoint.y + (segment[i + 1] - this.basePoint.y) * factor
-            newPathString += ` ${newX} ${newY}`
-          }
-        }
-      })
-      element.plot(newPathString)
-    } else if (originalPos.type === 'circle') {
-      const newCx = this.basePoint.x + (originalPos.cx - this.basePoint.x) * factor
-      const newCy = this.basePoint.y + (originalPos.cy - this.basePoint.y) * factor
-      element.center(newCx, newCy)
-      element.radius(originalPos.radius * factor)
-    } else if (originalPos.type === 'ellipse') {
-      const newCx = this.basePoint.x + (originalPos.cx - this.basePoint.x) * factor
-      const newCy = this.basePoint.y + (originalPos.cy - this.basePoint.y) * factor
-      element.center(newCx, newCy)
-      element.rx(originalPos.rx * factor)
-      element.ry(originalPos.ry * factor)
-    } else if (originalPos.type === 'rect' || originalPos.type === 'image') {
-      const newX = this.basePoint.x + (originalPos.x - this.basePoint.x) * factor
-      const newY = this.basePoint.y + (originalPos.y - this.basePoint.y) * factor
-      element.move(newX, newY)
-      element.size(originalPos.width * factor, originalPos.height * factor)
-    } else if (element.type === 'g') {
-      const m = new SVG.Matrix()
-        .translate(this.basePoint.x, this.basePoint.y)
-        .scale(factor)
-        .translate(-this.basePoint.x, -this.basePoint.y)
-      element.transform(m)
-      bakeTransforms(element)
-    } else {
-      // path, text, etc.
-      const newX = this.basePoint.x + (originalPos.x - this.basePoint.x) * factor
-      const newY = this.basePoint.y + (originalPos.y - this.basePoint.y) * factor
-      element.move(newX, newY)
-    }
+    // Combine the new scale with the element's original local transformation
+    const finalLocalMatrix = sInParent.multiply(originalPos.matrix)
+
+    // Set the new transform and bake it into the geometry
+    element.transform(finalLocalMatrix)
+    return bakeTransforms(element)
   }
 
-  scaleElements() {
-    this.selectedElements.forEach((element, index) => {
-      const originalPos = this.originalPositions[index]
-      this.applyScale(element, originalPos, this.scaleFactor)
-    })
+  performScale() {
+    try {
+      this.selectedElements = this.selectedElements.map((element, index) => {
+        const originalPos = this.originalPositions[index]
+        return this.applyScale(element, originalPos, this.scaleFactor)
+      })
 
-    this.editor.signals.terminalLogged.dispatch({ msg: `Elements scaled by a factor of ${this.scaleFactor}.` })
-    this.editor.isInteracting = false
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
-    this.interactiveExecutionDone = true
-    this.editor.execute(this)
-    this.editor.lastCommand = this
+      this.editor.signals.terminalLogged.dispatch({ msg: `Scale applied to ${this.selectedElements.length} elements.` })
+      this.editor.signals.clearSelection.dispatch()
+      this.editor.selected = []
+    } catch (e) {
+      console.error('Error in performScale:', e)
+      this.editor.signals.terminalLogged.dispatch({
+        msg: `Error applying scale: ${e.message}. See console for details.`
+      })
+      if (e.stack) {
+        console.error(e.stack)
+      }
+    }
   }
 
   undo() {
     this.selectedElements.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
-      if (originalPos.type === 'line' || originalPos.type === 'polyline' || originalPos.type === 'polygon' || originalPos.type === 'path') {
-        element.plot(originalPos.points)
+      if (originalPos.type === 'line' || originalPos.type === 'polyline' || originalPos.type === 'polygon' || originalPos.type === 'points' || originalPos.type === 'path') {
+        element.plot(originalPos.points || originalPos.d)
       } else if (originalPos.type === 'circle') {
         element.center(originalPos.cx, originalPos.cy)
         element.radius(originalPos.radius)
@@ -271,22 +220,40 @@ class ScaleCommand extends Command {
         element.center(originalPos.cx, originalPos.cy)
         element.rx(originalPos.rx)
         element.ry(originalPos.ry)
-      } else if (originalPos.type === 'rect' || originalPos.type === 'image') {
+      } else if (originalPos.type === 'rect') {
+        if (element.type === 'polygon') {
+          const rect = element.parent().rect(originalPos.width, originalPos.height)
+          rect.move(originalPos.x, originalPos.y)
+          rect.attr(originalPos.attrs)
+          element.remove()
+          this.selectedElements[index] = rect
+        } else {
+          element.move(originalPos.x, originalPos.y)
+          element.size(originalPos.width, originalPos.height)
+        }
+      } else if (originalPos.type === 'image') {
         element.move(originalPos.x, originalPos.y)
         element.size(originalPos.width, originalPos.height)
       } else {
-        // path, text, etc.
+        // fallback
         element.move(originalPos.x, originalPos.y)
+        if (originalPos.transform) {
+          element.transform(originalPos.transform)
+        } else if (originalPos.matrix) {
+          element.transform(originalPos.matrix)
+        }
       }
+
+      // Restore metadata
+      if (originalPos.arcData) element.data('arcData', originalPos.arcData)
+      if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
     })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Scale reset.' })
   }
 
   redo() {
-    this.selectedElements.forEach((element, index) => {
-      const originalPos = this.originalPositions[index]
-      this.applyScale(element, originalPos, this.scaleFactor)
-    })
+    this.undo() // Reset to original state first
+    this.performScale()
     this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Scale applied again.' })
   }
 }

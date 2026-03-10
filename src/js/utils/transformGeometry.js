@@ -126,17 +126,7 @@ export function applyMatrixToElement(element, matrix) {
 }
 
 export function bakeTransforms(element, parentMatrix = null) {
-    const currentTransform = element.transform()
-
-    // Convert transform object to a MatrixObj (SVG.js Matrix works too, but let's be safe)
-    const localMatrix = {
-        a: currentTransform.a !== undefined ? currentTransform.a : 1,
-        b: currentTransform.b !== undefined ? currentTransform.b : 0,
-        c: currentTransform.c !== undefined ? currentTransform.c : 0,
-        d: currentTransform.d !== undefined ? currentTransform.d : 1,
-        e: currentTransform.translateX !== undefined ? currentTransform.translateX : (currentTransform.e !== undefined ? currentTransform.e : 0),
-        f: currentTransform.translateY !== undefined ? currentTransform.translateY : (currentTransform.f !== undefined ? currentTransform.f : 0)
-    }
+    const localMatrix = element.matrix()
 
     // Multiply parent by local if parent exists
     const accumulatedMatrix = parentMatrix ? {
@@ -149,28 +139,24 @@ export function bakeTransforms(element, parentMatrix = null) {
     } : localMatrix
 
     if (element.type === 'g') {
-        // Process all children with the accumulated matrix
-        element.children().forEach(child => {
+        const children = [...element.children()]
+        children.forEach(child => {
             bakeTransforms(child, accumulatedMatrix)
         })
-        // Remove the transform from the group completely since it's baked into children
+        // Once all children have baked the accumulated matrix, this group
+        // and its ancestors up to the original call point should have no transform.
         element.transform({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })
         element.node.removeAttribute('transform')
     } else {
-        // If it's a leaf node and the accumulated matrix is NOT identity, apply it
-        const isIdentity =
-            Math.abs(accumulatedMatrix.a - 1) < 1e-9 &&
-            Math.abs(accumulatedMatrix.b) < 1e-9 &&
-            Math.abs(accumulatedMatrix.c) < 1e-9 &&
-            Math.abs(accumulatedMatrix.d - 1) < 1e-9 &&
-            Math.abs(accumulatedMatrix.e) < 1e-9 &&
-            Math.abs(accumulatedMatrix.f) < 1e-9
+        // Apply the accumulated matrix to the leaf element's geometry
+        const result = applyMatrixToElement(element, accumulatedMatrix)
 
-        if (!isIdentity) {
-            applyMatrixToElement(element, accumulatedMatrix)
-            // Reset the element's own transform
-            element.transform({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })
-            element.node.removeAttribute('transform')
+        // Ensure the element has no lingering transform attribute
+        if (result && result.transform) {
+            result.transform({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })
+            result.node.removeAttribute('transform')
         }
+        return result
     }
+    return element
 }
