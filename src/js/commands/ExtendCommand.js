@@ -1,3 +1,4 @@
+import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
 import { ExtendArcCommand } from './ExtendArcCommand'
@@ -232,39 +233,17 @@ class ExtendCommand extends Command {
 
     getArcGeometry(data) {
         const { p1, p2, p3 } = data
-        const A = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
-        if (Math.abs(A) < 0.1) return null
+        const geo = getArcGeometry(p1, p2, p3)
+        if (!geo) return null
 
-        const p1sq = p1.x * p1.x + p1.y * p1.y
-        const p2sq = p2.x * p2.x + p2.y * p2.y
-        const p3sq = p3.x * p3.x + p3.y * p3.y
-
-        const B = p1sq * (p3.y - p2.y) + p2sq * (p1.y - p3.y) + p3sq * (p2.y - p1.y)
-        const C = p1sq * (p2.x - p3.x) + p2sq * (p3.x - p1.x) + p3sq * (p1.x - p2.x)
-
-        const cx = -B / (2 * A)
-        const cy = -C / (2 * A)
-        const r = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2)
-
-        let theta1 = Math.atan2(p1.y - cy, p1.x - cx) // Start
-        let theta2 = Math.atan2(p2.y - cy, p2.x - cx) // Mid
-        let theta3 = Math.atan2(p3.y - cy, p3.x - cx) // End
-        if (theta1 < 0) theta1 += 2 * Math.PI
-        if (theta2 < 0) theta2 += 2 * Math.PI
-        if (theta3 < 0) theta3 += 2 * Math.PI
-
-        let ccw = true
-        let ccwDistance = theta3 - theta1
-        if (ccwDistance < 0) ccwDistance += 2 * Math.PI
-
-        let midCcwDistance = theta2 - theta1
-        if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
-
-        if (midCcwDistance > ccwDistance) {
-            ccw = false
+        return {
+            cx: geo.cx,
+            cy: geo.cy,
+            r: geo.radius,
+            theta1: geo.theta1,
+            theta3: geo.theta3,
+            ccw: geo.ccw
         }
-
-        return { cx, cy, r, theta1, theta3, ccw }
     }
 
     calculateArcExtension(el, point) {

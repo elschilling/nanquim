@@ -1,3 +1,4 @@
+import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { applyCollectionStyleToElement } from '../Collection'
 
@@ -19,56 +20,63 @@ function reflectPoint(p, p1, p2) {
 }
 
 /**
+ * Reflects a complete SVG path array across an axis.
+ * Toggles sweep-flag for arc segments.
+ */
+function reflectPath(pathArray, p1, p2) {
+    return pathArray.map(segment => {
+        const type = segment[0]
+        const newSegment = [type]
+
+        if (type === 'M' || type === 'L' || type === 'T') {
+            const refl = reflectPoint({ x: segment[1], y: segment[2] }, p1, p2)
+            newSegment.push(refl.x, refl.y)
+        } else if (type === 'H') {
+            // Convert to L since horizontal might not be horizontal after reflection
+            const refl = reflectPoint({ x: segment[1], y: 0 }, p1, p2) // Reference y is tricky here, but path usually starts after M
+            // For simplicity in mirroring complex paths, we assume callers might have used absolute coords
+            // but H/V are rare in our generated paths. If encountered, we treat them as absolute points.
+            newSegment[0] = 'L'
+            newSegment.push(refl.x, refl.y)
+        } else if (type === 'V') {
+            const refl = reflectPoint({ x: 0, y: segment[1] }, p1, p2)
+            newSegment[0] = 'L'
+            newSegment.push(refl.x, refl.y)
+        } else if (type === 'C') {
+            const r1 = reflectPoint({ x: segment[1], y: segment[2] }, p1, p2)
+            const r2 = reflectPoint({ x: segment[3], y: segment[4] }, p1, p2)
+            const r3 = reflectPoint({ x: segment[5], y: segment[6] }, p1, p2)
+            newSegment.push(r1.x, r1.y, r2.x, r2.y, r3.x, r3.y)
+        } else if (type === 'S' || type === 'Q') {
+            const r1 = reflectPoint({ x: segment[1], y: segment[2] }, p1, p2)
+            const r2 = reflectPoint({ x: segment[3], y: segment[4] }, p1, p2)
+            newSegment.push(r1.x, r1.y, r2.x, r2.y)
+        } else if (type === 'A') {
+            // A rx ry x-axis-rotation large-arc-flag sweep-flag x y
+            const refl = reflectPoint({ x: segment[6], y: segment[7] }, p1, p2)
+            newSegment.push(segment[1], segment[2], segment[3], segment[4])
+            // TOGGLE SWEEP FLAG: mirroring flips the orientation
+            newSegment.push(segment[5] === 1 ? 0 : 1)
+            newSegment.push(refl.x, refl.y)
+        } else if (type === 'Z') {
+            // Nothing to do
+        }
+        return newSegment
+    })
+}
+
+/**
  * Rebuild an SVG arc path string from 3 defining points (same math as DrawArcCommand).
  */
 function rebuildArcPath(rp1, rp2, rp3) {
-    const A = rp1.x * (rp2.y - rp3.y) - rp1.y * (rp2.x - rp3.x) + rp2.x * rp3.y - rp3.x * rp2.y
+    const geo = getArcGeometry(rp1, rp2, rp3)
 
     // Collinear → straight line
-    if (Math.abs(A) < 0.1) {
+    if (!geo) {
         return `M ${rp1.x} ${rp1.y} L ${rp3.x} ${rp3.y}`
     }
 
-    const p1sq = rp1.x * rp1.x + rp1.y * rp1.y
-    const p2sq = rp2.x * rp2.x + rp2.y * rp2.y
-    const p3sq = rp3.x * rp3.x + rp3.y * rp3.y
-
-    const B = p1sq * (rp3.y - rp2.y) + p2sq * (rp1.y - rp3.y) + p3sq * (rp2.y - rp1.y)
-    const C = p1sq * (rp2.x - rp3.x) + p2sq * (rp3.x - rp1.x) + p3sq * (rp1.x - rp2.x)
-
-    const cx = -B / (2 * A)
-    const cy = -C / (2 * A)
-
-    let radius = Math.sqrt((cx - rp1.x) ** 2 + (cy - rp1.y) ** 2)
-    radius = Math.min(radius, 100000)
-
-    let startAngle = Math.atan2(rp1.y - cy, rp1.x - cx)
-    let midAngle = Math.atan2(rp2.y - cy, rp2.x - cx)
-    let endAngle = Math.atan2(rp3.y - cy, rp3.x - cx)
-
-    if (startAngle < 0) startAngle += 2 * Math.PI
-    if (midAngle < 0) midAngle += 2 * Math.PI
-    if (endAngle < 0) endAngle += 2 * Math.PI
-
-    let sweepFlag = 0
-    let largeArcFlag = 0
-
-    let ccwDistance = endAngle - startAngle
-    if (ccwDistance < 0) ccwDistance += 2 * Math.PI
-
-    let midCcwDistance = midAngle - startAngle
-    if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
-
-    if (midCcwDistance < ccwDistance) {
-        sweepFlag = 1
-        largeArcFlag = ccwDistance > Math.PI ? 1 : 0
-    } else {
-        sweepFlag = 0
-        let cwDistance = 2 * Math.PI - ccwDistance
-        largeArcFlag = cwDistance > Math.PI ? 1 : 0
-    }
-
-    return `M ${rp1.x} ${rp1.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${rp3.x} ${rp3.y}`
+    return `M ${rp1.x} ${rp1.y} A ${geo.radius} ${geo.radius} 0 ${geo.largeArcFlag} ${geo.sweepFlag} ${rp3.x} ${rp3.y}`
 }
 
 class MirrorCommand extends Command {
@@ -246,14 +254,19 @@ class MirrorCommand extends Command {
                     return [refl.x, refl.y]
                 })
                 clone.plot(newPoints)
-            } else if (originalPos.type === 'path' && originalPos.arcData) {
-                // Arc: reflect the 3 defining points and rebuild the SVG path
-                const ad = originalPos.arcData
-                const rp1 = reflectPoint(ad.p1, this.basePoint, p2)
-                const rp2 = reflectPoint(ad.p2, this.basePoint, p2)
-                const rp3 = reflectPoint(ad.p3, this.basePoint, p2)
-                clone.plot(rebuildArcPath(rp1, rp2, rp3))
-                clone.data('arcData', { p1: rp1, p2: rp2, p3: rp3 })
+            } else if (originalPos.type === 'path') {
+                if (originalPos.arcData) {
+                    // Arc: reflect the 3 defining points and rebuild the SVG path
+                    const ad = originalPos.arcData
+                    const rp1 = reflectPoint(ad.p1, this.basePoint, p2)
+                    const rp2 = reflectPoint(ad.p2, this.basePoint, p2)
+                    const rp3 = reflectPoint(ad.p3, this.basePoint, p2)
+                    clone.plot(rebuildArcPath(rp1, rp2, rp3))
+                    clone.data('arcData', { p1: rp1, p2: rp2, p3: rp3 })
+                } else {
+                    // General path (DXF import, etc.): reflect the path segments
+                    clone.plot(reflectPath(originalPos.pathArray, this.basePoint, p2))
+                }
             } else if (originalPos.type === 'center') {
                 const refl = reflectPoint({ x: originalPos.cx, y: originalPos.cy }, this.basePoint, p2)
                 clone.center(refl.x, refl.y)
@@ -381,6 +394,7 @@ class MirrorCommand extends Command {
             return {
                 type: 'path',
                 d: element.attr('d'),
+                pathArray: element.array().slice(),
                 ...data
             }
         } else if (element.type === 'polygon' || element.type === 'polyline') {

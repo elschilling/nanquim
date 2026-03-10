@@ -1,3 +1,4 @@
+import { getArcGeometry } from './utils/arcUtils'
 import {
   calculateDistance,
   distanceFromPointToLine,
@@ -554,50 +555,11 @@ function Viewport(editor) {
           const p2 = values.p2
           const p3 = values.p3
 
-          const A = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
-          if (Math.abs(A) < 0.1) {
+          const geo = getArcGeometry(p1, p2, p3)
+          if (!geo) {
             element.plot(`M ${p1.x} ${p1.y} L ${p3.x} ${p3.y}`)
           } else {
-            const p1sq = p1.x * p1.x + p1.y * p1.y
-            const p2sq = p2.x * p2.x + p2.y * p2.y
-            const p3sq = p3.x * p3.x + p3.y * p3.y
-
-            const B = p1sq * (p3.y - p2.y) + p2sq * (p1.y - p3.y) + p3sq * (p2.y - p1.y)
-            const C = p1sq * (p2.x - p3.x) + p2sq * (p3.x - p1.x) + p3sq * (p1.x - p2.x)
-
-            const cx = -B / (2 * A)
-            const cy = -C / (2 * A)
-
-            let radius = Math.sqrt((cx - p1.x) ** 2 + (cy - p1.y) ** 2)
-            radius = Math.min(radius, 100000)
-
-            let startAngle = Math.atan2(p1.y - cy, p1.x - cx)
-            let midAngle = Math.atan2(p2.y - cy, p2.x - cx)
-            let endAngle = Math.atan2(p3.y - cy, p3.x - cx)
-
-            if (startAngle < 0) startAngle += 2 * Math.PI
-            if (midAngle < 0) midAngle += 2 * Math.PI
-            if (endAngle < 0) endAngle += 2 * Math.PI
-
-            let sweepFlag = 0
-            let largeArcFlag = 0
-
-            let ccwDistance = endAngle - startAngle
-            if (ccwDistance < 0) ccwDistance += 2 * Math.PI
-
-            let midCcwDistance = midAngle - startAngle
-            if (midCcwDistance < 0) midCcwDistance += 2 * Math.PI
-
-            if (midCcwDistance < ccwDistance) {
-              sweepFlag = 1
-              largeArcFlag = ccwDistance > Math.PI ? 1 : 0
-            } else {
-              sweepFlag = 0
-              let cwDistance = 2 * Math.PI - ccwDistance
-              largeArcFlag = cwDistance > Math.PI ? 1 : 0
-            }
-
-            element.plot(`M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${largeArcFlag} ${sweepFlag} ${p3.x} ${p3.y}`)
+            element.plot(`M ${p1.x} ${p1.y} A ${geo.radius} ${geo.radius} 0 ${geo.largeArcFlag} ${geo.sweepFlag} ${p3.x} ${p3.y}`)
           }
 
           element.data('arcData', values)
