@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/svg.js/3.2.0/svg.min.js"></script>
+</head>
+<body>
+  <div id="drawing"></div>
+  <script>
+    var draw = SVG().addTo('#drawing').size(300, 300);
+    var group = draw.group();
+    var rect = group.rect(100, 100).fill('#f06');
+    // Rotate group 45 degrees
+    group.transform({ rotate: 45, cx: 50, cy: 50 });
+    console.log("Group bbox before move:", group.bbox());
+    // Move group by setting its x/y via .move
+    group.move(group.x() + 100, group.y() + 0);
+    console.log("Group bbox after move:", group.bbox());
+    console.log("Group transform after move:", group.transform());
+  </script>
+</body>
+</html>

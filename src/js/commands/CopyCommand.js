@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { calculateDeltaFromBasepoint } from '../utils/calculateDistance'
+import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
 
 class CopyCommand extends Command {
   constructor(editor) {
@@ -108,17 +108,20 @@ class CopyCommand extends Command {
     // Move the copied elements to the final position
     this.copiedElements.forEach((clone, index) => {
       const originalPos = this.originalPositions[index]
+      const localDelta = calculateLocalDelta(clone, dx, dy)
+      const ldx = localDelta.dx
+      const ldy = localDelta.dy
 
       if (originalPos.type === 'line') {
-        const newPoints = originalPos.points.map((p) => [p[0] + dx, p[1] + dy])
+        const newPoints = originalPos.points.map((p) => [p[0] + ldx, p[1] + ldy])
         clone.plot(newPoints)
       } else if (originalPos.type === 'center') {
-        clone.center(originalPos.cx + dx, originalPos.cy + dy)
+        clone.center(originalPos.cx + ldx, originalPos.cy + ldy)
       } else {
-        clone.move(originalPos.x + dx, originalPos.y + dy)
+        clone.move(originalPos.x + ldx, originalPos.y + ldy)
       }
 
-      this.updateArcData(clone, originalPos, dx, dy)
+      this.updateArcData(clone, originalPos, ldx, ldy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements copied.' })

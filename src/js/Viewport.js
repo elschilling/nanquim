@@ -4,6 +4,7 @@ import {
   distanceFromPointToCircle,
   distancePointToRectangleStroke,
   calculateDeltaFromBasepoint,
+  calculateLocalDelta
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
@@ -376,7 +377,8 @@ function Viewport(editor) {
         }
         ghostElements.forEach((el) => {
           const initial = initialTransforms.get(el)
-          el.transform(initial).translate(dx, dy)
+          const localDelta = calculateLocalDelta(el, dx, dy)
+          el.transform(initial).translate(localDelta.dx, localDelta.dy)
         })
       }
       if (isGhostingRotate) {
@@ -406,6 +408,7 @@ function Viewport(editor) {
     if (isGhostingOffset) {
       updateOffsetGhosts(coordinates)
     }
+
     // Handle vertex editing
     if (editor.isEditingVertex && editor.editingVertices.length > 0) {
       let point = editor.snapPoint || coordinates

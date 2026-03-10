@@ -15,6 +15,7 @@
     "vite-plugin-pug": "^0.3.2"
   },
   "dependencies": {
+    "@svgdotjs/svg.js": "^3.2.5",
     "lodash": "^4.17.21",
     "rbush": "^4.0.1",
     "vecks": "^3.9.2"

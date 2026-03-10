@@ -1,5 +1,6 @@
 import * as Helper from '../libs/dxf/src/Helper'
 import { rebuildCollectionsFromDOM } from '../Collection'
+import { bakeTransforms } from './transformGeometry'
 
 function DXFLoader(editor) {
   this.loadFile = function (file) {
@@ -43,6 +44,15 @@ function DXFLoader(editor) {
       // sit directly inside collections (but keep transform groups intact)
       if (file.name.endsWith('.dxf')) {
         flattenDXFStylingGroups(editor)
+
+        // Run the recursive transform baker to remove all 'transform=' attributes
+        // from DXF block inserts, baking the coordinates straight into the geometry.
+        // This solves all CAD-space distortion when rotating/moving nested blocks.
+        editor.drawing.children().each(collectionGroup => {
+          if (collectionGroup.attr('data-collection') === 'true') {
+            bakeTransforms(collectionGroup)
+          }
+        })
       }
 
       // Hydrate data attributes recursively (including inside collection groups)

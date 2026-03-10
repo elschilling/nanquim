@@ -41,6 +41,96 @@ function Terminal(editor) {
       if (window.openSVG) window.openSVG()
       return
     }
+    // Ctrl+C — Copy selected elements to clipboard
+    if (e.ctrlKey && e.key === 'c' && !e.shiftKey) {
+      if (editor.selected.length === 0) return
+      e.preventDefault()
+      const elements = editor.selected.map(el => {
+        const svg = el.node.outerHTML
+        return { svg }
+      })
+      const payload = JSON.stringify({ nanquimClipboard: true, elements })
+      navigator.clipboard.writeText(payload).then(() => {
+        signals.terminalLogged.dispatch({ type: 'span', msg: `Copied ${elements.length} element(s) to clipboard.` })
+      }).catch(() => {
+        signals.terminalLogged.dispatch({ type: 'span', msg: 'Failed to copy to clipboard.' })
+      })
+      return
+    }
+    // Ctrl+V — Paste elements from clipboard
+    if (e.ctrlKey && e.key === 'v' && !e.shiftKey) {
+      e.preventDefault()
+      navigator.clipboard.readText().then(text => {
+        let data
+        try { data = JSON.parse(text) } catch { return }
+        if (!data || !data.nanquimClipboard || !Array.isArray(data.elements)) return
+
+        const pasted = []
+        const SVG = editor.svg.constructor
+        const parent = editor.activeCollection || editor.drawing
+
+        data.elements.forEach(item => {
+          // Parse the SVG fragment
+          const temp = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+          temp.innerHTML = item.svg
+          const node = temp.firstElementChild
+          if (!node) return
+
+          // Add to parent and adopt into svg.js
+          parent.node.appendChild(node)
+          const el = SVG.adopt(node)
+
+          // Assign new unique ID and name
+          const newId = editor.elementIndex++
+          el.attr('id', newId)
+          const typeName = el.node.nodeName.charAt(0).toUpperCase() + el.node.nodeName.slice(1)
+          el.attr('name', typeName + ' ' + newId)
+
+          // Hydrate data- attributes into svg.js data store
+          Array.from(node.attributes).forEach(attr => {
+            if (attr.name.startsWith('data-')) {
+              const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+              try { el.data(key, JSON.parse(attr.value)) } catch { el.data(key, attr.value) }
+            }
+          })
+
+          // For groups, hydrate children recursively
+          const hydrateChildren = (parentEl) => {
+            if (!parentEl.children) return
+            parentEl.children().each(child => {
+              const childId = editor.elementIndex++
+              child.attr('id', childId)
+              if (!child.attr('name')) {
+                const cn = child.node.nodeName.charAt(0).toUpperCase() + child.node.nodeName.slice(1)
+                child.attr('name', cn + ' ' + childId)
+              }
+              Array.from(child.node.attributes).forEach(attr => {
+                if (attr.name.startsWith('data-')) {
+                  const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+                  try { child.data(key, JSON.parse(attr.value)) } catch { child.data(key, attr.value) }
+                }
+              })
+              if (child.type === 'g') hydrateChildren(child)
+            })
+          }
+          if (el.type === 'g') hydrateChildren(el)
+
+          pasted.push(el)
+        })
+
+        if (pasted.length > 0) {
+          editor.spatialIndex.markDirty()
+          signals.clearSelection.dispatch()
+          editor.selected = pasted
+          signals.updatedSelection.dispatch()
+          signals.updatedOutliner.dispatch()
+          signals.terminalLogged.dispatch({ type: 'span', msg: `Pasted ${pasted.length} element(s).` })
+        }
+      }).catch(() => {
+        signals.terminalLogged.dispatch({ type: 'span', msg: 'Failed to read clipboard.' })
+      })
+      return
+    }
 
     // Don't auto-focus terminal if user is editing a property input
     const activeElement = document.activeElement

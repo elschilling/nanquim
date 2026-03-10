@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { calculateDeltaFromBasepoint } from '../utils/calculateDistance'
+import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
 
 class MoveCommand extends Command {
   constructor(editor) {
@@ -194,20 +194,23 @@ class MoveCommand extends Command {
     this.dy = dy
     this.editor.selected.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
+      const localDelta = calculateLocalDelta(element, dx, dy)
+      const ldx = localDelta.dx
+      const ldy = localDelta.dy
 
       if (originalPos.type === 'line') {
         // For lines, translate all points
-        const newPoints = originalPos.points.map((point) => [point[0] + dx, point[1] + dy])
+        const newPoints = originalPos.points.map((point) => [point[0] + ldx, point[1] + ldy])
         element.plot(newPoints)
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
-        element.center(originalPos.cx + dx, originalPos.cy + dy)
+        element.center(originalPos.cx + ldx, originalPos.cy + ldy)
       } else {
         // For other elements, move position
-        element.move(originalPos.x + dx, originalPos.y + dy)
+        element.move(originalPos.x + ldx, originalPos.y + ldy)
       }
 
-      this.updateArcData(element, originalPos, dx, dy)
+      this.updateArcData(element, originalPos, ldx, ldy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })

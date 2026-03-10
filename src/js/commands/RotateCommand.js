@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { bakeTransforms } from '../utils/transformGeometry'
 
 class RotateCommand extends Command {
   constructor(editor) {
@@ -338,6 +339,11 @@ class RotateCommand extends Command {
         element.transform({ rotate: this.angle })
       }
     }
+
+    if (element.type === 'g') {
+      bakeTransforms(element)
+    }
+
     return element
   }
 

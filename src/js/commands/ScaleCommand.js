@@ -1,5 +1,7 @@
 import { Command } from '../Command'
 import { calculateDistance } from '../utils/calculateDistance'
+import { SVG } from '@svgdotjs/svg.js'
+import { bakeTransforms } from '../utils/transformGeometry'
 
 class ScaleCommand extends Command {
   constructor(editor) {
@@ -226,6 +228,13 @@ class ScaleCommand extends Command {
       const newY = this.basePoint.y + (originalPos.y - this.basePoint.y) * factor
       element.move(newX, newY)
       element.size(originalPos.width * factor, originalPos.height * factor)
+    } else if (element.type === 'g') {
+      const m = new SVG.Matrix()
+        .translate(this.basePoint.x, this.basePoint.y)
+        .scale(factor)
+        .translate(-this.basePoint.x, -this.basePoint.y)
+      element.transform(m)
+      bakeTransforms(element)
     } else {
       // path, text, etc.
       const newX = this.basePoint.x + (originalPos.x - this.basePoint.x) * factor
