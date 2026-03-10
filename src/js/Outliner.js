@@ -208,80 +208,7 @@ function Outliner(editor) {
 
       // Only render child DOM nodes if not collapsed (avoid thousands of DOM nodes)
       if (!data.collapsed) {
-        // Render child elements
-        data.group.children().each((child) => {
-          if (child.hasClass && child.hasClass('ghostLine')) return
-          if (child.type === 'g') childElements(child, childrenContainer)
-          else {
-            const childUl = document.createElement('ul')
-            const li = document.createElement('li')
-            li.id = 'li' + child.node.id
-
-            const childName = child.attr('name') || child.node.nodeName
-
-            // Element type icon
-            const elTypeIcon = document.createElement('div')
-            elTypeIcon.className = 'icon '
-            const elType = child.type || child.node.nodeName.toLowerCase()
-            if (elType === 'line') elTypeIcon.className += 'icon-element-line'
-            else if (elType === 'circle') elTypeIcon.className += 'icon-element-circle'
-            else if (elType === 'path') elTypeIcon.className += 'icon-element-arc'
-            else if (elType === 'rect') elTypeIcon.className += 'icon-element-rect'
-            else if (elType === 'polygon' || elType === 'polyline') elTypeIcon.className += 'icon-element-rect'
-            else elTypeIcon.className += 'icon-element-default'
-            elTypeIcon.style.marginRight = '4px'
-            elTypeIcon.style.flexShrink = '0'
-
-            const nameSpan = document.createElement('span')
-            nameSpan.className = 'collection-name'
-            nameSpan.textContent = childName
-
-            // Element icons container
-            const elIcons = document.createElement('div')
-            elIcons.className = 'collection-icons'
-
-            // Element eye icon
-            const elEyeIcon = document.createElement('div')
-            elEyeIcon.className = 'icon collection-icon icon-restrict-screen'
-            const isHidden = child.attr('data-hidden') === 'true'
-            if (isHidden) elEyeIcon.classList.add('icon-off')
-            elEyeIcon.title = isHidden ? 'Show' : 'Hide'
-            elEyeIcon.addEventListener('click', (e) => {
-              e.stopPropagation()
-              toggleElementVisibility(editor, child)
-            })
-
-            // Element lock icon
-            const elLockIcon = document.createElement('div')
-            elLockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
-            const isLocked = child.attr('data-locked') === 'true'
-            if (isLocked) elLockIcon.classList.add('icon-on')
-            else elLockIcon.classList.add('icon-off')
-            elLockIcon.title = isLocked ? 'Unlock' : 'Lock'
-            elLockIcon.addEventListener('click', (e) => {
-              e.stopPropagation()
-              toggleElementLock(editor, child)
-            })
-
-            elIcons.appendChild(elEyeIcon)
-            elIcons.appendChild(elLockIcon)
-
-            li.style.paddingLeft = '28px'
-
-            li.appendChild(elTypeIcon)
-            li.appendChild(nameSpan)
-            li.appendChild(elIcons)
-
-            li.addEventListener('click', (e) => {
-              e.stopPropagation()
-              if (data.locked || isLocked) return
-              if (isHidden) return
-              signals.toogledSelect.dispatch(child)
-            })
-            childUl.appendChild(li)
-            childrenContainer.appendChild(childUl)
-          }
-        })
+        childElements(data.group, childrenContainer, 1)
       } // end if (!data.collapsed)
 
       collectionUl.appendChild(childrenContainer)
@@ -605,8 +532,35 @@ function Outliner(editor) {
       const groupUl = document.createElement('ul')
       const groupLi = document.createElement('li')
       groupLi.id = 'li' + group.node.id
+      groupLi.className = 'collection-row' // Use same class for layout
 
-      // Group toggle icon
+      const isHidden = group.attr('data-hidden') === 'true'
+      const isLocked = group.attr('data-locked') === 'true'
+      const isCollapsed = group.attr('data-collapsed') === 'true'
+
+      if (isHidden) groupLi.classList.add('collection-hidden-row')
+      if (isLocked) groupLi.classList.add('collection-locked-row')
+
+      // Left side wrapper
+      const leftSide = document.createElement('div')
+      leftSide.style.display = 'flex'
+      leftSide.style.alignItems = 'center'
+      leftSide.style.flex = '1'
+      leftSide.style.paddingLeft = (level * 10) + 'px'
+
+      // Chevron toggle icon
+      const toggleIcon = document.createElement('div')
+      toggleIcon.className = 'icon ' + (isCollapsed ? 'icon-right' : 'icon-down')
+      toggleIcon.style.marginRight = '4px'
+      toggleIcon.style.cursor = 'pointer'
+      toggleIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (isCollapsed) group.attr('data-collapsed', null)
+        else group.attr('data-collapsed', 'true')
+        signals.updatedOutliner.dispatch()
+      })
+
+      // Group icon
       const folderIcon = document.createElement('div')
       folderIcon.className = 'icon icon-group'
       folderIcon.style.marginRight = '4px'
@@ -616,21 +570,54 @@ function Outliner(editor) {
       groupNameSpan.className = 'collection-name'
       groupNameSpan.textContent = group.attr('name') || 'Group'
 
-      groupLi.style.paddingLeft = (18 + level * 10) + 'px'
-      groupLi.appendChild(folderIcon)
-      groupLi.appendChild(groupNameSpan)
+      leftSide.appendChild(toggleIcon)
+      leftSide.appendChild(folderIcon)
+      leftSide.appendChild(groupNameSpan)
 
-      groupLi.addEventListener('click', (e) => {
+      leftSide.addEventListener('click', (e) => {
         e.stopPropagation()
         signals.toogledSelect.dispatch(group)
       })
 
+      // Icons container (right side)
+      const iconsDiv = document.createElement('div')
+      iconsDiv.className = 'collection-icons'
+
+      // Group eye icon
+      const elEyeIcon = document.createElement('div')
+      elEyeIcon.className = 'icon collection-icon icon-restrict-screen'
+      if (isHidden) elEyeIcon.classList.add('icon-off')
+      elEyeIcon.title = isHidden ? 'Show' : 'Hide'
+      elEyeIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        toggleElementVisibility(editor, group)
+      })
+
+      // Group lock icon
+      const elLockIcon = document.createElement('div')
+      elLockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+      if (isLocked) elLockIcon.classList.add('icon-on')
+      else elLockIcon.classList.add('icon-off')
+      elLockIcon.title = isLocked ? 'Unlock' : 'Lock'
+      elLockIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        toggleElementLock(editor, group)
+      })
+
+      iconsDiv.appendChild(elEyeIcon)
+      iconsDiv.appendChild(elLockIcon)
+
+      groupLi.appendChild(leftSide)
+      groupLi.appendChild(iconsDiv)
       groupUl.appendChild(groupLi)
 
       // Container for children
       childrenContainer = document.createElement('div')
+      childrenContainer.style.display = isCollapsed ? 'none' : 'block'
       groupUl.appendChild(childrenContainer)
       parent.appendChild(groupUl)
+
+      if (isCollapsed) return // Don't render children if collapsed
 
       nextLevel = level + 1
     }
@@ -644,8 +631,21 @@ function Outliner(editor) {
         const childUl = document.createElement('ul')
         const li = document.createElement('li')
         li.id = 'li' + child.node.id
+        li.className = 'collection-row' // consistent layout
 
         const childName = child.attr('name') || child.node.nodeName
+        const isHidden = child.attr('data-hidden') === 'true'
+        const isLocked = child.attr('data-locked') === 'true'
+
+        if (isHidden) li.classList.add('collection-hidden-row')
+        if (isLocked) li.classList.add('collection-locked-row')
+
+        // Left side wrapper for children
+        const leftSide = document.createElement('div')
+        leftSide.style.display = 'flex'
+        leftSide.style.alignItems = 'center'
+        leftSide.style.flex = '1'
+        leftSide.style.paddingLeft = (20 + level * 10) + 'px'
 
         // Element type icon
         const elTypeIcon = document.createElement('div')
@@ -664,6 +664,15 @@ function Outliner(editor) {
         nameSpan.className = 'collection-name'
         nameSpan.textContent = childName
 
+        leftSide.appendChild(elTypeIcon)
+        leftSide.appendChild(nameSpan)
+
+        leftSide.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (isLocked || isHidden) return
+          signals.toogledSelect.dispatch(child)
+        })
+
         // Element icons container
         const elIcons = document.createElement('div')
         elIcons.className = 'collection-icons'
@@ -671,7 +680,6 @@ function Outliner(editor) {
         // Element eye icon
         const elEyeIcon = document.createElement('div')
         elEyeIcon.className = 'icon collection-icon icon-restrict-screen'
-        const isHidden = child.attr('data-hidden') === 'true'
         if (isHidden) elEyeIcon.classList.add('icon-off')
         elEyeIcon.title = isHidden ? 'Show' : 'Hide'
         elEyeIcon.addEventListener('click', (e) => {
@@ -682,7 +690,6 @@ function Outliner(editor) {
         // Element lock icon
         const elLockIcon = document.createElement('div')
         elLockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
-        const isLocked = child.attr('data-locked') === 'true'
         if (isLocked) elLockIcon.classList.add('icon-on')
         else elLockIcon.classList.add('icon-off')
         elLockIcon.title = isLocked ? 'Unlock' : 'Lock'
@@ -694,17 +701,8 @@ function Outliner(editor) {
         elIcons.appendChild(elEyeIcon)
         elIcons.appendChild(elLockIcon)
 
-        li.style.paddingLeft = (28 + level * 10) + 'px'
-
-        li.appendChild(elTypeIcon)
-        li.appendChild(nameSpan)
+        li.appendChild(leftSide)
         li.appendChild(elIcons)
-
-        li.addEventListener('click', (e) => {
-          e.stopPropagation()
-          if (isLocked || isHidden) return
-          signals.toogledSelect.dispatch(child)
-        })
 
         childUl.appendChild(li)
         childrenContainer.appendChild(childUl)

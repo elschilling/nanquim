@@ -216,14 +216,15 @@ function applyCollectionStyle(group, style) {
  * Check if an element belongs to a hidden collection.
  */
 function isElementHidden(editor, element) {
-    let parent = element.parent()
-    while (parent && parent.node && parent.node.nodeName !== 'svg') {
-        if (parent.attr('data-collection') === 'true') break
-        parent = parent.parent()
-    }
-    if (parent && parent.attr('data-collection') === 'true') {
-        const data = editor.collections.get(parent.attr('id'))
-        if (data && !data.visible) return true
+    let current = element
+    while (current && current.node && current.node.nodeName !== 'svg') {
+        if (current.attr('data-hidden') === 'true') return true
+        if (current.attr('data-collection') === 'true') {
+            const data = editor.collections.get(current.attr('id'))
+            if (data && !data.visible) return true
+            break
+        }
+        current = current.parent()
     }
     return false
 }
@@ -232,14 +233,15 @@ function isElementHidden(editor, element) {
  * Check if an element belongs to a locked collection.
  */
 function isElementLocked(editor, element) {
-    let parent = element.parent()
-    while (parent && parent.node && parent.node.nodeName !== 'svg') {
-        if (parent.attr('data-collection') === 'true') break
-        parent = parent.parent()
-    }
-    if (parent && parent.attr('data-collection') === 'true') {
-        const data = editor.collections.get(parent.attr('id'))
-        if (data && data.locked) return true
+    let current = element
+    while (current && current.node && current.node.nodeName !== 'svg') {
+        if (current.attr('data-locked') === 'true') return true
+        if (current.attr('data-collection') === 'true') {
+            const data = editor.collections.get(current.attr('id'))
+            if (data && data.locked) return true
+            break
+        }
+        current = current.parent()
     }
     return false
 }
