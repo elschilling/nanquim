@@ -280,6 +280,33 @@ function Properties(editor) {
           safeDispatch('refreshHandlers')
         }
       })
+    } else if (node.nodeName === 'text') {
+      createPropertyField(container, 'Content', element.text(), (value) => {
+        element.text(value)
+        safeDispatch('refreshHandlers')
+      })
+      createPropertyField(container, 'X', parseFloat(element.x()).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num)) {
+          element.x(num)
+          safeDispatch('refreshHandlers')
+        }
+      })
+      createPropertyField(container, 'Y', parseFloat(element.y()).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num)) {
+          element.y(num)
+          safeDispatch('refreshHandlers')
+        }
+      })
+      const fontSize = element.font('size') || element.css('font-size') || 10
+      createPropertyField(container, 'Font Size', parseFloat(fontSize).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num) && num > 0) {
+          element.font({ size: num })
+          safeDispatch('refreshHandlers')
+        }
+      })
     } else if (node.nodeName === 'path') {
       // For paths, show bounding box info (read-only for now)
       const bbox = element.bbox()
@@ -419,8 +446,8 @@ function Properties(editor) {
       }
     }
 
-    // Fill Color (only for closed shapes or paths)
-    if (['circle', 'rect', 'path', 'polygon'].includes(node.nodeName)) {
+    // Fill Color (only for closed shapes or paths or text)
+    if (['circle', 'rect', 'path', 'polygon', 'text'].includes(node.nodeName)) {
       const currentFill = element.css('fill') || element.attr('fill')
       let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
       if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
@@ -466,6 +493,16 @@ function Properties(editor) {
       }
       safeDispatch('refreshHandlers')
     }, false)
+
+    if (node.nodeName === 'text') {
+      const currentFamily = element.font('family') || element.css('font-family') || computedStyle.fontFamily || 'sans-serif'
+      createStylableProperty('font-family', 'Font Family', currentFamily, (value) => {
+        if (value.trim() !== '') {
+          element.font({ family: value })
+          safeDispatch('refreshHandlers')
+        }
+      }, false)
+    }
 
     // Opacity (always element-level, no collection inheritance)
     createPropertyField(container, 'Opacity', parseFloat(element.css('opacity') || element.attr('opacity')) || 1, (value) => {

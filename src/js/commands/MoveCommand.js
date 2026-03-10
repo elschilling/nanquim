@@ -159,6 +159,12 @@ class MoveCommand extends Command {
         cy: element.cy(),
         ...data
       }
+    } else if (element.type === 'text') {
+      return {
+        type: 'text',
+        transform: element.transform(),
+        ...data
+      }
     } else {
       return {
         type: 'position',
@@ -206,6 +212,9 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx + ldx, originalPos.cy + ldy)
+      } else if (originalPos.type === 'text') {
+        const matrix = originalPos.transform
+        element.transform(matrix).translate(ldx, ldy)
       } else {
         // For other elements, move position
         element.move(originalPos.x + ldx, originalPos.y + ldy)
@@ -256,6 +265,8 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx, originalPos.cy)
+      } else if (originalPos.type === 'text') {
+        element.transform(originalPos.transform)
       } else {
         // For other elements, move position
         element.move(originalPos.x, originalPos.y)
@@ -280,6 +291,8 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx + this.dx, originalPos.cy + this.dy)
+      } else if (originalPos.type === 'text') {
+        element.transform(originalPos.transform).translate(this.dx, this.dy)
       } else {
         // For other elements, move position
         element.move(originalPos.x + this.dx, originalPos.y + this.dy)

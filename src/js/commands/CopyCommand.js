@@ -129,6 +129,9 @@ class CopyCommand extends Command {
         clone.plot(newPoints)
       } else if (originalPos.type === 'center') {
         clone.center(originalPos.cx + ldx, originalPos.cy + ldy)
+      } else if (originalPos.type === 'text') {
+        const matrix = originalPos.transform
+        clone.transform(matrix).translate(ldx, ldy)
       } else {
         clone.move(originalPos.x + ldx, originalPos.y + ldy)
       }
@@ -188,6 +191,12 @@ class CopyCommand extends Command {
         type: 'center',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
+      }
+    } else if (element.type === 'text') {
+      return {
+        type: 'text',
+        transform: element.transform(),
         ...data
       }
     } else {

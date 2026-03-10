@@ -81,6 +81,8 @@ class MatchPropertiesCommand extends Command {
             strokeDasharray: computedStyle.strokeDasharray !== 'none' ? computedStyle.strokeDasharray : (element.attr('stroke-dasharray') || 'none'),
             opacity: parseFloat(computedStyle.opacity) || parseFloat(element.attr('opacity')) || 1,
             collectionId: element.parent() && element.parent().attr('data-collection') === 'true' ? element.parent().attr('id') : null,
+            fontFamily: element.type === 'text' ? (element.font('family') || element.css('font-family') || computedStyle.fontFamily || 'monospace') : null,
+            fontSize: element.type === 'text' ? (parseFloat(element.font('size')) || parseFloat(element.css('font-size')) || 0.5) : null,
             overrides: { ...getElementOverrides(element) }
         }
 
@@ -126,6 +128,11 @@ class MatchPropertiesCommand extends Command {
                 }
             }
             if (props.opacity) element.css('opacity', props.opacity)
+
+            if (element.type === 'text') {
+                if (props.fontFamily) element.font({ family: props.fontFamily })
+                if (props.fontSize !== null) element.font({ size: props.fontSize })
+            }
 
             // Move to same collection
             if (props.collectionId && this.editor.collections.has(props.collectionId)) {

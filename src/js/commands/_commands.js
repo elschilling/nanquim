@@ -16,6 +16,8 @@ import { measureDistanceCommand } from './MeasureDistanceCommand'
 import { mirrorCommand } from './MirrorCommand'
 import { groupCommand } from './GroupCommand'
 import { ungroupCommand } from './UngroupCommand'
+import { hatchCommand } from './HatchCommand'
+import { textCommand } from './TextCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -90,6 +92,14 @@ const commands = {
   UNGROUP: {
     execute: ungroupCommand,
     aliases: ['ug', 'ungroup'],
+  },
+  HATCH: {
+    execute: hatchCommand,
+    aliases: ['h', 'hatch'],
+  },
+  TEXT: {
+    execute: textCommand,
+    aliases: ['t', 'text'],
   },
   // Add more commands and functions as needed
 }

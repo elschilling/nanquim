@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { Matrix } from '@svgdotjs/svg.js'
 import { bakeTransforms } from '../utils/transformGeometry'
 
 class RotateCommand extends Command {
@@ -203,8 +204,7 @@ class RotateCommand extends Command {
     } else if (element.type === 'text') {
       return {
         type: 'text',
-        x: element.x(),
-        y: element.y(),
+        transform: element.transform(),
         ...data
       }
     } else if (element.type === 'path') {
@@ -323,10 +323,9 @@ class RotateCommand extends Command {
         }
       }
     } else if (originalCoords.type === 'text') {
-      // Rotate text position from original
-      const rotated = rotatePoint(originalCoords.x, originalCoords.y)
-      element.move(rotated.x, rotated.y)
-      element.transform({ rotate: this.angle })
+      // Use pure Matrix transformation for text to avoid <tspan> coordinate lock bugs
+      const matrix = new Matrix(originalCoords.transform)
+      element.transform(matrix.rotate(this.angle, centerPoint.x, centerPoint.y))
     } else if (originalCoords.type === 'path') {
       // For paths, rotate from original path data
       this.rotatePathFromOriginal(element, originalCoords.d, angleRad, centerPoint)
@@ -489,9 +488,7 @@ class RotateCommand extends Command {
     } else if (element.type === 'text') {
       return {
         type: 'text',
-        x: element.x(),
-        y: element.y(),
-        transform: element.transform ? element.transform() : null,
+        transform: element.transform(),
       }
     } else if (element.type === 'path') {
       return {
@@ -546,8 +543,8 @@ class RotateCommand extends Command {
           element.move(originalState.x, originalState.y)
         }
       } else if (originalState.type === 'text') {
-        element.move(originalState.x, originalState.y)
-        element.transform(originalState.transform)
+        const matrix = originalState.transform
+        element.transform(matrix)
       } else if (originalState.type === 'path') {
         element.attr('d', originalState.d)
       } else {

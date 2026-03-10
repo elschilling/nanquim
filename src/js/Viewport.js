@@ -719,6 +719,25 @@ function Viewport(editor) {
       } else if (el.type === 'ellipse') {
         const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
         distance = calculateDistance(coordinates, center)
+      } else if (el.type === 'text') {
+        const bbox = el.bbox()
+        const pts = [
+          toRootSpace(bbox.x, bbox.y),
+          toRootSpace(bbox.x + bbox.width, bbox.y),
+          toRootSpace(bbox.x + bbox.width, bbox.y + bbox.height),
+          toRootSpace(bbox.x, bbox.y + bbox.height)
+        ]
+        let minDist = Infinity
+        // Check if cursor is inside bounding box loosely, or get distance to edges
+        if (isPolygonIntersectingRect(pts, { x: coordinates.x, y: coordinates.y, width: 0, height: 0 })) {
+          distance = 0
+        } else {
+          for (let i = 0; i < 4; i++) {
+            const d = distanceFromPointToLine(coordinates, pts[i], pts[(i + 1) % 4])
+            if (d < minDist) minDist = d
+          }
+          distance = minDist
+        }
       }
 
       if (distance !== undefined && distance < hoverTreshold) {
@@ -1008,6 +1027,15 @@ function Viewport(editor) {
           } else {
             el.array().forEach(p => pts.push(toRootSpace(p[0], p[1])))
           }
+          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+        } else if (el.type === 'text') {
+          const bbox = el.bbox()
+          const pts = [
+            toRootSpace(bbox.x, bbox.y),
+            toRootSpace(bbox.x + bbox.width, bbox.y),
+            toRootSpace(bbox.x + bbox.width, bbox.y + bbox.height),
+            toRootSpace(bbox.x, bbox.y + bbox.height)
+          ]
           isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
         } else {
           // Fallback to bbox if type is unhandled (e.g. ellipse)

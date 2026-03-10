@@ -105,7 +105,7 @@ function Navbar(editor) {
 
     const svgString = [
       `<?xml version="1.0" encoding="UTF-8"?>`,
-      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"`,
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs"`,
       `  viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}"`,
       `  data-nanquim-version="1"`,
       `  data-element-index="${editor.elementIndex}"`,

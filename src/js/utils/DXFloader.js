@@ -14,11 +14,24 @@ function DXFLoader(editor) {
         data = new Helper.default(data).toSVG()
       } else if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
         console.log('loading svg')
+
+        // Repair older Nanquim SVGs missing the svgjs namespace definition
+        if (!data.includes('xmlns:svgjs=')) {
+          data = data.replace('<svg ', '<svg xmlns:svgjs="http://svgjs.com/svgjs" ')
+        }
       }
       console.log(data)
       const parser = new DOMParser()
       const doc = parser.parseFromString(data, 'image/svg+xml')
       const svgRoot = doc.documentElement
+
+      if (svgRoot.nodeName === 'parsererror' || doc.getElementsByTagName('parsererror').length > 0) {
+        console.error('SVG Parsing Error:', doc.documentElement.textContent)
+        if (editor.signals && editor.signals.terminalLogged) {
+          editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Failed to open SVG: Corrupted or invalid format.' })
+        }
+        return
+      }
 
       // Read Nanquim metadata if present
       const savedElementIndex = svgRoot.getAttribute('data-element-index')
