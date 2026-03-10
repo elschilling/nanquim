@@ -96,6 +96,9 @@ function DXFLoader(editor) {
       // Rebuild collections from DOM (handles legacy and new files)
       rebuildCollectionsFromDOM(editor)
 
+      // Build spatial index for fast hit-testing on the imported geometry
+      editor.spatialIndex.rebuild(editor)
+
       editor.signals.updatedOutliner.dispatch()
       editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Opened: ' + file.name })
     }

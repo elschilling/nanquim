@@ -1,6 +1,7 @@
 import { History as _History } from './History'
 import { DXFLoader } from './utils/DXFloader'
 import { initCollections } from './Collection'
+import { SpatialIndex } from './SpatialIndex'
 
 function Editor() {
   const Signal = signals.Signal
@@ -68,6 +69,9 @@ function Editor() {
 
   // Initialize collection system (creates default collection)
   initCollections(this)
+
+  // Spatial index for fast hit-testing (R-tree)
+  this.spatialIndex = new SpatialIndex()
 }
 
 Editor.prototype = {
@@ -81,6 +85,7 @@ Editor.prototype = {
     // parent.put(element)
     element.putIn(parent)
     // element[0].remove()
+    this.spatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
   },
 
@@ -99,6 +104,7 @@ Editor.prototype = {
 
     element.remove()
     // element[0].remove()
+    this.spatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
   },
 

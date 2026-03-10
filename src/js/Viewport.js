@@ -57,9 +57,13 @@ function Viewport(editor) {
 
   signals.updatedOutliner.add(() => {
     hoveredElements = []
+    editor.spatialIndex.markDirty()
   })
   signals.clearSelection.add(() => {
     hoveredElements = []
+  })
+  signals.commandCancelled.add(() => {
+    editor.spatialIndex.markDirty()
   })
 
   signals.requestHoverCheck.add(() => {
@@ -618,7 +622,6 @@ function Viewport(editor) {
   function checkHover() {
     if (!editor.isDrawing) {
       const candidates = []
-      const elements = getSelectableDrawingElements()
       const svgNode = svg.node
 
       // Compute inverted SVG root CTM once per frame (not per element)
@@ -630,41 +633,21 @@ function Viewport(editor) {
         hasSvgCTM = Math.abs(svgInvDet) > 1e-10
       }
 
-      // Pre-compute padding for bbox pre-filter (the hover threshold in SVG units)
       const pad = hoverTreshold
 
-      elements.forEach((el) => {
+      // ---- R-TREE SPATIAL QUERY ----
+      // Only check elements whose bbox overlaps the cursor vicinity
+      editor.spatialIndex.ensureFresh(editor)
+      const rtreeCandidates = editor.spatialIndex.search({
+        minX: coordinates.x - pad,
+        minY: coordinates.y - pad,
+        maxX: coordinates.x + pad,
+        maxY: coordinates.y + pad,
+      })
+
+      rtreeCandidates.forEach((item) => {
+        const el = item.element
         if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
-
-        // ---- BBOX PRE-FILTER ----
-        // Use the element's screen-space bbox to quickly skip elements far from cursor.
-        // getBBox() is faster than getCTM() per element, and we only call getCTM()
-        // on elements that pass this coarse filter.
-        try {
-          const bbox = el.node.getBBox()
-          const ctm = el.node.getCTM()
-          if (ctm && hasSvgCTM) {
-            // Transform bbox center to root space for a quick distance check
-            const cx = bbox.x + bbox.width / 2
-            const cy = bbox.y + bbox.height / 2
-            const ex = ctm.a * cx + ctm.c * cy + ctm.e
-            const ey = ctm.b * cx + ctm.d * cy + ctm.f
-            const rootCx = (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet
-            const rootCy = (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet
-
-            // Estimate the max extent of the element in root space
-            const halfW = Math.max(bbox.width, bbox.height) * Math.max(Math.abs(ctm.a), Math.abs(ctm.d)) / 2
-            const coarseDist = Math.max(
-              Math.abs(coordinates.x - rootCx) - halfW,
-              Math.abs(coordinates.y - rootCy) - halfW,
-              0
-            )
-            // Skip if even the coarse check shows it's way too far
-            if (coarseDist > pad * 3) return
-          }
-        } catch (e) {
-          // getBBox can throw for elements not in the DOM; skip pre-filter
-        }
 
         // ---- PRECISE DISTANCE ----
         let distance
@@ -947,84 +930,50 @@ function Viewport(editor) {
   }
 
   function findElements(rect, selectionMode) {
-    const elements = getSelectableDrawingElements()
-    const groupCandidates = new Set() // Track ancestors to prevent duplicate hover classes
+    // ---- R-TREE SPATIAL QUERY for rectangle selection ----
+    editor.spatialIndex.ensureFresh(editor)
+    const rtreeResults = editor.spatialIndex.search({
+      minX: rect.x,
+      minY: rect.y,
+      maxX: rect.x + rect.width,
+      maxY: rect.y + rect.height,
+    })
 
-    elements.forEach((el) => {
-      // Skip background/ghost elements
+    // Clear previous hover state from all hovered elements
+    hoveredElements.forEach((el) => {
+      const removeHoverRecursive = (node) => {
+        node.removeClass('elementHover')
+        if (node.type === 'g' && node.children) {
+          node.children().each(removeHoverRecursive)
+        }
+      }
+      removeHoverRecursive(el)
+    })
+    hoveredElements = []
+
+    const groupCandidates = new Set()
+
+    // Only iterate R-tree candidates (not all elements)
+    // Use the R-tree's world-space bbox (item.minX/minY/maxX/maxY) for
+    // containment/intersection checks, since both the selection rect and the
+    // R-tree bboxes are in SVG viewBox space.
+    rtreeResults.forEach((item) => {
+      const el = item.element
       if (el.hasClass('selectionRectangle') || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) return
 
-      const bbox = el.bbox()
-
       let isInsideOrIntersecting = false
+
       if (selectionMode === 'intersect') {
-        if (el.type === 'path') {
-          const pathLength = el.length()
-          if (pathLength > 0) {
-            isInsideOrIntersecting = true // Assume it is, until proven otherwise
-            const step = Math.max(1, pathLength / 20)
-            for (let i = 0; i <= pathLength; i += step) {
-              const p = el.pointAt(i)
-              if (!(p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height)) {
-                isInsideOrIntersecting = false
-                break
-              }
-            }
-          } else {
-            isInsideOrIntersecting = false
-          }
-        } else {
-          // Check if the element's bounding box is completely inside the selection rectangle
-          isInsideOrIntersecting =
-            bbox.x >= rect.x &&
-            bbox.y >= rect.y &&
-            bbox.x + bbox.width <= rect.x + rect.width &&
-            bbox.y + bbox.height <= rect.y + rect.height
-        }
+        // Window select (left-to-right): element must be completely inside rect
+        isInsideOrIntersecting =
+          item.minX >= rect.x &&
+          item.minY >= rect.y &&
+          item.maxX <= rect.x + rect.width &&
+          item.maxY <= rect.y + rect.height
       } else if (selectionMode === 'inside') {
-        if (el.type === 'line') {
-          const line = {
-            x1: el.node.x1.baseVal.value,
-            y1: el.node.y1.baseVal.value,
-            x2: el.node.x2.baseVal.value,
-            y2: el.node.y2.baseVal.value,
-          }
-          isInsideOrIntersecting = isLineIntersectingRect(line, rect)
-        } else if (el.type === 'circle') {
-          const circle = { cx: el.node.cx.baseVal.value, cy: el.node.cy.baseVal.value, r: el.node.r.baseVal.value }
-          isInsideOrIntersecting = isCircleIntersectingRect(circle, rect)
-        } else if (el.type === 'polygon') {
-          const polygon = el.array().map((point) => ({ x: point[0], y: point[1] }))
-          isInsideOrIntersecting = isPolygonIntersectingRect(polygon, rect)
-        } else if (el.type === 'path') {
-          const pathLength = el.length()
-          if (pathLength > 0) {
-            const polyline = []
-            const step = Math.max(1, pathLength / 20) // Sample at least 20 points
-            for (let i = 0; i <= pathLength; i += step) {
-              polyline.push(el.pointAt(i))
-            }
-            // Check if any segment of the polyline intersects the rect
-            for (let i = 0; i < polyline.length - 1; i++) {
-              const line = { x1: polyline[i].x, y1: polyline[i].y, x2: polyline[i + 1].x, y2: polyline[i + 1].y }
-              if (isLineIntersectingRect(line, rect)) {
-                isInsideOrIntersecting = true
-                break
-              }
-            }
-            // If no intersection, check if the path is completely inside
-            if (!isInsideOrIntersecting) {
-              const p = el.pointAt(0)
-              if (p.x >= rect.x && p.x <= rect.x + rect.width && p.y >= rect.y && p.y <= rect.y + rect.height) {
-                isInsideOrIntersecting = true
-              }
-            }
-          }
-        } else {
-          // Fallback to bounding box for other element types
-          isInsideOrIntersecting =
-            bbox.x < rect.x + rect.width && bbox.x + bbox.width > rect.x && bbox.y < rect.y + rect.height && bbox.y + bbox.height > rect.y
-        }
+        // Crossing select (right-to-left): element bbox overlaps rect
+        // The R-tree search already guarantees bbox overlap, so all candidates qualify
+        isInsideOrIntersecting = true
       }
 
       if (isInsideOrIntersecting) {
@@ -1033,7 +982,6 @@ function Viewport(editor) {
         if (!groupCandidates.has(selectableAncestor.node)) {
           groupCandidates.add(selectableAncestor.node)
 
-          // Apply hover visually to all children recursively if it's a group
           const applyHoverRecursive = (node) => {
             node.addClass('elementHover')
             if (node.type === 'g' && node.children) {
@@ -1042,23 +990,9 @@ function Viewport(editor) {
           }
           applyHoverRecursive(selectableAncestor)
 
-          // Check if element is already in hoveredElements using node identity
           if (!hoveredElements.some((item) => item.node === selectableAncestor.node)) {
             hoveredElements.push(selectableAncestor)
           }
-        }
-      } else {
-        // Only strip hover if this element's selectable ancestor isn't already marked by another child
-        const selectableAncestor = findSelectableAncestor(el)
-        if (!groupCandidates.has(selectableAncestor.node)) {
-          const removeHoverRecursive = (node) => {
-            node.removeClass('elementHover')
-            if (node.type === 'g' && node.children) {
-              node.children().each(removeHoverRecursive)
-            }
-          }
-          removeHoverRecursive(selectableAncestor)
-          hoveredElements = hoveredElements.filter((item) => item.node !== selectableAncestor.node)
         }
       }
     })
@@ -1111,18 +1045,34 @@ function Viewport(editor) {
 
   function checkSnap(coordinates) {
     let targets = []
-    let snapCandidates = getSelectableElements(editor)
+
+    // ---- R-TREE SPATIAL QUERY for snap ----
+    // Convert snap tolerance from screen pixels to world units
+    const vb = svg.viewbox()
+    const svgWidth = svg.node.clientWidth || svg.node.getBoundingClientRect().width || 1
+    const worldPerPixel = vb.width / svgWidth
+    const snapWorldRadius = snapTolerance * worldPerPixel
+    const cursorWorld = svg.point(coordinates.x, coordinates.y)
+
+    editor.spatialIndex.ensureFresh(editor)
+    const nearbyCandidates = editor.spatialIndex.search({
+      minX: cursorWorld.x - snapWorldRadius,
+      minY: cursorWorld.y - snapWorldRadius,
+      maxX: cursorWorld.x + snapWorldRadius,
+      maxY: cursorWorld.y + snapWorldRadius,
+    })
+
+    // Build snap candidates from R-tree results, applying the same filters
+    let snapCandidates = nearbyCandidates.map(item => item.element)
     if (editor.isDrawing) {
-      // Actively drawn elements don't get an ID until drawstop finishes
       snapCandidates = snapCandidates.filter(el => el.attr('id') !== undefined && el.attr('id') !== null)
     }
     if (editor.isEditingVertex && editor.editingVertices.length > 0) {
       const editingNodes = editor.editingVertices.map(v => v.element.node)
       snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
     }
-    // console.log('snapCandidates', snapCandidates)
+
     snapCandidates.forEach((el) => {
-      // TO DO: Add other types
       if (el.type === 'line') {
         el.array().forEach((pointArr) => {
           let worldPoint = { x: pointArr[0], y: pointArr[1] }
@@ -1191,7 +1141,6 @@ function Viewport(editor) {
       if (distance < snapTolerance && distance < minDistance) {
         minDistance = distance
         closest = target
-        // console.log('distance', distance)
       }
     }
     const currentZoom = editor.svg.zoom()
