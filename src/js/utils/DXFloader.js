@@ -47,10 +47,13 @@ function DXFLoader(editor) {
         svgContent += new XMLSerializer().serializeToString(child)
       })
 
-      // If the file was saved with white strokes converted to black, revert them
+      // If the file was saved with white strokes/fills converted to black, revert them
       if (convertedStrokes) {
         svgContent = svgContent.replace(/stroke\s*=\s*(["'])#000000\1/gi, 'stroke=$1#ffffff$1')
         svgContent = svgContent.replace(/stroke\s*:\s*#000000/gi, 'stroke: #ffffff')
+
+        svgContent = svgContent.replace(/fill\s*=\s*(["'])#000000\1/gi, 'fill=$1#ffffff$1')
+        svgContent = svgContent.replace(/fill\s*:\s*#000000/gi, 'fill: #ffffff')
       }
 
       console.log('svgContent', svgContent)

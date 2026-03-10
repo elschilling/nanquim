@@ -22,7 +22,7 @@ class DrawCircleCommand extends Command {
 
   draw(centerPoint) {
     if (this.isDrawing) {
-      let circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw()
+      let circle = this.drawing.circle().fill('transparent').draw()
       applyCollectionStyleToElement(this.editor, circle)
       let hasCenter = !!centerPoint
 
@@ -30,7 +30,7 @@ class DrawCircleCommand extends Command {
         // Simulate a click at the center point to start drawing
         circle.draw('cancel')
         circle.remove()
-        circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw({ startPoint: centerPoint })
+        circle = this.drawing.circle().fill('transparent').draw({ startPoint: centerPoint })
         applyCollectionStyleToElement(this.editor, circle)
         this.editor.signals.terminalLogged.dispatch({
           type: 'span',
@@ -82,7 +82,7 @@ class DrawCircleCommand extends Command {
             // Create circle with exact center and radius
             let newCircle = this.drawing
               .circle(radius * 2)
-              .addClass('newDrawing')
+
               .fill('transparent')
               .center(centerPoint.x, centerPoint.y)
             applyCollectionStyleToElement(this.editor, newCircle)

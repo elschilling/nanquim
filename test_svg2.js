@@ -1,17 +1,24 @@
 import { createSVGWindow } from 'svgdom';
 const window = createSVGWindow();
 const document = window.document;
-import { SVG, registerWindow, Matrix } from '@svgdotjs/svg.js';
+import { SVG, registerWindow } from '@svgdotjs/svg.js';
 registerWindow(window, document);
 
 const draw = SVG().addTo(document.documentElement)
-const text = draw.text("Hello")
 
-text.transform({ translateX: 100, translateY: 100 })
-const originalTransform = text.transform()
+// Simulate Nanquim's CSS rules
+const style = document.createElement('style')
+style.textContent = `
+    .newDrawing { stroke: white; }
+`
+document.documentElement.appendChild(style)
 
-// Using Matrix class
-const m1 = new Matrix(originalTransform)
-const m2 = m1.rotate(90, 100, 100)
-text.transform(m2)
-console.log("After Matrix rotate:", text.node.outerHTML)
+const text = draw.text("Test").addClass("newDrawing")
+text.css('stroke', 'none')
+
+// This is what Nanquim does:
+const computedStyle = window.getComputedStyle(text.node)
+console.log("computedStyle.stroke ===", computedStyle.stroke)
+console.log("element.attr('stroke') ===", text.attr('stroke'))
+console.log("element.css('stroke') ===", text.css('stroke'))
+

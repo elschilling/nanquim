@@ -65,7 +65,7 @@ class TextCommand extends Command {
             return
         }
 
-        let textElement = this.drawing.text(textValue).addClass('newDrawing')
+        let textElement = this.drawing.text(textValue)
         textElement.font({ size: 0.5, family: 'monospace' }) // setup default font size BEFORE move to fix bbox calcs
 
         // Position text

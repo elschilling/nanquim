@@ -438,7 +438,7 @@ class FilletCommand extends Command {
     arcPath.attr('name', 'Arc')
 
     arcPath.attr(inheritedStyles)
-    arcPath.addClass('newDrawing')
+    arcPath
     this.editor.signals.updatedOutliner.dispatch()
 
     // Store created arc for undo

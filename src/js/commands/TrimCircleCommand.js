@@ -29,7 +29,7 @@ class TrimCircleCommand extends Command {
 
         copyDOMStyles(source.node, target.node)
         target.attr('fill', 'none')
-        target.addClass('newDrawing')
+        target
     }
 
     execute() {

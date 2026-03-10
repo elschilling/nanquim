@@ -53,7 +53,7 @@ class TrimLineCommand extends Command {
 
                 const rawId = this.newLine.node.id.replace('SvgjsLine', '')
                 this.newLine.attr('name', 'Line ' + rawId)
-                this.newLine.addClass('newDrawing')
+                this.newLine
 
                 this.editor.signals.updatedOutliner.dispatch()
             } else {

@@ -30,7 +30,7 @@ class TrimRectCommand extends Command {
         }
 
         copyDOMStyles(source.node, target.node)
-        target.addClass('newDrawing')
+        target
     }
 
     execute() {

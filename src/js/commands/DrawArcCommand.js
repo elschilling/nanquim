@@ -49,7 +49,6 @@ class DrawArcCommand extends Command {
 
             // Start drawing the visual path
             this.arcPath = this.drawing.path(`M ${point.x} ${point.y} L ${point.x} ${point.y}`)
-                .addClass('newDrawing')
                 .fill('none')
                 .stroke({ color: 'white', width: 0.1, linecap: 'round' })
             applyCollectionStyleToElement(this.editor, this.arcPath)
@@ -126,7 +125,7 @@ class DrawArcCommand extends Command {
         this.editor.setIsDrawing(false)
         this.points = []
 
-        if (this.arcPath && this.arcPath.hasClass('newDrawing')) {
+        if (this.arcPath) {
             this.arcPath.remove()
             this.arcPath = null
         }

@@ -201,9 +201,9 @@ class RotateCommand extends Command {
         height: element.height(),
         ...data
       }
-    } else if (element.type === 'text') {
+    } else if (element.type === 'text' || element.type === 'g') {
       return {
-        type: 'text',
+        type: element.type,
         transform: element.transform(),
         ...data
       }
@@ -322,8 +322,8 @@ class RotateCommand extends Command {
           element.transform({ rotate: this.angle })
         }
       }
-    } else if (originalCoords.type === 'text') {
-      // Use pure Matrix transformation for text to avoid <tspan> coordinate lock bugs
+    } else if (originalCoords.type === 'text' || originalCoords.type === 'g') {
+      // Use pure Matrix transformation for text and block groups to avoid coordinate lock bugs
       const matrix = new Matrix(originalCoords.transform)
       element.transform(matrix.rotate(this.angle, centerPoint.x, centerPoint.y))
     } else if (originalCoords.type === 'path') {
@@ -338,10 +338,6 @@ class RotateCommand extends Command {
       if (element.transform) {
         element.transform({ rotate: this.angle })
       }
-    }
-
-    if (element.type === 'g') {
-      bakeTransforms(element)
     }
 
     return element
@@ -485,9 +481,9 @@ class RotateCommand extends Command {
         height: element.height(),
         attrs: { ...element.attr() }, // Copy all attributes
       }
-    } else if (element.type === 'text') {
+    } else if (element.type === 'text' || element.type === 'g') {
       return {
-        type: 'text',
+        type: element.type,
         transform: element.transform(),
       }
     } else if (element.type === 'path') {
@@ -542,7 +538,7 @@ class RotateCommand extends Command {
         } else {
           element.move(originalState.x, originalState.y)
         }
-      } else if (originalState.type === 'text') {
+      } else if (originalState.type === 'text' || originalState.type === 'g') {
         const matrix = originalState.transform
         element.transform(matrix)
       } else if (originalState.type === 'path') {

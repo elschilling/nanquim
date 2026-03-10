@@ -22,7 +22,7 @@ class DrawRectangleCommand extends Command {
   draw() {
     const rect = this.drawing
       .rect()
-      .addClass('newDrawing')
+
       .fill('none')
       .attr('id', this.editor.elementIndex++)
     applyCollectionStyleToElement(this.editor, rect)

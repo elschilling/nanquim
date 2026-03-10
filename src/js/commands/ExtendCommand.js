@@ -407,7 +407,7 @@ class ExtendCommand extends Command {
 
                 this.ghostLine = this.editor.overlays.path(d)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none') // styling as a preview
-                    .addClass('newDrawing')
+
                     .addClass('ghostLine')
             } else {
                 // Create ghost line
@@ -418,7 +418,7 @@ class ExtendCommand extends Command {
 
                 this.ghostLine = this.editor.overlays.line(x1, y1, x2, y2)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }) // styling as a preview
-                    .addClass('newDrawing')
+
                     .addClass('ghostLine')
             }
         }

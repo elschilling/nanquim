@@ -68,7 +68,6 @@ function Viewport(editor) {
     })
     editor.selected = []
     editor.handlers.clear()
-    hoveredElements = []
     clearHover()
     clearSelectionRectangle()
   })

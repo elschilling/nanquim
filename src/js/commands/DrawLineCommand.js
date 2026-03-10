@@ -22,7 +22,7 @@ class DrawLineCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
+      let line = this.drawing.line().draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
       applyCollectionStyleToElement(this.editor, line)
       line.on('drawstart', (e) => {
         startPoint = e.detail.startPoint
@@ -61,7 +61,7 @@ class DrawLineCommand extends Command {
             this.draw({ x: coord.x, y: coord.y })
           } else {
             // Start point exists - draw line to absolute coordinate
-            let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y).addClass('newDrawing')
+            let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y)
             applyCollectionStyleToElement(this.editor, newLine)
             newLine.attr('id', this.editor.elementIndex++)
             newLine.attr('name', 'Line')

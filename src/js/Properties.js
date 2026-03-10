@@ -1,4 +1,5 @@
 import { setCollectionStyle, getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from './Collection'
+import { Matrix } from '@svgdotjs/svg.js'
 
 const propertiesPanel = document.getElementById('properties-panel')
 
@@ -314,6 +315,32 @@ function Properties(editor) {
       createPropertyField(container, 'Y', bbox.y.toFixed(2), null, true)
       createPropertyField(container, 'Width', bbox.width.toFixed(2), null, true)
       createPropertyField(container, 'Height', bbox.height.toFixed(2), null, true)
+    }
+
+    // Universal Rotation Field
+    if (element.transform) {
+      const currentRotation = element.transform().rotate || 0
+      createPropertyField(container, 'Rotation', parseFloat(currentRotation).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num)) {
+          const currentRot = element.transform().rotate || 0
+          const delta = num - currentRot
+          if (delta !== 0) {
+            const bbox = element.bbox()
+            const transform = element.transform()
+            const matrix = new Matrix(transform)
+
+            // The `Matrix.rotate` method acts on the global coordinate space.
+            // Map the element's local (untransformed) bounding center into global space:
+            const globalCx = matrix.a * bbox.cx + matrix.c * bbox.cy + matrix.e
+            const globalCy = matrix.b * bbox.cx + matrix.d * bbox.cy + matrix.f
+
+            element.transform(matrix.rotate(delta, globalCx, globalCy))
+            safeDispatch('refreshHandlers')
+            safeDispatch('updatedProperties')
+          }
+        }
+      })
     }
   }
 

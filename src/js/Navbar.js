@@ -45,21 +45,7 @@ function Navbar(editor) {
           el.attr('data-circle-trim-data', JSON.stringify(el.data('circleTrimData')))
         }
 
-        // Bake CSS styles into inline attributes so standalone SVGs render correctly
-        if (el.hasClass('newDrawing')) {
-          el.attr('data-temp-export-baked', 'true')
-          if (convertStrokes) {
-            el.stroke({ color: '#000000', width: 0.1, linecap: 'round' })
-          } else {
-            el.stroke({ color: '#ffffff', width: 0.1, linecap: 'round' })
-          }
-
-          // Only override fill if it's not already explicitly set
-          if (!el.attr('fill')) {
-            el.attr('data-temp-fill-export', 'true')
-            el.fill('none')
-          }
-        }
+        // Baking legacy styles deprecated: Managed by Collection inline overrides
       }
       if (group.attr('data-collection') === 'true') {
         group.children().each(iterFn)
@@ -71,33 +57,19 @@ function Navbar(editor) {
     // Get inner content only (no wrapping <g> tag)
     let drawingContent = editor.drawing.node.innerHTML
 
-    // Revert the temporary baked attributes so the live editor goes back to using CSS variables
-    editor.drawing.children().each((group) => {
-      const revertFn = (el) => {
-        if (el.attr('data-temp-export-baked')) {
-          el.node.removeAttribute('stroke')
-          el.node.removeAttribute('stroke-width')
-          el.node.removeAttribute('stroke-linecap')
-          el.node.removeAttribute('data-temp-export-baked')
-        }
-        if (el.attr('data-temp-fill-export')) {
-          el.node.removeAttribute('fill')
-          el.node.removeAttribute('data-temp-fill-export')
-        }
-      }
-      if (group.attr('data-collection') === 'true') {
-        group.children().each(revertFn)
-      } else {
-        revertFn(group)
-      }
-    })
+    // Revert logic decoupled: Export relies strictly on inline rendering variables
 
-    // Convert any explicit white inline strokes to black for standalone SVG visibility
+    // Convert any explicit white inline strokes and fills to black for standalone SVG visibility
     if (convertStrokes) {
       // Handle stroke="..." attributes
       drawingContent = drawingContent.replace(/stroke\s*=\s*["'](?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))["']/gi, 'stroke="#000000"')
       // Handle stroke: ... inside style="..." attributes
       drawingContent = drawingContent.replace(/stroke\s*:\s*(?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))/gi, 'stroke: #000000')
+
+      // Handle fill="..." attributes
+      drawingContent = drawingContent.replace(/fill\s*=\s*["'](?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))["']/gi, 'fill="#000000"')
+      // Handle fill: ... inside style="..." attributes
+      drawingContent = drawingContent.replace(/fill\s*:\s*(?:#fff(?:fff)?|white|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)|var\(--editor-text-color\))/gi, 'fill: #000000')
     }
 
     // Get current viewbox to preserve the view
