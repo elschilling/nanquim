@@ -97,7 +97,7 @@ class MirrorCommand extends Command {
 
     onKeyDown(event) {
         if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
-            this.cleanup()
+            document.removeEventListener('keydown', this.boundOnKeyDown)
             this.editor.isInteracting = true
             this.onSelectionConfirmed()
         } else if (event.key === 'Escape') {
@@ -172,12 +172,17 @@ class MirrorCommand extends Command {
                     [originalPos.x, originalPos.y + originalPos.height]
                 ])
                 // Copy styles from the original rect
-                const computedStyle = window.getComputedStyle(el.node)
+                // If it's hovered or selected, getComputedStyle might be wrong
+                const isHighlighted = el.hasClass('elementHover') || el.hasClass('elementSelected')
+                const strokeColor = isHighlighted ? (el.attr('stroke') || '#000') : (window.getComputedStyle(el.node).stroke || el.attr('stroke'))
+                const strokeWidth = isHighlighted ? (el.attr('stroke-width') || 1) : (parseFloat(window.getComputedStyle(el.node).strokeWidth) || parseFloat(el.attr('stroke-width')) || 1)
+                const fillColor = isHighlighted ? (el.attr('fill') || 'none') : (window.getComputedStyle(el.node).fill || el.attr('fill') || 'none')
+
                 poly.stroke({
-                    color: computedStyle.stroke || el.attr('stroke'),
-                    width: parseFloat(computedStyle.strokeWidth) || parseFloat(el.attr('stroke-width')) || 1
+                    color: strokeColor,
+                    width: strokeWidth
                 })
-                poly.fill(computedStyle.fill || el.attr('fill') || 'none')
+                poly.fill(fillColor)
                 poly.attr('name', el.attr('name') || 'Rectangle')
                 poly.attr('id', this.editor.elementIndex++)
                 parent.add(poly)
@@ -187,6 +192,16 @@ class MirrorCommand extends Command {
                 const clone = el.clone()
                 parent.add(clone)
                 clone.attr('opacity', 0.5)
+                // Remove interactive classes from the mirror clone
+                const stripClasses = (element) => {
+                    element.removeClass('elementHover')
+                    element.removeClass('elementSelected')
+                    if (element.type === 'g' && element.children) {
+                        element.children().each(child => stripClasses(child))
+                    }
+                }
+                stripClasses(clone)
+
                 return clone
             }
         })
@@ -401,10 +416,11 @@ class MirrorCommand extends Command {
     }
 
     cleanup() {
-        document.removeEventListener('keydown', this.boundOnKeyDown)
         this.editor.isInteracting = false
-        this.editor.selectSingleElement = false
         this.editor.suppressHandlers = false
+        setTimeout(() => {
+            this.editor.selectSingleElement = false
+        }, 10)
     }
 
     undo() {

@@ -24,11 +24,12 @@ class CopyCommand extends Command {
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
     this.editor.handlers.clear()
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
     if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
-      this.cleanup()
+      document.removeEventListener('keydown', this.boundOnKeyDown)
       this.editor.isInteracting = true
       this.onSelectionConfirmed()
     } else if (event.key === 'Escape') {
@@ -69,6 +70,17 @@ class CopyCommand extends Command {
     // Clone elements for ghosting
     this.copiedElements = this.originalSelection.map((el) => {
       const clone = el.clone()
+
+      // Remove interactive classes that might have been copied
+      const stripClasses = (element) => {
+        element.removeClass('elementHover')
+        element.removeClass('elementSelected')
+        if (element.type === 'g' && element.children) {
+          element.children().each(child => stripClasses(child))
+        }
+      }
+      stripClasses(clone)
+
       const parent = el.parent() || this.editor.activeCollection
       parent.add(clone)
       return clone
@@ -135,6 +147,7 @@ class CopyCommand extends Command {
     this.editor.execute(this)
     this.editor.lastCommand = new CopyCommand(this.editor)
     this.editor.distance = null
+    this.cleanup()
   }
 
   updateArcData(element, originalPos, dx, dy) {
@@ -190,8 +203,10 @@ class CopyCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
-    this.editor.selectSingleElement = false
     this.editor.suppressHandlers = false
+    setTimeout(() => {
+      this.editor.selectSingleElement = false
+    }, 10)
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 

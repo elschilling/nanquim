@@ -538,7 +538,9 @@ class ExtendCommand extends Command {
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.isInteracting = false
-        this.editor.selectSingleElement = false
+        setTimeout(() => {
+            this.editor.selectSingleElement = false
+        }, 10)
         this.isExtending = false
 
         // Remove mouse listeners for ghosting

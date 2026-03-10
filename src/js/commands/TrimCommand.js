@@ -667,7 +667,9 @@ class TrimCommand extends Command {
         this.isTrimming = false
         this.autoTrimMode = false
         this.editor.isInteracting = false
-        this.editor.selectSingleElement = false
+        setTimeout(() => {
+            this.editor.selectSingleElement = false
+        }, 10)
         this.editor.signals.updatedOutliner.dispatch()
     }
 }

@@ -69,6 +69,21 @@ class OffsetCommand extends Command {
     if (!this.selectedElement) return this.cleanup()
 
     const clone = this.selectedElement.clone()
+
+    // Remove interactive classes so the new element isn't highlighted or selected
+    clone.removeClass('elementHover')
+    clone.removeClass('elementSelected')
+    if (clone.type === 'g' && clone.children) {
+      const stripClasses = (element) => {
+        element.removeClass('elementHover')
+        element.removeClass('elementSelected')
+        if (element.type === 'g' && element.children) {
+          element.children().each(child => stripClasses(child))
+        }
+      }
+      clone.children().each(child => stripClasses(child))
+    }
+
     clone.putIn(this.selectedElement.parent() || this.editor.activeCollection)
 
     // For circles/rects, resize instead of translate
@@ -146,7 +161,9 @@ class OffsetCommand extends Command {
     this.editor.signals.pointCaptured.remove(this.boundOnConfirmPoint)
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
     this.editor.isInteracting = false
-    this.editor.selectSingleElement = false
+    setTimeout(() => {
+      this.editor.selectSingleElement = false
+    }, 10)
     this.editor.distance = null
     this.selectedElement = null
   }

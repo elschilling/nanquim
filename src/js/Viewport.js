@@ -61,11 +61,28 @@ function Viewport(editor) {
     editor.spatialIndex.markDirty()
   })
   signals.clearSelection.add(() => {
+    editor.selected.forEach((el) => {
+      el.removeClass('elementSelected')
+      el.attr('selected', false)
+    })
+    editor.selected = []
+    editor.handlers.clear()
     hoveredElements = []
+    clearHover()
+    clearSelectionRectangle()
   })
   signals.commandCancelled.add(() => {
     editor.spatialIndex.markDirty()
+    clearHover()
+    clearSnap()
+    clearSelectionRectangle()
+    editor.isDrawing = false
+    editor.isSelecting = false
   })
+
+  function clearSelectionRectangle() {
+    svg.find('.selectionRectangle').each(el => el.remove())
+  }
 
   signals.requestHoverCheck.add(() => {
     checkHover()
@@ -622,150 +639,159 @@ function Viewport(editor) {
     }
   }
 
-  function checkHover() {
-    if (!editor.isDrawing) {
-      const candidates = []
-      const svgNode = svg.node
-
-      // Compute inverted SVG root CTM once per frame (not per element)
-      const svgCTM = svgNode.getCTM()
-      let svgInvDet = 1
-      let hasSvgCTM = false
-      if (svgCTM) {
-        svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
-        hasSvgCTM = Math.abs(svgInvDet) > 1e-10
-      }
-
-      const pad = hoverTreshold
-
-      // ---- R-TREE SPATIAL QUERY ----
-      // Only check elements whose bbox overlaps the cursor vicinity
-      editor.spatialIndex.ensureFresh(editor)
-      const rtreeCandidates = editor.spatialIndex.search({
-        minX: coordinates.x - pad,
-        minY: coordinates.y - pad,
-        maxX: coordinates.x + pad,
-        maxY: coordinates.y + pad,
-      })
-
-      rtreeCandidates.forEach((item) => {
-        const el = item.element
-        if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
-
-        // ---- PRECISE DISTANCE ----
-        let distance
-        const ctm = el.node.getCTM()
-
-        // Build toRootSpace closure for this element's CTM
-        const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
-          const ex = ctm.a * lx + ctm.c * ly + ctm.e
-          const ey = ctm.b * lx + ctm.d * ly + ctm.f
-          return {
-            x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
-            y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
-          }
-        } : (lx, ly) => ({ x: lx, y: ly })
-
-        if (el.type === 'line') {
-          let p1 = toRootSpace(el.node.x1.baseVal.value, el.node.y1.baseVal.value)
-          let p2 = toRootSpace(el.node.x2.baseVal.value, el.node.y2.baseVal.value)
-          distance = distanceFromPointToLine(coordinates, p1, p2)
-        } else if (el.type === 'circle') {
-          const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
-          const edgePoint = toRootSpace(
-            el.node.cx.baseVal.value + el.node.r.baseVal.value,
-            el.node.cy.baseVal.value
-          )
-          const transformedRadius = calculateDistance(center, edgePoint)
-          distance = distanceFromPointToCircle(coordinates, center, transformedRadius)
-        } else if (el.type === 'rect') {
-          const x = el.node.x.baseVal.value
-          const y = el.node.y.baseVal.value
-          const w = el.node.width.baseVal.value
-          const h = el.node.height.baseVal.value
-          const corners = [
-            toRootSpace(x, y), toRootSpace(x + w, y),
-            toRootSpace(x + w, y + h), toRootSpace(x, y + h)
-          ]
-          let minDist = Infinity
-          for (let i = 0; i < 4; i++) {
-            const d = distanceFromPointToLine(coordinates, corners[i], corners[(i + 1) % 4])
-            if (d < minDist) minDist = d
-          }
-          distance = minDist
-        } else if (el.type === 'path') {
-          const pathLength = el.length()
-          if (pathLength === 0) {
-            distance = Infinity
-          } else {
-            let minDistance = Infinity
-            const step = Math.min(5, Math.max(1, pathLength / 20))
-            for (let i = 0; i <= pathLength; i += step) {
-              const p = el.pointAt(i)
-              const rp = toRootSpace(p.x, p.y)
-              const d = calculateDistance(coordinates, rp)
-              if (d < minDistance) {
-                minDistance = d
-              }
-            }
-            distance = minDistance
-          }
-        } else if (el.type === 'polygon' || el.type === 'polyline') {
-          const points = el.node.points
-          let minDist = Infinity
-          for (let i = 0; i < points.numberOfItems; i++) {
-            const pt = points.getItem(i)
-            const rp = toRootSpace(pt.x, pt.y)
-            const d = calculateDistance(coordinates, rp)
-            if (d < minDist) minDist = d
-          }
-          for (let i = 0; i < points.numberOfItems - 1; i++) {
-            const pt1 = points.getItem(i)
-            const pt2 = points.getItem(i + 1)
-            const rp1 = toRootSpace(pt1.x, pt1.y)
-            const rp2 = toRootSpace(pt2.x, pt2.y)
-            const d = distanceFromPointToLine(coordinates, rp1, rp2)
-            if (d < minDist) minDist = d
-          }
-          distance = minDist
-        } else if (el.type === 'ellipse') {
-          const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
-          distance = calculateDistance(coordinates, center)
-        }
-
-        if (distance !== undefined && distance < hoverTreshold) {
-          candidates.push({ el, distance })
-        }
-      })
-
-      // Remove hover from all previously hovered elements
-      hoveredElements.forEach((el) => removeHoverClass(el))
-
-      // Sort leaf candidates by distance
-      candidates.sort((a, b) => a.distance - b.distance)
-
-      // Resolve leaf elements to their group ancestors (if any)
-      // and deduplicate so hovering any child of a group selects the group
-      const resolvedCandidates = []
-      const seen = new Set()
-      candidates.forEach(c => {
-        const ancestor = findSelectableAncestor(c.el)
-        const key = ancestor.node
-        if (!seen.has(key)) {
-          seen.add(key)
-          resolvedCandidates.push({ el: ancestor, distance: c.distance })
-        }
-      })
-
-      if (resolvedCandidates.length > 0) {
-        addHoverClass(resolvedCandidates[0].el)
-      }
-
-      // Store all within-threshold elements sorted by distance (for Trim/Extend)
-      hoveredElements = resolvedCandidates.map((c) => c.el)
-      editor.hoveredElements = hoveredElements
-    }
+  function clearHover() {
+    hoveredElements.forEach((el) => removeHoverClass(el))
+    hoveredElements = []
+    editor.hoveredElements = []
   }
+
+  function checkHover() {
+    if (editor.isDrawing) {
+      clearHover()
+      return
+    }
+    const candidates = []
+    const svgNode = svg.node
+
+    // Compute inverted SVG root CTM once per frame (not per element)
+    const svgCTM = svgNode.getCTM()
+    let svgInvDet = 1
+    let hasSvgCTM = false
+    if (svgCTM) {
+      svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
+      hasSvgCTM = Math.abs(svgInvDet) > 1e-10
+    }
+
+    const pad = hoverTreshold
+
+    // ---- R-TREE SPATIAL QUERY ----
+    // Only check elements whose bbox overlaps the cursor vicinity
+    editor.spatialIndex.ensureFresh(editor)
+    const rtreeCandidates = editor.spatialIndex.search({
+      minX: coordinates.x - pad,
+      minY: coordinates.y - pad,
+      maxX: coordinates.x + pad,
+      maxY: coordinates.y + pad,
+    })
+
+    rtreeCandidates.forEach((item) => {
+      const el = item.element
+      if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
+
+      // ---- PRECISE DISTANCE ----
+      let distance
+      const ctm = el.node.getCTM()
+
+      // Build toRootSpace closure for this element's CTM
+      const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
+        const ex = ctm.a * lx + ctm.c * ly + ctm.e
+        const ey = ctm.b * lx + ctm.d * ly + ctm.f
+        return {
+          x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
+          y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
+        }
+      } : (lx, ly) => ({ x: lx, y: ly })
+
+      if (el.type === 'line') {
+        let p1 = toRootSpace(el.node.x1.baseVal.value, el.node.y1.baseVal.value)
+        let p2 = toRootSpace(el.node.x2.baseVal.value, el.node.y2.baseVal.value)
+        distance = distanceFromPointToLine(coordinates, p1, p2)
+      } else if (el.type === 'circle') {
+        const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
+        const edgePoint = toRootSpace(
+          el.node.cx.baseVal.value + el.node.r.baseVal.value,
+          el.node.cy.baseVal.value
+        )
+        const transformedRadius = calculateDistance(center, edgePoint)
+        distance = distanceFromPointToCircle(coordinates, center, transformedRadius)
+      } else if (el.type === 'rect') {
+        const x = el.node.x.baseVal.value
+        const y = el.node.y.baseVal.value
+        const w = el.node.width.baseVal.value
+        const h = el.node.height.baseVal.value
+        const corners = [
+          toRootSpace(x, y), toRootSpace(x + w, y),
+          toRootSpace(x + w, y + h), toRootSpace(x, y + h)
+        ]
+        let minDist = Infinity
+        for (let i = 0; i < 4; i++) {
+          const d = distanceFromPointToLine(coordinates, corners[i], corners[(i + 1) % 4])
+          if (d < minDist) minDist = d
+        }
+        distance = minDist
+      } else if (el.type === 'path') {
+        const pathLength = el.length()
+        if (pathLength === 0) {
+          distance = Infinity
+        } else {
+          let minDistance = Infinity
+          const step = Math.min(5, Math.max(1, pathLength / 20))
+          for (let i = 0; i <= pathLength; i += step) {
+            const p = el.pointAt(i)
+            const rp = toRootSpace(p.x, p.y)
+            const d = calculateDistance(coordinates, rp)
+            if (d < minDistance) {
+              minDistance = d
+            }
+          }
+          distance = minDistance
+        }
+      } else if (el.type === 'polygon' || el.type === 'polyline') {
+        const points = el.node.points
+        let minDist = Infinity
+        for (let i = 0; i < points.numberOfItems; i++) {
+          const pt = points.getItem(i)
+          const rp = toRootSpace(pt.x, pt.y)
+          const d = calculateDistance(coordinates, rp)
+          if (d < minDist) minDist = d
+        }
+        for (let i = 0; i < points.numberOfItems - 1; i++) {
+          const pt1 = points.getItem(i)
+          const pt2 = points.getItem(i + 1)
+          const rp1 = toRootSpace(pt1.x, pt1.y)
+          const rp2 = toRootSpace(pt2.x, pt2.y)
+          const d = distanceFromPointToLine(coordinates, rp1, rp2)
+          if (d < minDist) minDist = d
+        }
+        distance = minDist
+      } else if (el.type === 'ellipse') {
+        const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
+        distance = calculateDistance(coordinates, center)
+      }
+
+      if (distance !== undefined && distance < hoverTreshold) {
+        candidates.push({ el, distance })
+      }
+    })
+
+    // Remove hover from all previously hovered elements
+    hoveredElements.forEach((el) => removeHoverClass(el))
+
+    // Sort leaf candidates by distance
+    candidates.sort((a, b) => a.distance - b.distance)
+
+    // Resolve leaf elements to their group ancestors (if any)
+    // and deduplicate so hovering any child of a group selects the group
+    const resolvedCandidates = []
+    const seen = new Set()
+    candidates.forEach(c => {
+      const ancestor = findSelectableAncestor(c.el)
+      const key = ancestor.node
+      if (!seen.has(key)) {
+        seen.add(key)
+        resolvedCandidates.push({ el: ancestor, distance: c.distance })
+      }
+    })
+
+    if (resolvedCandidates.length > 0) {
+      addHoverClass(resolvedCandidates[0].el)
+    }
+
+    // Store all within-threshold elements sorted by distance (for Trim/Extend)
+    hoveredElements = resolvedCandidates.map((c) => c.el)
+    editor.hoveredElements = hoveredElements
+  }
+
   function handleMousedown(e) {
     console.log('[DEBUG handleMousedown] isDrawing=', editor.isDrawing, 'isInteracting=', editor.isInteracting, 'isEditingVertex=', editor.isEditingVertex)
     if (editor.isDrawing) return
@@ -974,9 +1000,57 @@ function Viewport(editor) {
           item.maxX <= rect.x + rect.width &&
           item.maxY <= rect.y + rect.height
       } else if (selectionMode === 'inside') {
-        // Crossing select (right-to-left): element bbox overlaps rect
-        // The R-tree search already guarantees bbox overlap, so all candidates qualify
-        isInsideOrIntersecting = true
+        // Crossing select (right-to-left): element must intersect or be inside the rect
+        const svgNode = svg.node
+        const svgCTM = svgNode.getCTM()
+        let svgInvDet = 1
+        let hasSvgCTM = false
+        if (svgCTM) {
+          svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
+          hasSvgCTM = Math.abs(svgInvDet) > 1e-10
+        }
+
+        const ctm = el.node.getCTM()
+        const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
+          const ex = ctm.a * lx + ctm.c * ly + ctm.e
+          const ey = ctm.b * lx + ctm.d * ly + ctm.f
+          return {
+            x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
+            y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
+          }
+        } : (lx, ly) => ({ x: lx, y: ly })
+
+        if (el.type === 'line') {
+          const p1 = toRootSpace(el.attr('x1'), el.attr('y1'))
+          const p2 = toRootSpace(el.attr('x2'), el.attr('y2'))
+          isInsideOrIntersecting = isLineIntersectingRect({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }, rect)
+        } else if (el.type === 'circle') {
+          const center = toRootSpace(el.cx(), el.cy())
+          const edgePoint = toRootSpace(el.cx() + el.attr('r'), el.cy())
+          const radius = calculateDistance(center, edgePoint)
+          isInsideOrIntersecting = isCircleIntersectingRect({ cx: center.x, cy: center.y, r: radius }, rect)
+        } else if (el.type === 'rect') {
+          const x = el.x(), y = el.y(), w = el.width(), h = el.height()
+          const pts = [toRootSpace(x, y), toRootSpace(x + w, y), toRootSpace(x + w, y + h), toRootSpace(x, y + h)]
+          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+        } else if (el.type === 'path' || el.type === 'polyline' || el.type === 'polygon') {
+          // Approximate path/polygon as a points array
+          const pts = []
+          if (el.type === 'path') {
+            const len = el.length()
+            const step = Math.min(10, Math.max(1, len / 20))
+            for (let i = 0; i <= len; i += step) {
+              const p = el.pointAt(i)
+              pts.push(toRootSpace(p.x, p.y))
+            }
+          } else {
+            el.array().forEach(p => pts.push(toRootSpace(p[0], p[1])))
+          }
+          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+        } else {
+          // Fallback to bbox if type is unhandled (e.g. ellipse)
+          isInsideOrIntersecting = true
+        }
       }
 
       if (isInsideOrIntersecting) {
@@ -1028,7 +1102,7 @@ function Viewport(editor) {
       return
     }
 
-    hoveredElements = []
+    clearHover()
 
     backupHovered.forEach((el) => {
       // Check if element is already selected before adding it using node identity

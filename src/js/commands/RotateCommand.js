@@ -27,6 +27,7 @@ class RotateCommand extends Command {
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {

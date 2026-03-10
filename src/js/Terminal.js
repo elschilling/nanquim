@@ -205,6 +205,10 @@ function Terminal(editor) {
       }
 
       terminalText.value = ''
+      editor.isDrawing = false
+      editor.isSelecting = false
+      editor.isInteracting = false
+      editor.selectSingleElement = false
       editor.svg.fire('cancelDrawing', e)
       signals.commandCancelled.dispatch()
       signals.clearSelection.dispatch()

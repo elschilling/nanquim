@@ -32,6 +32,7 @@ class ScaleCommand extends Command {
     })
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {

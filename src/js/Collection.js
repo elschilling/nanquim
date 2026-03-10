@@ -348,10 +348,10 @@ function toggleElementLock(editor, element) {
 }
 
 /**
- * Migrate legacy SVGs: wrap orphan elements (direct children of editor.drawing
- * that are not collection groups) into a Default collection.
+ * Migrate orphan elements: wrap elements (direct children of editor.drawing
+ * that are not collection groups) into a collection.
  */
-function migrateLegacyElements(editor) {
+function migrateOrphanElements(editor) {
     const orphans = []
     editor.drawing.children().each((child) => {
         if (child.attr('data-collection') !== 'true') {
@@ -399,13 +399,14 @@ function rebuildCollectionsFromDOM(editor) {
         }
     })
 
-    // If no collections found, this is a legacy file
+    // Always migrate orphan elements (direct children of drawing not in a collection)
+    migrateOrphanElements(editor)
+
+    // Set active to first collection or ensure one exists
     if (editor.collections.size === 0) {
         const defaultGroup = createCollection(editor, 'Default')
         editor.activeCollection = defaultGroup
-        migrateLegacyElements(editor)
     } else {
-        // Set active to first collection
         const first = editor.collections.values().next().value
         editor.activeCollection = first.group
     }
@@ -432,6 +433,6 @@ export {
     getElementOverrides,
     setElementOverrides,
     applyCollectionStyleToElement,
-    migrateLegacyElements,
+    migrateOrphanElements,
     rebuildCollectionsFromDOM,
 }

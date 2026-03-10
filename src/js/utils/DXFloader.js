@@ -29,7 +29,10 @@ function DXFLoader(editor) {
       // Clear existing drawing
       editor.drawing.clear()
 
-      let svgContent = svgRoot.innerHTML
+      let svgContent = ''
+      Array.from(svgRoot.children).forEach(child => {
+        svgContent += new XMLSerializer().serializeToString(child)
+      })
 
       // If the file was saved with white strokes converted to black, revert them
       if (convertedStrokes) {
@@ -70,6 +73,10 @@ function DXFLoader(editor) {
             }
           }
         })
+
+        // If this is a collection group, don't try to parse its ID as an integer
+        // as collections use 'collection-N' format.
+        if (el.attr('data-collection') === 'true') return
 
         let id = parseInt(el.attr('id'))
         if (isNaN(id)) {
