@@ -172,12 +172,19 @@ class CopyCommand extends Command {
         endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
       })
     }
+    if (originalPos.splineData) {
+      const sd = originalPos.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      })
+    }
   }
 
   getElementPosition(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     if (element.type === 'line') {

@@ -351,6 +351,14 @@ function Outliner(editor) {
 
           if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
           if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
+        } else if (s.type === 'path' && s.data('splineData')) {
+          const spline = s.data('splineData')
+          spline.points.forEach((sp, idx) => {
+            const wPt = localToWorld(s, sp.x, sp.y)
+            if (Math.abs(wPt.x - x) < tolerance && Math.abs(wPt.y - y) < tolerance) {
+              vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: spline.points.map(p => ({ x: p.x, y: p.y })) } })
+            }
+          })
         }
       })
       return vertices
@@ -480,6 +488,19 @@ function Outliner(editor) {
             .mousedown((e) => {
               e.stopPropagation()
               signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+            })
+        })
+      } else if (el.type === 'path' && el.data('splineData')) {
+        const spline = el.data('splineData')
+        spline.points.forEach((sp) => {
+          const wPt = localToWorld(el, sp.x, sp.y)
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(wPt.x, wPt.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch(getCoincidentVertices(wPt.x, wPt.y))
             })
         })
       }

@@ -143,7 +143,8 @@ class MoveCommand extends Command {
   getElementPosition(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     if (element.type === 'line') {
@@ -253,6 +254,12 @@ class MoveCommand extends Command {
         endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
       })
     }
+    if (originalPos.splineData) {
+      const sd = originalPos.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      })
+    }
   }
 
   undo() {
@@ -275,6 +282,7 @@ class MoveCommand extends Command {
       // Restore original data
       if (originalPos.arcData) element.data('arcData', originalPos.arcData)
       if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
+      if (originalPos.splineData) element.data('splineData', originalPos.splineData)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })

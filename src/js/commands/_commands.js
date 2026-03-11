@@ -18,6 +18,7 @@ import { groupCommand } from './GroupCommand'
 import { ungroupCommand } from './UngroupCommand'
 import { hatchCommand } from './HatchCommand'
 import { textCommand } from './TextCommand'
+import { drawSplineCommand } from './DrawSplineCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -100,6 +101,10 @@ const commands = {
   TEXT: {
     execute: textCommand,
     aliases: ['t', 'text'],
+  },
+  SPLINE: {
+    execute: drawSplineCommand,
+    aliases: ['sp'],
   },
   // Add more commands and functions as needed
 }

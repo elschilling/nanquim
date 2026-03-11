@@ -132,7 +132,8 @@ class ScaleCommand extends Command {
   getElementPosition(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     const pos = {
@@ -247,6 +248,7 @@ class ScaleCommand extends Command {
       // Restore metadata
       if (originalPos.arcData) element.data('arcData', originalPos.arcData)
       if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
+      if (originalPos.splineData) element.data('splineData', originalPos.splineData)
     })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Scale reset.' })
   }

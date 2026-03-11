@@ -1,4 +1,5 @@
 import { getArcGeometry } from './utils/arcUtils'
+import { catmullRomToBezierPath } from './commands/DrawSplineCommand'
 import {
   calculateDistance,
   distanceFromPointToLine,
@@ -562,6 +563,13 @@ function Viewport(editor) {
           }
 
           element.data('arcData', values)
+        } else if (element.type === 'path' && element.data('splineData')) {
+          const splineData = element.data('splineData')
+          const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
+          newPoints[vertexIndex] = { x: point.x, y: point.y }
+          const d = catmullRomToBezierPath(newPoints)
+          element.plot(d)
+          element.data('splineData', { points: newPoints })
         }
       })
 
@@ -788,6 +796,7 @@ function Viewport(editor) {
       const lineUpdates = []
       const circleUpdates = []
       const arcUpdates = []
+      const splineUpdates = []
 
       editor.editingVertices.forEach(v => {
         if (v.element.type === 'line') {
@@ -835,6 +844,12 @@ function Viewport(editor) {
           else if (v.vertexIndex === 2) newValues.p3 = { x: point.x, y: point.y }
 
           arcUpdates.push({ element: v.element, oldValues, newValues })
+        } else if (v.element.type === 'path' && v.element.data('splineData')) {
+          const splineData = v.element.data('splineData')
+          const oldPoints = v.originalPosition.points
+          const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
+
+          splineUpdates.push({ element: v.element, oldPoints, newPoints })
         }
       })
 
@@ -862,6 +877,15 @@ function Viewport(editor) {
         import('./commands/EditArcCommand.js').then(({ EditArcCommand }) => {
           arcUpdates.forEach(update => {
             editor.execute(new EditArcCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (splineUpdates.length > 0) {
+        import('./commands/EditSplineCommand.js').then(({ EditSplineCommand }) => {
+          splineUpdates.forEach(update => {
+            editor.execute(new EditSplineCommand(editor, update.element, update.oldPoints, update.newPoints))
           })
           signals.updatedSelection.dispatch()
         })

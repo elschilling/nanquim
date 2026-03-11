@@ -263,6 +263,12 @@ class MirrorCommand extends Command {
                     const rp3 = reflectPoint(ad.p3, this.basePoint, p2)
                     clone.plot(rebuildArcPath(rp1, rp2, rp3))
                     clone.data('arcData', { p1: rp1, p2: rp2, p3: rp3 })
+                } else if (originalPos.splineData) {
+                    // Spline: reflect all control points and rebuild with Catmull-Rom
+                    const sd = originalPos.splineData
+                    const reflectedPoints = sd.points.map(p => reflectPoint(p, this.basePoint, p2))
+                    clone.data('splineData', { points: reflectedPoints })
+                    // Path array already handled by reflectPath above for visual
                 } else {
                     // General path (DXF import, etc.): reflect the path segments
                     clone.plot(reflectPath(originalPos.pathArray, this.basePoint, p2))
@@ -375,12 +381,19 @@ class MirrorCommand extends Command {
                 endPt: reflectPoint(ctd.endPt, p1, p2)
             })
         }
+        if (originalPos.splineData) {
+            const sd = originalPos.splineData
+            element.data('splineData', {
+                points: sd.points.map(p => reflectPoint(p, p1, p2))
+            })
+        }
     }
 
     getElementPosition(element) {
         const data = {
             arcData: element.data('arcData'),
             circleTrimData: element.data('circleTrimData'),
+            splineData: element.data('splineData'),
             opacity: element.attr('opacity')
         }
 

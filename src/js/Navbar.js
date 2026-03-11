@@ -44,6 +44,9 @@ function Navbar(editor) {
         if (el.data('circleTrimData')) {
           el.attr('data-circle-trim-data', JSON.stringify(el.data('circleTrimData')))
         }
+        if (el.data('splineData')) {
+          el.attr('data-spline-data', JSON.stringify(el.data('splineData')))
+        }
 
         // Baking legacy styles deprecated: Managed by Collection inline overrides
       }

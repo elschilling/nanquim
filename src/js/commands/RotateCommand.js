@@ -168,7 +168,8 @@ class RotateCommand extends Command {
   getElementCoordinates(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     // Store just the coordinate data that we need for rotation
@@ -263,6 +264,16 @@ class RotateCommand extends Command {
         cy: center.y,
         startPt: sPt,
         endPt: ePt
+      })
+    }
+
+    if (originalCoords.splineData) {
+      const sd = originalCoords.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => {
+          const rp = rotatePoint(p.x, p.y)
+          return { x: rp.x, y: rp.y }
+        })
       })
     }
 
