@@ -631,7 +631,12 @@ function Viewport(editor) {
       hasSvgCTM = Math.abs(svgInvDet) > 1e-10
     }
 
-    const pad = hoverTreshold
+    const vb = svg.viewbox()
+    const svgWidth = svg.node.clientWidth || svg.node.getBoundingClientRect().width || 1
+    const worldPerPixel = vb.width / svgWidth
+    const hoverThresholdWorld = hoverTreshold * worldPerPixel
+
+    const pad = hoverThresholdWorld
 
     // ---- R-TREE SPATIAL QUERY ----
     // Only check elements whose bbox overlaps the cursor vicinity
@@ -689,21 +694,60 @@ function Viewport(editor) {
         }
         distance = minDist
       } else if (el.type === 'path') {
-        const pathLength = el.length()
-        if (pathLength === 0) {
-          distance = Infinity
-        } else {
-          let minDistance = Infinity
-          const step = Math.min(5, Math.max(1, pathLength / 20))
-          for (let i = 0; i <= pathLength; i += step) {
-            const p = el.pointAt(i)
-            const rp = toRootSpace(p.x, p.y)
-            const d = calculateDistance(coordinates, rp)
-            if (d < minDistance) {
-              minDistance = d
+        const arcData = el.data('arcData')
+        if (arcData) {
+          const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+          if (geo) {
+            const center = toRootSpace(geo.cx, geo.cy)
+            const p1 = toRootSpace(arcData.p1.x, arcData.p1.y)
+            const p3 = toRootSpace(arcData.p3.x, arcData.p3.y)
+            const radius = calculateDistance(center, p1)
+            const distFromCenter = calculateDistance(coordinates, center)
+            const radialDist = Math.abs(distFromCenter - radius)
+
+            // Check if cursor is within the angular sweep
+            const angle = Math.atan2(coordinates.y - center.y, coordinates.x - center.x)
+            let normAngle = angle < 0 ? angle + 2 * Math.PI : angle
+
+            let isWithinSweep = false
+            const t1 = geo.theta1, t3 = geo.theta3
+            if (geo.sweepFlag === 1) { // CCW
+              if (t1 < t3) isWithinSweep = normAngle >= t1 && normAngle <= t3
+              else isWithinSweep = normAngle >= t1 || normAngle <= t3
+            } else { // CW
+              if (t3 < t1) isWithinSweep = normAngle >= t3 && normAngle <= t1
+              else isWithinSweep = normAngle >= t3 || normAngle <= t1
+            }
+
+            if (isWithinSweep) {
+              distance = radialDist
+            } else {
+              // Distance to endpoints
+              distance = Math.min(
+                calculateDistance(coordinates, p1),
+                calculateDistance(coordinates, p3)
+              )
             }
           }
-          distance = minDistance
+        }
+
+        if (distance === undefined) {
+          const pathLength = el.length()
+          if (pathLength === 0) {
+            distance = Infinity
+          } else {
+            let minDistance = Infinity
+            const step = Math.min(5, Math.max(1, pathLength / 20))
+            for (let i = 0; i <= pathLength; i += step) {
+              const p = el.pointAt(i)
+              const rp = toRootSpace(p.x, p.y)
+              const d = calculateDistance(coordinates, rp)
+              if (d < minDistance) {
+                minDistance = d
+              }
+            }
+            distance = minDistance
+          }
         }
       } else if (el.type === 'polygon' || el.type === 'polyline') {
         const points = el.node.points
@@ -747,7 +791,7 @@ function Viewport(editor) {
         }
       }
 
-      if (distance !== undefined && distance < hoverTreshold) {
+      if (distance !== undefined && distance < hoverThresholdWorld) {
         candidates.push({ el, distance })
       }
     })

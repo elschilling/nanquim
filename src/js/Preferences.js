@@ -5,7 +5,7 @@ const DEFAULTS = {
     handlerSize: 16,
     defaultStrokeWidth: 0.1,
     hoverStrokeWidth: 0.4,
-    hoverThreshold: 0.5,
+    hoverThreshold: 10,
 }
 
 function getPreferences() {

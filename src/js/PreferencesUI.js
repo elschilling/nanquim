@@ -28,7 +28,7 @@ function Preferences(editor) {
         { key: 'handlerSize', label: 'Handler Size (px)', step: 1, min: 4 },
         { key: 'defaultStrokeWidth', label: 'Default Stroke Width', step: 0.01, min: 0.01 },
         { key: 'hoverStrokeWidth', label: 'Hover Stroke Width', step: 0.1, min: 0.1 },
-        { key: 'hoverThreshold', label: 'Hover Threshold Distance', step: 0.1, min: 0.1 },
+        { key: 'hoverThreshold', label: 'Hover Threshold (px)', step: 1, min: 1 },
     ]
 
     const inputs = {}
