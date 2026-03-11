@@ -1005,64 +1005,77 @@ function Viewport(editor) {
           item.maxY <= rect.y + rect.height
       } else if (selectionMode === 'inside') {
         // Crossing select (right-to-left): element must intersect or be inside the rect
-        const svgNode = svg.node
-        const svgCTM = svgNode.getCTM()
-        let svgInvDet = 1
-        let hasSvgCTM = false
-        if (svgCTM) {
-          svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
-          hasSvgCTM = Math.abs(svgInvDet) > 1e-10
-        }
 
-        const ctm = el.node.getCTM()
-        const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
-          const ex = ctm.a * lx + ctm.c * ly + ctm.e
-          const ey = ctm.b * lx + ctm.d * ly + ctm.f
-          return {
-            x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
-            y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
-          }
-        } : (lx, ly) => ({ x: lx, y: ly })
+        // Fast-path: if the R-tree bounding box is completely enclosed by the selection rect,
+        // it's definitely inside. No need for exact intersection math.
+        const isFullyEnclosed =
+          item.minX >= rect.x &&
+          item.minY >= rect.y &&
+          item.maxX <= rect.x + rect.width &&
+          item.maxY <= rect.y + rect.height
 
-        if (el.type === 'line') {
-          const p1 = toRootSpace(el.attr('x1'), el.attr('y1'))
-          const p2 = toRootSpace(el.attr('x2'), el.attr('y2'))
-          isInsideOrIntersecting = isLineIntersectingRect({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }, rect)
-        } else if (el.type === 'circle') {
-          const center = toRootSpace(el.cx(), el.cy())
-          const edgePoint = toRootSpace(el.cx() + el.attr('r'), el.cy())
-          const radius = calculateDistance(center, edgePoint)
-          isInsideOrIntersecting = isCircleIntersectingRect({ cx: center.x, cy: center.y, r: radius }, rect)
-        } else if (el.type === 'rect') {
-          const x = el.x(), y = el.y(), w = el.width(), h = el.height()
-          const pts = [toRootSpace(x, y), toRootSpace(x + w, y), toRootSpace(x + w, y + h), toRootSpace(x, y + h)]
-          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
-        } else if (el.type === 'path' || el.type === 'polyline' || el.type === 'polygon') {
-          // Approximate path/polygon as a points array
-          const pts = []
-          if (el.type === 'path') {
-            const len = el.length()
-            const step = Math.min(10, Math.max(1, len / 20))
-            for (let i = 0; i <= len; i += step) {
-              const p = el.pointAt(i)
-              pts.push(toRootSpace(p.x, p.y))
-            }
-          } else {
-            el.array().forEach(p => pts.push(toRootSpace(p[0], p[1])))
-          }
-          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
-        } else if (el.type === 'text') {
-          const bbox = el.bbox()
-          const pts = [
-            toRootSpace(bbox.x, bbox.y),
-            toRootSpace(bbox.x + bbox.width, bbox.y),
-            toRootSpace(bbox.x + bbox.width, bbox.y + bbox.height),
-            toRootSpace(bbox.x, bbox.y + bbox.height)
-          ]
-          isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
-        } else {
-          // Fallback to bbox if type is unhandled (e.g. ellipse)
+        if (isFullyEnclosed) {
           isInsideOrIntersecting = true
+        } else {
+          const svgNode = svg.node
+          const svgCTM = svgNode.getCTM()
+          let svgInvDet = 1
+          let hasSvgCTM = false
+          if (svgCTM) {
+            svgInvDet = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
+            hasSvgCTM = Math.abs(svgInvDet) > 1e-10
+          }
+
+          const ctm = el.node.getCTM()
+          const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
+            const ex = ctm.a * lx + ctm.c * ly + ctm.e
+            const ey = ctm.b * lx + ctm.d * ly + ctm.f
+            return {
+              x: (svgCTM.d * (ex - svgCTM.e) - svgCTM.c * (ey - svgCTM.f)) / svgInvDet,
+              y: (-svgCTM.b * (ex - svgCTM.e) + svgCTM.a * (ey - svgCTM.f)) / svgInvDet,
+            }
+          } : (lx, ly) => ({ x: lx, y: ly })
+
+          if (el.type === 'line') {
+            const p1 = toRootSpace(el.attr('x1'), el.attr('y1'))
+            const p2 = toRootSpace(el.attr('x2'), el.attr('y2'))
+            isInsideOrIntersecting = isLineIntersectingRect({ x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y }, rect)
+          } else if (el.type === 'circle') {
+            const center = toRootSpace(el.cx(), el.cy())
+            const edgePoint = toRootSpace(el.cx() + el.attr('r'), el.cy())
+            const radius = calculateDistance(center, edgePoint)
+            isInsideOrIntersecting = isCircleIntersectingRect({ cx: center.x, cy: center.y, r: radius }, rect)
+          } else if (el.type === 'rect') {
+            const x = el.x(), y = el.y(), w = el.width(), h = el.height()
+            const pts = [toRootSpace(x, y), toRootSpace(x + w, y), toRootSpace(x + w, y + h), toRootSpace(x, y + h)]
+            isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+          } else if (el.type === 'path' || el.type === 'polyline' || el.type === 'polygon') {
+            // Approximate path/polygon as a points array
+            const pts = []
+            if (el.type === 'path') {
+              const len = el.length()
+              const step = Math.min(10, Math.max(1, len / 20))
+              for (let i = 0; i <= len; i += step) {
+                const p = el.pointAt(i)
+                pts.push(toRootSpace(p.x, p.y))
+              }
+            } else {
+              el.array().forEach(p => pts.push(toRootSpace(p[0], p[1])))
+            }
+            isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+          } else if (el.type === 'text') {
+            const bbox = el.bbox()
+            const pts = [
+              toRootSpace(bbox.x, bbox.y),
+              toRootSpace(bbox.x + bbox.width, bbox.y),
+              toRootSpace(bbox.x + bbox.width, bbox.y + bbox.height),
+              toRootSpace(bbox.x, bbox.y + bbox.height)
+            ]
+            isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+          } else {
+            // Fallback to bbox if type is unhandled (e.g. ellipse)
+            isInsideOrIntersecting = true
+          }
         }
       }
 
