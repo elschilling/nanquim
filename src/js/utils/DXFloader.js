@@ -140,14 +140,12 @@ function DXFLoader(editor) {
 }
 
 /**
- * Flatten DXF inline styling groups:
- * The DXF parser wraps each entity in <g stroke="..."> for per-entity color.
- * We unwrap these by pushing the stroke attribute directly onto the child
- * elements and moving them up to the parent.
- * 
- * IMPORTANT: We do NOT flatten <g transform="..."> groups because those
- * represent block references/inserts and are needed for correct positioning.
- * We only flatten groups whose sole purpose is to carry a stroke color.
+ * Optimize DXF imports by flattening purely redundant structural groups.
+ * Unlike older versions, we NO LONGER push stroke colors down to leaf elements,
+ * because doing so creates hardcoded inline styles that block inheritance
+ * from the Properties panel and Collection styles.
+ * If a group has a stroke color, we leave it intact or promote the stroke up
+ * to ensure styling is applied at the highest possible group level.
  */
 function flattenDXFStylingGroups(editor) {
   const flattenInGroup = (parent) => {
@@ -155,32 +153,40 @@ function flattenDXFStylingGroups(editor) {
     const children = [...parent.children()]
     children.forEach(child => {
       if (child.type !== 'g') return
-      // Skip collection groups and explicit groups
+      // Skip collection groups and explicit user/block groups
       if (child.attr('data-collection') === 'true') return
       if (child.attr('data-group') === 'true') return
 
-      // Check if this is a pure styling wrapper:
-      // it has a stroke attribute but NO transform attribute
+      // Recurse first so inner structure is as flat as possible
+      flattenInGroup(child)
+
       const hasStroke = child.attr('stroke')
       const hasTransform = child.attr('transform')
 
-      if (hasStroke && !hasTransform) {
-        // This is an inline styling wrapper - flatten it
+      // Case 1: Purely structural wrapper (no stroke, no transform)
+      // We can safely hoist all children up.
+      if (!hasStroke && !hasTransform) {
         const innerChildren = [...child.children()]
-        innerChildren.forEach(innerChild => {
-          // Push stroke color down to inner child if it doesn't have one
-          if (hasStroke && !innerChild.attr('stroke')) {
+        innerChildren.forEach(innerChild => parent.add(innerChild))
+        child.remove()
+        return
+      }
+
+      // Case 2: Styling wrapper (has stroke, no transform)
+      // We want to KEEP the group so its stroke can be inherited, BUT
+      // if it only contains ONE child, we can apply the stroke directly
+      // to that child (if it doesn't have one) and remove the wrapper
+      // for a cleaner DOM.
+      if (hasStroke && !hasTransform) {
+        const innerChildren = [...child.children()]
+        if (innerChildren.length === 1) {
+          const innerChild = innerChildren[0]
+          if (!innerChild.attr('stroke')) {
             innerChild.attr('stroke', hasStroke)
           }
-          // Move inner child up to parent
           parent.add(innerChild)
-        })
-        // Remove the now-empty wrapper
-        child.remove()
-      } else {
-        // This is a transform group or complex group - recurse into it
-        // to flatten any styling wrappers inside
-        flattenInGroup(child)
+          child.remove()
+        }
       }
     })
   }

@@ -140,15 +140,18 @@ function setCollectionStyle(editor, id, style) {
     // Helper to recursively apply styles down the tree
     const applyToChildren = (parent) => {
         parent.children().each((child) => {
-            if (child.type === 'g') {
-                applyToChildren(child) // Recurse into groups
-            } else {
-                const overrides = getElementOverrides(child)
-                Object.entries(style).forEach(([prop, value]) => {
-                    if (overrides[prop]) return // skip overridden properties
+            const overrides = getElementOverrides(child)
+            Object.entries(style).forEach(([prop, value]) => {
+                if (overrides[prop]) return // skip overridden properties
+
+                if (child.type === 'g') {
                     child.css(prop, value)
-                })
-            }
+                    applyToChildren(child) // Recurse into groups
+                } else {
+                    // For leaves, we just apply the css. 
+                    child.css(prop, value)
+                }
+            })
         })
     }
     applyToChildren(data.group)
@@ -199,6 +202,22 @@ function applyCollectionStyleToElement(editor, element) {
     Object.entries(data.style).forEach(([prop, value]) => {
         if (overrides[prop]) return
         element.css(prop, value)
+
+        // If the element is a group, strip the inline property from children
+        // so they properly inherit from this group.
+        if (element.type === 'g') {
+            const stripFromChildren = (parent) => {
+                parent.children().each(child => {
+                    const childOverrides = getElementOverrides(child)
+                    if (!childOverrides[prop]) {
+                        child.node.style.removeProperty(prop)
+                        child.node.removeAttribute(prop)
+                    }
+                    if (child.type === 'g') stripFromChildren(child)
+                })
+            }
+            stripFromChildren(element)
+        }
     })
 }
 

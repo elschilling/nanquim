@@ -473,14 +473,33 @@ function Properties(editor) {
       }
     }
 
-    // Fill Color (only for closed shapes or paths or text)
-    if (['circle', 'rect', 'path', 'polygon', 'text'].includes(node.nodeName)) {
+    // Helper function to apply a style to an element, and if it's a group,
+    // strip that inline style from its children so they inherit properly.
+    const applyPropAndInherit = (el, prop, val) => {
+      el.css(prop, val)
+      if (el.type === 'g') {
+        const stripFromChildren = (parent) => {
+          parent.children().each(child => {
+            const overrides = getElementOverrides(child)
+            if (!overrides[prop]) {
+              child.node.style.removeProperty(prop)
+              child.node.removeAttribute(prop)
+            }
+            if (child.type === 'g') stripFromChildren(child)
+          })
+        }
+        stripFromChildren(el)
+      }
+    }
+
+    // Fill Color (only for closed shapes or paths or text or generic groups)
+    if (['circle', 'rect', 'path', 'polygon', 'text', 'g'].includes(node.nodeName)) {
       const currentFill = element.css('fill') || element.attr('fill')
       let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
       if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
 
       createStylableProperty('fill', 'Fill', visualFill, (value) => {
-        element.css('fill', value)
+        applyPropAndInherit(element, 'fill', value)
         safeDispatch('refreshHandlers')
       }, true)
     }
@@ -491,7 +510,7 @@ function Properties(editor) {
     if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') visualStroke = 'none'
 
     createStylableProperty('stroke', 'Stroke', visualStroke, (value) => {
-      element.css('stroke', value)
+      applyPropAndInherit(element, 'stroke', value)
       safeDispatch('refreshHandlers')
     }, true)
 
@@ -501,7 +520,7 @@ function Properties(editor) {
     createStylableProperty('stroke-width', 'Stroke Width', currentWidth, (value) => {
       const num = parseFloat(value)
       if (!isNaN(num) && num >= 0) {
-        element.css('stroke-width', num)
+        applyPropAndInherit(element, 'stroke-width', num)
         safeDispatch('refreshHandlers')
       }
     }, false)
@@ -515,8 +534,9 @@ function Properties(editor) {
       if (val === '') {
         element.node.style.removeProperty('stroke-dasharray')
         element.node.removeAttribute('stroke-dasharray')
+        if (element.type === 'g') applyPropAndInherit(element, 'stroke-dasharray', null) // clear children too
       } else {
-        element.css('stroke-dasharray', val)
+        applyPropAndInherit(element, 'stroke-dasharray', val)
       }
       safeDispatch('refreshHandlers')
     }, false)
