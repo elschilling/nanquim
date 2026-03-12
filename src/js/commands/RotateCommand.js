@@ -143,6 +143,12 @@ class RotateCommand extends Command {
         return
       }
 
+      if (element._paperVp) {
+        this.editor.signals.terminalLogged.dispatch({ msg: 'Viewports cannot be rotated.', type: 'error' })
+        newSelectedElements.push(element)
+        return
+      }
+
       if (element.type === 'line') {
       }
 

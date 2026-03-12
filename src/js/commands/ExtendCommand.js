@@ -2,8 +2,10 @@ import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
 import { ExtendArcCommand } from './ExtendArcCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
+import { ExtendSplineCommand } from './ExtendSplineCommand'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
+import { catmullRomToBezierPath } from './DrawSplineCommand'
 
 class ExtendCommand extends Command {
     constructor(editor) {
@@ -107,7 +109,7 @@ class ExtendCommand extends Command {
         // Setup hover events for ghosting
         const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
-            if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
+            if (el.type === 'line' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
                 el.node.addEventListener('mouseover', this.boundOnMouseOver)
@@ -128,6 +130,7 @@ class ExtendCommand extends Command {
         if (!el || !point) return null
         if (el.type === 'line') return this.calculateLineExtension(el, point)
         if (el.type === 'path' && el.data('arcData')) return this.calculateArcExtension(el, point)
+        if (el.type === 'path' && el.data('splineData')) return this.calculateSplineExtension(el, point)
         return null
     }
 
@@ -199,22 +202,25 @@ class ExtendCommand extends Command {
                 const intersect = getLineIntersection(virtualLine, boundary)
                 if (intersect) {
                     const bEq = getLineEquation(boundary)
-                    const minX = Math.min(bEq.x1, bEq.x2) - 1e-4
-                    const maxX = Math.max(bEq.x1, bEq.x2) + 1e-4
-                    const minY = Math.min(bEq.y1, bEq.y2) - 1e-4
-                    const maxY = Math.max(bEq.y1, bEq.y2) + 1e-4
+                    const minX = Math.min(bEq.x1, bEq.x2) - 1e-3
+                    const maxX = Math.max(bEq.x1, bEq.x2) + 1e-3
+                    const minY = Math.min(bEq.y1, bEq.y2) - 1e-3
+                    const maxY = Math.max(bEq.y1, bEq.y2) + 1e-3
 
                     if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) {
                         checkAndAddIntersection(intersect)
                     }
                 }
-            } else if (boundary.type === 'circle') {
-                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : boundary.attr('r')
+            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
                 getLineCircleIntersections(virtualLine, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections(virtualLine, rectBounds).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path') {
+                getPathIntersections(boundary, virtualLine).forEach(checkAndAddIntersection)
             }
+
         }
 
         if (intersections.length === 0) return null
@@ -349,6 +355,12 @@ class ExtendCommand extends Command {
                         }
                     })
                 })
+            } else if (boundary.type === 'path' && boundary.data('splineData')) {
+                // Approximate arc-spline intersection via circle-segment intersections
+                const segments = getPathSegments(boundary)
+                segments.forEach(seg => {
+                    getLineCircleIntersections(seg, circle).forEach(checkAndAddIntersection)
+                })
             }
         }
 
@@ -367,12 +379,111 @@ class ExtendCommand extends Command {
         }
     }
 
+    calculateSplineExtension(el, point) {
+        const splineData = el.data('splineData')
+        if (!splineData || splineData.points.length < 2) return null
+
+        const points = splineData.points
+        const distToStart = Math.hypot(point.x - points[0].x, point.y - points[0].y)
+        const distToEnd = Math.hypot(point.x - points[points.length - 1].x, point.y - points[points.length - 1].y)
+        const extendStart = distToStart < distToEnd
+
+        // Ray calculation
+        let dx, dy, rayBase
+        if (extendStart) {
+            dx = points[0].x - points[1].x
+            dy = points[0].y - points[1].y
+            rayBase = points[0]
+        } else {
+            dx = points[points.length - 1].x - points[points.length - 2].x
+            dy = points[points.length - 1].y - points[points.length - 2].y
+            rayBase = points[points.length - 1]
+        }
+
+        const lineLen = Math.hypot(dx, dy)
+        if (lineLen < 1e-6) return null
+
+        const dirX = dx / lineLen
+        const dirY = dy / lineLen
+        const MAX_DIST = 100000
+
+        const virtualLine = {
+            x1: rayBase.x,
+            y1: rayBase.y,
+            x2: rayBase.x + dirX * MAX_DIST,
+            y2: rayBase.y + dirY * MAX_DIST
+        }
+
+        const intersections = []
+        let candidateBoundaries = []
+        if (this.autoExtendMode) {
+            const allElements = getDrawableElements(this.editor)
+            allElements.forEach((child) => {
+                if (child.node !== el.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
+                    candidateBoundaries.push(child)
+                }
+            })
+        } else {
+            candidateBoundaries = this.boundaryElements
+        }
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary.node === el.node) continue
+
+            const checkAndAddIntersection = (intersect) => {
+                if (!intersect) return
+                const interDx = intersect.x - rayBase.x
+                const interDy = intersect.y - rayBase.y
+                const dotProduct = interDx * dirX + interDy * dirY
+
+                if (dotProduct > 1e-5) {
+                    const dist = Math.hypot(intersect.x - rayBase.x, intersect.y - rayBase.y)
+                    intersections.push({ point: intersect, dist })
+                }
+            }
+
+            if (boundary.type === 'line') {
+                const intersect = getLineIntersection(virtualLine, boundary)
+                if (intersect) {
+                    const bEq = getLineEquation(boundary)
+                    const minX = Math.min(bEq.x1, bEq.x2) - 1e-3
+                    const maxX = Math.max(bEq.x1, bEq.x2) + 1e-3
+                    const minY = Math.min(bEq.y1, bEq.y2) - 1e-3
+                    const maxY = Math.max(bEq.y1, bEq.y2) + 1e-3
+                    if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) {
+                        checkAndAddIntersection(intersect)
+                    }
+                }
+            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
+                getLineCircleIntersections(virtualLine, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'rect') {
+                const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
+                getLineRectIntersections(virtualLine, rectBounds).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path') {
+                getPathIntersections(boundary, virtualLine).forEach(checkAndAddIntersection)
+            }
+
+        }
+
+        if (intersections.length === 0) return null
+        intersections.sort((a, b) => a.dist - b.dist)
+
+        return {
+            type: 'spline',
+            extendStart,
+            oldPosition: rayBase,
+            newPosition: intersections[0].point,
+            splineData: splineData
+        }
+    }
+
     onMouseOver(e) {
         if (!this.editor.isInteracting) return
 
         // Find the precise SVG element associated with the event
         const el = SVG(e.target)
-        if (!el || (el.type !== 'line' && !(el.type === 'path' && el.data('arcData')))) return
+        if (!el || (el.type !== 'line' && !(el.type === 'path' && (el.data('arcData') || el.data('splineData'))))) return
 
         // Need the mouse point translated to SVG coordinates
         const pt = this.editor.svg.node.createSVGPoint()
@@ -407,7 +518,15 @@ class ExtendCommand extends Command {
 
                 this.ghostLine = this.editor.overlays.path(d)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none') // styling as a preview
+                    .addClass('ghostLine')
+            } else if (extension.type === 'spline') {
+                const points = [...extension.splineData.points]
+                if (extension.extendStart) points[0] = extension.newPosition
+                else points[points.length - 1] = extension.newPosition
 
+                const d = catmullRomToBezierPath(points)
+                this.ghostLine = this.editor.overlays.path(d)
+                    .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none')
                     .addClass('ghostLine')
             } else {
                 // Create ghost line
@@ -446,9 +565,9 @@ class ExtendCommand extends Command {
 
     onLineClicked(el, source) {
         try {
-            if (!el || (el.type !== 'line' && !(el.type === 'path' && el.data('arcData'))) || el.hasClass('ghostLine')) {
+            if (!el || (el.type !== 'line' && !(el.type === 'path' && (el.data('arcData') || el.data('splineData')))) || el.hasClass('ghostLine')) {
                 if (el && !el.hasClass('ghostLine')) {
-                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines and arcs can be extended.' })
+                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, arcs, and splines can be extended.' })
                 }
                 return
             }
@@ -469,6 +588,13 @@ class ExtendCommand extends Command {
             let editCommand
             if (extension.type === 'arc') {
                 editCommand = new ExtendArcCommand(
+                    this.editor,
+                    el,
+                    extension.extendStart,
+                    extension.newPosition
+                )
+            } else if (extension.type === 'spline') {
+                editCommand = new ExtendSplineCommand(
                     this.editor,
                     el,
                     extension.extendStart,
@@ -525,7 +651,7 @@ class ExtendCommand extends Command {
         // Remove mouse listeners for ghosting
         const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
-            if (el.type === 'line' || (el.type === 'path' && el.data('arcData'))) {
+            if (el.type === 'line' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
             }

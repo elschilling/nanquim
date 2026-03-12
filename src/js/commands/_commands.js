@@ -19,6 +19,7 @@ import { ungroupCommand } from './UngroupCommand'
 import { hatchCommand } from './HatchCommand'
 import { textCommand } from './TextCommand'
 import { drawSplineCommand } from './DrawSplineCommand'
+import { createViewportCommand } from './CreateViewportCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -105,6 +106,10 @@ const commands = {
   SPLINE: {
     execute: drawSplineCommand,
     aliases: ['sp'],
+  },
+  VIEWPORT: {
+    execute: createViewportCommand,
+    aliases: ['vp', 'viewport'],
   },
   // Add more commands and functions as needed
 }

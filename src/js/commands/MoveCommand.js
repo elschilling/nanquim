@@ -160,6 +160,13 @@ class MoveCommand extends Command {
         cy: element.cy(),
         ...data
       }
+    } else if (element._paperVp) {
+      return {
+        type: 'viewport',
+        vp: element._paperVp,
+        x: element._paperVp.x,
+        y: element._paperVp.y
+      }
     } else if (element.type === 'text') {
       return {
         type: 'text',
@@ -213,6 +220,12 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx + ldx, originalPos.cy + ldy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x + ldx
+        vp.y = originalPos.y + ldy
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
       } else if (originalPos.type === 'text') {
         const matrix = originalPos.transform
         element.transform(matrix).translate(ldx, ldy)
@@ -272,6 +285,12 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx, originalPos.cy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x
+        vp.y = originalPos.y
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
       } else if (originalPos.type === 'text') {
         element.transform(originalPos.transform)
       } else {
@@ -299,6 +318,12 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx + this.dx, originalPos.cy + this.dy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x + this.dx
+        vp.y = originalPos.y + this.dy
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
       } else if (originalPos.type === 'text') {
         element.transform(originalPos.transform).translate(this.dx, this.dy)
       } else {

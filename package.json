@@ -17,9 +17,11 @@
   "dependencies": {
     "@svgdotjs/svg.js": "^3.2.5",
     "jsdom": "^28.1.0",
+    "jspdf": "^4.2.0",
     "lodash": "^4.17.21",
     "puppeteer-core": "^24.38.0",
     "rbush": "^4.0.1",
+    "svg2pdf.js": "^2.7.0",
     "svgdom": "^0.1.23",
     "vecks": "^3.9.2"
   }

@@ -33,6 +33,9 @@ function Editor() {
     requestHoverCheck: new Signal(),
     updatedCollections: new Signal(),
     preferencesChanged: new Signal(),
+    editorModeChanged: new Signal(),   // dispatched when switching model <-> paper
+    modelContentChanged: new Signal(), // dispatched when model drawing is modified
+    paperViewportsChanged: new Signal(), // dispatched when paper viewports change
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -65,6 +68,28 @@ function Editor() {
   this.editingVertices = [] // Array of { element, vertexIndex, originalPosition }
   this.cmdParams = {
     filletRadius: 0,
+  }
+
+  // ── Paper Mode ──────────────────────────────────────────────────────────────
+  // 'model' | 'paper'
+  this.mode = 'model'
+
+  // Paper configuration (persisted into saved SVG metadata)
+  this.paperConfig = {
+    // Paper size preset: 'A0'|'A1'|'A2'|'A3'|'A4'|'custom'
+    size: 'A4',
+    // Paper dimensions in mm (used when size === 'custom' or derived from preset)
+    width: 210,
+    height: 297,
+    // 'portrait' | 'landscape'
+    orientation: 'portrait',
+    // Coordinate scale: SVG units per centimeter.
+    // Default 1 means 1 SVG unit = 1cm.
+    // At 1:100 scale, 1m in model space maps to 1cm on paper.
+    // Users can change this in Paper Settings.
+    unitsPerCm: 1,
+    // Color translation map: { '#rrggbb': { printColor: '#rrggbb', enabled: true } }
+    colorMap: {},
   }
 
   // Initialize collection system (creates default collection)

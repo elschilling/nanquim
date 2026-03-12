@@ -39,6 +39,21 @@ function DXFLoader(editor) {
       // Read stroke conversion metadata
       const convertedStrokes = svgRoot.getAttribute('data-nanquim-converted-strokes') === 'true'
 
+      // Read Paper Space metadata
+      const savedPaperConfigStr = svgRoot.getAttribute('data-paper-config')
+      const savedPaperViewportsStr = svgRoot.getAttribute('data-paper-viewports')
+
+      if (savedPaperConfigStr) {
+        try {
+          const parsedConfig = JSON.parse(savedPaperConfigStr)
+          Object.assign(editor.paperConfig, parsedConfig)
+        } catch (e) {
+          console.warn('Failed to parse paper config', e)
+        }
+      }
+
+
+
       // Clear existing drawing
       editor.drawing.clear()
 
@@ -131,6 +146,36 @@ function DXFLoader(editor) {
 
       // Build spatial index for fast hit-testing on the imported geometry
       editor.spatialIndex.rebuild(editor)
+
+      // Clear existing viewports
+      if (editor.paperEditor) {
+        const existingVps = [...(editor.paperViewports || [])]
+        existingVps.forEach(vp => editor.paperEditor.removeViewport(vp.id))
+      }
+
+      if (savedPaperViewportsStr && editor.paperEditor) {
+        try {
+          const parsedVps = JSON.parse(savedPaperViewportsStr)
+          // Make sure Paper Space SVG exists before creating viewports
+          if (!editor.paperSvg || !editor.paperViewportsGroup) {
+            // activate() will build the SVG structure, then we revert back if we weren't in paper mode
+            const wasPaper = editor.mode === 'paper'
+            editor.paperEditor.activate()
+            if (!wasPaper) editor.paperEditor.deactivate()
+          }
+          parsedVps.forEach(vpData => {
+            const vp = editor.paperEditor.createViewport(vpData.x, vpData.y, vpData.w, vpData.h, vpData.scale)
+            vp.setModelOrigin(vpData.modelOriginX, vpData.modelOriginY)
+          })
+          
+          if (editor.mode === 'paper') {
+            editor.paperEditor.deactivate()
+            editor.paperEditor.activate()
+          }
+        } catch (e) {
+          console.warn('Failed to parse paper viewports', e)
+        }
+      }
 
       editor.signals.updatedOutliner.dispatch()
       editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Opened: ' + file.name })

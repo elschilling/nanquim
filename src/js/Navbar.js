@@ -78,12 +78,29 @@ function Navbar(editor) {
     // Get current viewbox to preserve the view
     const vb = editor.svg.viewbox()
 
+    const paperConfigStr = JSON.stringify(editor.paperConfig).replace(/"/g, '&quot;')
+    
+    // Serialize viewports (only necessary properties)
+    const viewportsData = (editor.paperViewports || []).map(vp => ({
+      id: vp.id,
+      x: vp.x,
+      y: vp.y,
+      w: vp.w,
+      h: vp.h,
+      scale: vp.scale,
+      modelOriginX: vp.modelOriginX,
+      modelOriginY: vp.modelOriginY
+    }))
+    const viewportsStr = JSON.stringify(viewportsData).replace(/"/g, '&quot;')
+
     const svgString = [
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs"`,
       `  viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}"`,
       `  data-nanquim-version="1"`,
       `  data-element-index="${editor.elementIndex}"`,
+      `  data-paper-config="${paperConfigStr}"`,
+      `  data-paper-viewports="${viewportsStr}"`,
       convertStrokes ? `  data-nanquim-converted-strokes="true">` : `>`,
       drawingContent,
       `</svg>`,

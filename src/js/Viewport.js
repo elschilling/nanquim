@@ -61,11 +61,19 @@ function Viewport(editor) {
   signals.updatedOutliner.add(() => {
     hoveredElements = []
     editor.spatialIndex.markDirty()
+    // Notify paper viewports that model content may have changed
+    if (editor.signals.modelContentChanged) {
+      editor.signals.modelContentChanged.dispatch()
+    }
   })
   signals.clearSelection.add(() => {
     editor.selected.forEach((el) => {
-      el.removeClass('elementSelected')
-      el.attr('selected', false)
+      if (el && typeof el.removeClass === 'function') {
+        el.removeClass('elementSelected')
+        el.attr('selected', false)
+      } else if (el && el._paperVp) {
+        // Selection is a PaperViewport object, handled safely
+      }
     })
     editor.selected = []
     editor.handlers.clear()
@@ -456,6 +464,16 @@ function Viewport(editor) {
           else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
           else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
           else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+        } else if (v0.element._paperVp) {
+          const { x, y, width, height } = v0.originalPosition
+          if (v0.vertexIndex === 0) { baseX = x; baseY = y }
+          else if (v0.vertexIndex === 1) { baseX = x + width; baseY = y }
+          else if (v0.vertexIndex === 2) { baseX = x + width; baseY = y + height }
+          else if (v0.vertexIndex === 3) { baseX = x; baseY = y + height }
+          else if (v0.vertexIndex === 4) { baseX = x + width / 2; baseY = y }
+          else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
+          else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
+          else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
         }
 
         const dx = point.x - baseX
@@ -540,6 +558,45 @@ function Viewport(editor) {
           else if (index === 6) {
             setRectFromPoints(original.x, original.y, original.x + original.width, point.y)
           }
+          // Case 7: Left Edge
+          else if (index === 7) {
+            setRectFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+          }
+        } else if (element._paperVp) {
+          const vp = element._paperVp
+          const original = vertexData.originalPosition
+          const index = vertexIndex
+
+          // Helper to update viewport from 2 corner points (normalize negative width/height)
+          const setVpFromPoints = (x1, y1, x2, y2) => {
+            const x = Math.min(x1, x2)
+            const y = Math.min(y1, y2)
+            let w = Math.abs(x2 - x1)
+            let h = Math.abs(y2 - y1)
+            // enforce minimum scale
+            if (w < 0.5) {
+              w = 0.5
+            }
+            if (h < 0.5) {
+              h = 0.5
+            }
+            vp.x = x
+            vp.y = y
+            vp.w = w
+            vp.h = h
+            vp.refreshGeometry()
+            vp._editor.signals.paperViewportsChanged.dispatch()
+          }
+
+          if (index === 0) setVpFromPoints(point.x, point.y, original.x + original.width, original.y + original.height)
+          else if (index === 1) setVpFromPoints(original.x, point.y, point.x, original.y + original.height)
+          else if (index === 2) setVpFromPoints(original.x, original.y, point.x, point.y)
+          else if (index === 3) setVpFromPoints(point.x, original.y, original.x + original.width, point.y)
+          else if (index === 4) setVpFromPoints(original.x, point.y, original.x + original.width, original.y + original.height)
+          else if (index === 5) setVpFromPoints(original.x, original.y, point.x, original.y + original.height)
+          else if (index === 6) setVpFromPoints(original.x, original.y, original.x + original.width, point.y)
+          else if (index === 7) setVpFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+
         } else if (element.type === 'path' && element.data('arcData')) {
           const arcData = element.data('arcData')
           const values = {

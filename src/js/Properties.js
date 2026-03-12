@@ -5,11 +5,12 @@ const propertiesPanel = document.getElementById('properties-panel')
 
 function Properties(editor) {
   const signals = editor.signals
-  let activeTab = 'transform' // 'transform' or 'style'
+  let activeTab = 'transform' // 'transform' | 'style' | 'settings'
 
   // Side Icon Navigation
   const transformTabBtn = document.getElementById('tab-transform')
   const styleTabBtn = document.getElementById('tab-style')
+  const settingsTabBtn = document.getElementById('tab-settings')
 
   if (transformTabBtn && styleTabBtn) {
     transformTabBtn.addEventListener('click', () => {
@@ -25,15 +26,38 @@ function Properties(editor) {
     })
   }
 
+  if (settingsTabBtn) {
+    settingsTabBtn.addEventListener('click', () => {
+      activeTab = 'settings'
+      updateTabUI()
+      render()
+    })
+  }
+
   function updateTabUI() {
-    if (activeTab === 'transform') {
-      if (transformTabBtn) transformTabBtn.classList.add('active')
-      if (styleTabBtn) styleTabBtn.classList.remove('active')
-    } else {
-      if (transformTabBtn) transformTabBtn.classList.remove('active')
-      if (styleTabBtn) styleTabBtn.classList.add('active')
+    ;[transformTabBtn, styleTabBtn, settingsTabBtn].forEach(btn => {
+      if (btn) btn.classList.remove('active')
+    })
+    if (activeTab === 'transform' && transformTabBtn) transformTabBtn.classList.add('active')
+    else if (activeTab === 'style' && styleTabBtn) styleTabBtn.classList.add('active')
+    else if (activeTab === 'settings' && settingsTabBtn) settingsTabBtn.classList.add('active')
+  }
+
+  // Show/hide the Settings tab icon based on editor mode
+  function updateModeUI() {
+    const isPaper = editor.mode === 'paper'
+    if (settingsTabBtn) settingsTabBtn.style.display = isPaper ? '' : 'none'
+    // If we were on settings tab and switched to model mode, revert to transform
+    if (!isPaper && activeTab === 'settings') {
+      activeTab = 'transform'
+      updateTabUI()
     }
   }
+
+  signals.editorModeChanged.add(() => {
+    updateModeUI()
+    render()
+  })
 
   // Safe dispatch helper
   const safeDispatch = (signalName) => {
@@ -51,6 +75,42 @@ function Properties(editor) {
   function render() {
     propertiesPanel.innerHTML = ''
 
+    // ── PAPER MODE ──────────────────────────────────────────────────────────
+    if (editor.mode === 'paper') {
+      const content = document.createElement('div')
+      content.className = 'properties-content'
+      propertiesPanel.appendChild(content)
+
+      // Settings tab
+      if (activeTab === 'settings') {
+        renderPaperSettingsTab(content)
+        return
+      }
+
+      // Style tab in paper mode: show color translation
+      if (activeTab === 'style') {
+        renderColorTranslationTab(content)
+        return
+      }
+
+      const sel = editor.selected[0]
+
+      // Check if a paper viewport is selected
+      if (sel && sel._paperVp) {
+        renderViewportPropertiesTab(content, sel._paperVp)
+        return
+      }
+
+      // Transform tab in paper mode: nothing selected
+      const p = document.createElement('p')
+      p.textContent = 'Select a viewport or annotation element'
+      p.style.padding = '8px'
+      p.style.opacity = '0.6'
+      content.appendChild(p)
+      return
+    }
+
+    // ── MODEL MODE ──────────────────────────────────────────────────────────
     if (editor.selected.length === 0) {
       let p = document.createElement('p')
       p.textContent = 'No element selected'
@@ -80,6 +140,275 @@ function Properties(editor) {
         renderStyleTab(content, element, node)
       }
     }
+  }
+
+  // ── PAPER SETTINGS TAB ──────────────────────────────────────────────────────
+
+  function renderPaperSettingsTab(container) {
+    const cfg = editor.paperConfig
+    const pe = editor.paperEditor
+
+    // Section header
+    const header = document.createElement('div')
+    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    header.textContent = 'Paper Settings'
+    container.appendChild(header)
+
+    // Paper size dropdown
+    const sizeRow = document.createElement('div')
+    sizeRow.className = 'property-row'
+    const sizeLabel = document.createElement('label')
+    sizeLabel.className = 'property-label'
+    sizeLabel.textContent = 'Paper Size'
+    const sizeSelect = document.createElement('select')
+    sizeSelect.className = 'property-input'
+    sizeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+
+    const sizes = ['A0','A1','A2','A3','A4','custom']
+    sizes.forEach(s => {
+      const opt = document.createElement('option')
+      opt.value = s
+      opt.textContent = s === 'custom' ? 'Custom' : s
+      if (s === cfg.size) opt.selected = true
+      sizeSelect.appendChild(opt)
+    })
+    sizeSelect.addEventListener('change', () => {
+      pe.setPaperSize(sizeSelect.value)
+      render()
+    })
+    sizeRow.appendChild(sizeLabel)
+    sizeRow.appendChild(sizeSelect)
+    container.appendChild(sizeRow)
+
+    // Custom width/height (shown only for custom)
+    if (cfg.size === 'custom') {
+      createPropertyField(container, 'Width (mm)', cfg.width, (val) => {
+        const n = parseFloat(val)
+        if (!isNaN(n) && n > 0) pe.setPaperSize('custom', n, cfg.height)
+      })
+      createPropertyField(container, 'Height (mm)', cfg.height, (val) => {
+        const n = parseFloat(val)
+        if (!isNaN(n) && n > 0) pe.setPaperSize('custom', cfg.width, n)
+      })
+    } else {
+      createPropertyField(container, 'Width (mm)', cfg.width, null, true)
+      createPropertyField(container, 'Height (mm)', cfg.height, null, true)
+    }
+
+    // Orientation
+    const orientRow = document.createElement('div')
+    orientRow.className = 'property-row'
+    const orientLabel = document.createElement('label')
+    orientLabel.className = 'property-label'
+    orientLabel.textContent = 'Orientation'
+    const orientSelect = document.createElement('select')
+    orientSelect.className = 'property-input'
+    orientSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    ;['portrait', 'landscape'].forEach(o => {
+      const opt = document.createElement('option')
+      opt.value = o
+      opt.textContent = o.charAt(0).toUpperCase() + o.slice(1)
+      if (o === cfg.orientation) opt.selected = true
+      orientSelect.appendChild(opt)
+    })
+    orientSelect.addEventListener('change', () => {
+      pe.setOrientation(orientSelect.value)
+      render()
+    })
+    orientRow.appendChild(orientLabel)
+    orientRow.appendChild(orientSelect)
+    container.appendChild(orientRow)
+
+    // Units per cm (coordinate scale)
+    createPropertyField(container, 'Scale (units/cm)', cfg.unitsPerCm, (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n) && n > 0) {
+        cfg.unitsPerCm = n
+        if (pe) pe.activate()
+      }
+    })
+
+    // Divider
+    const divider = document.createElement('hr')
+    divider.style.cssText = 'border:none;border-top:1px solid #333;margin:8px 0;'
+    container.appendChild(divider)
+
+    // Export buttons
+    const exportHeader = document.createElement('div')
+    exportHeader.style.cssText = 'font-weight:bold;padding:4px 8px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    exportHeader.textContent = 'Export'
+    container.appendChild(exportHeader)
+
+    _makeExportButton(container, '⬇ Export as SVG', '#2a6a3a', () => pe && pe.exportSVG())
+    _makeExportButton(container, '⬇ Export as PDF', '#3a2a6a', () => pe && pe.exportPDF())
+  }
+
+  function _makeExportButton(container, label, bg, onClick) {
+    const btn = document.createElement('button')
+    btn.textContent = label
+    btn.style.cssText = `display:block;width:calc(100% - 16px);margin:4px 8px;padding:6px;` +
+      `background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;`
+    btn.addEventListener('click', onClick)
+    container.appendChild(btn)
+  }
+
+  // ── VIEWPORT PROPERTIES TAB ────────────────────────────────────────────────
+
+  function renderViewportPropertiesTab(container, vp) {
+    const header = document.createElement('div')
+    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;'
+    header.textContent = 'Viewport Properties'
+    container.appendChild(header)
+
+    createPropertyField(container, 'ID', vp.id, null, true)
+
+    createPropertyField(container, 'X (cm)', vp.x.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n)) { vp.x = n; vp.refreshGeometry() }
+    })
+    createPropertyField(container, 'Y (cm)', vp.y.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n)) { vp.y = n; vp.refreshGeometry() }
+    })
+    createPropertyField(container, 'Width (cm)', vp.w.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n) && n > 0) { vp.w = n; vp.refreshGeometry() }
+    })
+    createPropertyField(container, 'Height (cm)', vp.h.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n) && n > 0) { vp.h = n; vp.refreshGeometry() }
+    })
+    createPropertyField(container, 'Scale (1:N)', vp.scale, (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n) && n > 0) vp.setScale(n)
+    })
+    createPropertyField(container, 'Model Origin X', vp.modelOriginX.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n)) vp.setModelOrigin(n, vp.modelOriginY)
+    })
+    createPropertyField(container, 'Model Origin Y', vp.modelOriginY.toFixed(3), (val) => {
+      const n = parseFloat(val)
+      if (!isNaN(n)) vp.setModelOrigin(vp.modelOriginX, n)
+    })
+
+    // Delete button
+    const deleteBtn = document.createElement('button')
+    deleteBtn.textContent = '🗑 Delete Viewport'
+    deleteBtn.style.cssText = 'display:block;width:calc(100% - 16px);margin:12px 8px 4px;padding:6px;' +
+      'background:#6a2a2a;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;'
+    deleteBtn.addEventListener('click', () => {
+      if (editor.paperEditor) editor.paperEditor.removeViewport(vp.id)
+      editor.selected = []
+      safeDispatch('updatedProperties')
+    })
+    container.appendChild(deleteBtn)
+  }
+
+  // ── COLOR TRANSLATION TAB ───────────────────────────────────────────────────
+
+  function renderColorTranslationTab(container) {
+    const pe = editor.paperEditor
+    const cfg = editor.paperConfig
+
+    const header = document.createElement('div')
+    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;'
+    header.textContent = 'Color Translation (Print)'
+    container.appendChild(header)
+
+    // Presets row
+    const presetsRow = document.createElement('div')
+    presetsRow.style.cssText = 'display:flex;gap:4px;padding:4px 8px 8px;flex-wrap:wrap;'
+
+    ;[['Color', null], ['Monochrome', '#000000'], ['Grayscale', 'grayscale']].forEach(([label, preset]) => {
+      const btn = document.createElement('button')
+      btn.textContent = label
+      btn.style.cssText = 'flex:1;padding:4px;background:#333;color:white;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px;'
+      btn.addEventListener('click', () => {
+        const colors = pe ? pe.getUsedColors() : []
+        colors.forEach(c => {
+          if (!cfg.colorMap[c]) cfg.colorMap[c] = { printColor: c, enabled: true }
+          if (preset === null) {
+            cfg.colorMap[c].printColor = c // pass-through
+          } else if (preset === 'grayscale') {
+            cfg.colorMap[c].printColor = _toGrayscale(c)
+          } else {
+            cfg.colorMap[c].printColor = preset
+          }
+        })
+        render()
+      })
+      presetsRow.appendChild(btn)
+    })
+    container.appendChild(presetsRow)
+
+    // Color rows
+    const colors = pe ? pe.getUsedColors() : []
+    if (colors.length === 0) {
+      const empty = document.createElement('p')
+      empty.textContent = 'No colors found in model drawing'
+      empty.style.cssText = 'padding:8px;opacity:0.6;font-size:12px;'
+      container.appendChild(empty)
+      return
+    }
+
+    colors.forEach(sourceColor => {
+      if (!cfg.colorMap[sourceColor]) {
+        cfg.colorMap[sourceColor] = { printColor: sourceColor, enabled: true }
+      }
+      const mapping = cfg.colorMap[sourceColor]
+
+      const row = document.createElement('div')
+      row.className = 'property-row'
+      row.style.gap = '6px'
+
+      // Enable checkbox
+      const cb = document.createElement('input')
+      cb.type = 'checkbox'
+      cb.checked = mapping.enabled
+      cb.style.flexShrink = '0'
+      cb.addEventListener('change', () => { mapping.enabled = cb.checked })
+
+      // Source color swatch
+      const srcSwatch = document.createElement('div')
+      srcSwatch.style.cssText = `width:20px;height:20px;border-radius:3px;border:1px solid #555;flex-shrink:0;background:${sourceColor};`
+      srcSwatch.title = sourceColor
+
+      const arrow = document.createElement('span')
+      arrow.textContent = '→'
+      arrow.style.opacity = '0.5'
+
+      // Print color swatch (clickable)
+      const printSwatch = document.createElement('div')
+      printSwatch.style.cssText = `width:20px;height:20px;border-radius:3px;border:1px solid #555;flex-shrink:0;background:${mapping.printColor};cursor:pointer;`
+      printSwatch.title = `Print: ${mapping.printColor}`
+      printSwatch.addEventListener('click', () => {
+        openColorPicker(mapping.printColor, (newColor) => {
+          mapping.printColor = newColor
+          printSwatch.style.background = newColor
+          printSwatch.title = `Print: ${newColor}`
+        })
+      })
+
+      const colorLabel = document.createElement('span')
+      colorLabel.style.cssText = 'font-size:10px;opacity:0.6;font-family:monospace;'
+      colorLabel.textContent = sourceColor
+
+      row.appendChild(cb)
+      row.appendChild(srcSwatch)
+      row.appendChild(arrow)
+      row.appendChild(printSwatch)
+      row.appendChild(colorLabel)
+      container.appendChild(row)
+    })
+  }
+
+  function _toGrayscale(hexColor) {
+    const r = parseInt(hexColor.slice(1, 3), 16)
+    const g = parseInt(hexColor.slice(3, 5), 16)
+    const b = parseInt(hexColor.slice(5, 7), 16)
+    const lum = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b)
+    const h = lum.toString(16).padStart(2, '0')
+    return `#${h}${h}${h}`
   }
 
   function renderCollectionStyleTab(container, element) {

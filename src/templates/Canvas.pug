@@ -1,8 +1,12 @@
 .editor.canvas-editor
   .editor-header
-    .wgt.wgt-menu
+    .wgt.wgt-menu.editor-mode-menu(onclick='toggleEditorModeMenu(event)')
         span.icon.icon-editor-svgcad
+        span.editor-mode-label#editor-mode-label Model Space
         .icon.icon-dropdown
+        .dropdown-menu.editor-mode-dropdown#editor-mode-dropdown
+          .menu-item.editor-mode-item(data-mode='model' onclick='switchEditorMode("model")') ✏️ Model Space
+          .menu-item.editor-mode-item(data-mode='paper' onclick='switchEditorMode("paper")') 🗒️ Paper Space
     .layout-row
       .align-buttons-center
         .wgt.wgt-menu

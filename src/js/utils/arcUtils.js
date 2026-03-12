@@ -67,3 +67,17 @@ export function getArcGeometry(p1, p2, p3) {
         largeArcFlag
     }
 }
+
+export function isPointInArc(pt, cx, cy, startAngle, endAngle, ccw) {
+    let angle = Math.atan2(pt.y - cy, pt.x - cx)
+    if (angle < 0) angle += 2 * Math.PI
+
+    let sweep = ccw ? (endAngle - startAngle) : (startAngle - endAngle)
+    if (sweep < 0) sweep += 2 * Math.PI
+
+    let aDiff = ccw ? (angle - startAngle) : (startAngle - angle)
+    if (aDiff < 0) aDiff += 2 * Math.PI
+
+    return aDiff <= sweep + 1e-4
+}
+

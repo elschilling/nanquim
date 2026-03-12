@@ -1,27 +1,14 @@
-import { getArcGeometry } from '../utils/arcUtils'
+import { getArcGeometry, isPointInArc } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { TrimLineCommand } from './TrimLineCommand'
 import { TrimRectCommand } from './TrimRectCommand'
 import { TrimCircleCommand } from './TrimCircleCommand'
 import { TrimArcCommand } from './TrimArcCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections } from '../utils/intersection'
+import { TrimSplineCommand } from './TrimSplineCommand'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
 import { getPreferences } from '../Preferences'
-
-function isPointInArc(pt, arcData) {
-    const { cx, cy, theta1, theta2, ccw } = arcData
-    let angle = Math.atan2(pt.y - cy, pt.x - cx)
-    if (angle < 0) angle += 2 * Math.PI
-
-    // theta2 is start (p1), theta1 is end (p3)
-    let sweep = ccw ? (theta1 - theta2) : (theta2 - theta1)
-    if (sweep < 0) sweep += 2 * Math.PI
-
-    let aDiff = ccw ? (angle - theta2) : (theta2 - angle)
-    if (aDiff < 0) aDiff += 2 * Math.PI
-
-    return aDiff <= sweep + 1e-4
-}
+import { catmullRomToBezierPath } from './DrawSplineCommand'
 
 class TrimCommand extends Command {
     constructor(editor) {
@@ -203,18 +190,16 @@ class TrimCommand extends Command {
                         checkAndAddIntersection(intersect)
                     }
                 }
-            } else if (boundary.type === 'circle') {
-                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : parseFloat(boundary.attr('r'))
-                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
+                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, rectBounds).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
-                const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
-                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, bArcData).forEach(pt => {
-                    if (isPointInArc(pt, bArcData)) checkAndAddIntersection(pt)
-                })
+            } else if (boundary.type === 'path') {
+                getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
             }
+
         }
 
         intersections.sort((a, b) => a.t - b.t)
@@ -335,7 +320,8 @@ class TrimCommand extends Command {
 
         const checkPointOnArc = (pt) => {
             if (!isArc) return true
-            return isPointInArc(pt, arcGeo)
+            // In TrimCommand, theta2 is start and theta1 is end
+            return isPointInArc(pt, arcGeo.cx, arcGeo.cy, arcGeo.theta2, arcGeo.theta1, arcGeo.ccw)
         }
 
         const checkAndAddIntersection = (intersect) => {
@@ -391,12 +377,17 @@ class TrimCommand extends Command {
             } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
                 const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
                 getCircleCircleIntersections(bArcData, { cx, cy, r }).forEach(pt => {
-                    if (isPointInArc(pt, bArcData)) checkAndAddIntersection(pt)
+                    const bStartAngle = bArcData.theta1 !== undefined ? bArcData.theta1 : bArcData.theta2
+                    const bEndAngle = bArcData.theta3 !== undefined ? bArcData.theta3 : bArcData.theta1
+                    if (isPointInArc(pt, bArcData.cx, bArcData.cy, bStartAngle, bEndAngle, bArcData.ccw)) checkAndAddIntersection(pt)
                 })
-            } else if (boundary.type === 'circle') {
-                const bcx = boundary.cx(), bcy = boundary.cy(), br = boundary.radius ? boundary.radius() : parseFloat(boundary.attr('r'))
-                getCircleCircleIntersections({ cx: bcx, cy: bcy, r: br }, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path' && boundary.data('splineData')) {
+                getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
+                const bcx = boundary.cx(), bcy = boundary.cy(), br = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
+                getCircleCircleIntersections({ cx: bcx, cy: bcy, r: parseFloat(br) }, { cx, cy, r }).forEach(checkAndAddIntersection)
             }
+
         }
 
         const ccw = isArc ? arcGeo.ccw : true
@@ -487,8 +478,10 @@ class TrimCommand extends Command {
             cx: geo.cx,
             cy: geo.cy,
             r: geo.radius,
-            theta1: geo.theta3, // TrimCommand expects theta1 as end
-            theta2: geo.theta1, // and theta2 as start
+            theta1: geo.theta3, // End angle
+            theta2: geo.theta1, // Start angle
+            startPt: p1,
+            endPt: p3,
             ccw: geo.ccw
         }
     }
@@ -496,7 +489,7 @@ class TrimCommand extends Command {
     isPointInArcData(pt, data) {
         const geo = this.getArcGeometry(data)
         if (!geo) return false
-        return isPointInArc(pt, geo)
+        return isPointInArc(pt, geo.cx, geo.cy, geo.theta2, geo.theta1, geo.ccw)
     }
 
     createArcDataFromAngles(cx, cy, r, startAngle, endAngle, ccw = true) {
@@ -517,11 +510,122 @@ class TrimCommand extends Command {
         }
     }
 
+    calculateSplineTrim(el, point) {
+        const splineData = el.data('splineData')
+        if (!splineData) return null
+
+        const len = el.length()
+        if (len === 0) return null
+
+        const intersections = []
+        // Add start and end points
+        intersections.push({ t: 0, x: splineData.points[0].x, y: splineData.points[0].y })
+        intersections.push({ t: 1, x: splineData.points[splineData.points.length - 1].x, y: splineData.points[splineData.points.length - 1].y })
+
+        const candidateBoundaries = this.getCandidateBoundaries(el)
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary.node === el.node) continue
+
+            // Use our new generic path intersection utility
+            const pts = getPathIntersections(el, boundary)
+            pts.forEach(pt => {
+                if (pt.t > 1e-4 && pt.t < 1 - 1e-4) {
+                    intersections.push({ t: pt.t, x: pt.x, y: pt.y })
+                }
+            })
+        }
+
+        intersections.sort((a, b) => a.t - b.t)
+
+        const uniqueIntersects = []
+        let lastT = -100
+        for (const inter of intersections) {
+            if (Math.abs(inter.t - lastT) > 1e-3) {
+                uniqueIntersects.push(inter)
+                lastT = inter.t
+            }
+        }
+
+        if (uniqueIntersects.length <= 2) return null
+
+        // Find which segment the mouse is in
+        // Again, we need t_mouse
+        let minDistMouse = Infinity, t_mouse = 0
+        const searchSamples = Math.max(100, Math.floor(len / 2))
+        for (let i = 0; i <= searchSamples; i++) {
+            const d = (i / searchSamples) * len
+            const p = el.node.getPointAtLength(d)
+            const dist = Math.hypot(p.x - point.x, p.y - point.y)
+            if (dist < minDistMouse) {
+                minDistMouse = dist
+                t_mouse = d / len
+            }
+        }
+
+        let mouseSegIdx = -1
+        for (let i = 0; i < uniqueIntersects.length - 1; i++) {
+            if (t_mouse >= uniqueIntersects[i].t && t_mouse <= uniqueIntersects[i + 1].t) {
+                mouseSegIdx = i
+                break
+            }
+        }
+
+        if (mouseSegIdx === -1) return null
+
+        const splinesToKeep = []
+
+        const getPointsInInterval = (tStart, tEnd, startPt, endPt) => {
+            const pts = [{ x: startPt.x, y: startPt.y }]
+            // Add original points that fall within this t-interval
+            // We need approximate t for each original point too...
+            // Or just use the original points and check their distance along path
+            splineData.points.forEach(p => {
+                // Approximate t for point p
+                let tP = -1
+                let minDist = Infinity
+                for (let d = 0; d <= len; d += len / 50) {
+                    let pathP = el.node.getPointAtLength(d)
+                    let dist = Math.hypot(pathP.x - p.x, pathP.y - p.y)
+                    if (dist < minDist) {
+                        minDist = dist
+                        tP = d / len
+                    }
+                }
+                if (tP > tStart + 1e-3 && tP < tEnd - 1e-3) {
+                    pts.push({ x: p.x, y: p.y })
+                }
+            })
+            pts.push({ x: endPt.x, y: endPt.y })
+            return pts
+        }
+
+        for (let i = 0; i < uniqueIntersects.length - 1; i++) {
+            if (i === mouseSegIdx) continue
+            const pts = getPointsInInterval(uniqueIntersects[i].t, uniqueIntersects[i + 1].t, uniqueIntersects[i], uniqueIntersects[i + 1])
+            if (pts.length >= 2) splinesToKeep.push(pts)
+        }
+
+        if (splinesToKeep.length === 0) {
+            return { type: 'spline', action: { type: 'remove' } }
+        }
+
+        // Preview: the segment to be removed
+        const previewPts = getPointsInInterval(uniqueIntersects[mouseSegIdx].t, uniqueIntersects[mouseSegIdx + 1].t, uniqueIntersects[mouseSegIdx], uniqueIntersects[mouseSegIdx + 1])
+
+        return {
+            type: 'spline',
+            action: { type: 'splines', splines: splinesToKeep },
+            preview: { type: 'spline', points: previewPts }
+        }
+    }
+
     calculateTrim(el, point) {
         if (!el || !point) return null
         if (el.type === 'line') return this.calculateLineTrim(el, point)
         if (el.type === 'rect') return this.calculateRectTrim(el, point)
         if (el.type === 'circle' || (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData')))) return this.calculateCircleTrim(el, point)
+        if (el.type === 'path' && el.data('splineData')) return this.calculateSplineTrim(el, point)
         return null
     }
 
@@ -536,7 +640,7 @@ class TrimCommand extends Command {
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
 
             let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
-            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData'))) isValidHover = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValidHover = true
 
             if (isValidHover) {
                 targetEl = el
@@ -567,6 +671,11 @@ class TrimCommand extends Command {
 
                 this.ghostArc.plot(d).show().front()
                 this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
+            } else if (p.type === 'spline') {
+                this.ghostLine.hide()
+                const d = catmullRomToBezierPath(p.points)
+                this.ghostArc.plot(d).show().front()
+                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
             } else {
                 this.ghostArc.hide()
                 this.ghostLine.plot(p.x1, p.y1, p.x2, p.y2).show().front()
@@ -586,10 +695,10 @@ class TrimCommand extends Command {
         try {
             if (!el || el.hasClass('ghostLine')) return
             let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
-            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData'))) isValid = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValid = true
 
             if (!isValid) {
-                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, and circles/arcs can be trimmed.' })
+                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, circles/arcs, and splines can be trimmed.' })
                 return
             }
 
@@ -613,6 +722,8 @@ class TrimCommand extends Command {
                 } else {
                     trimCommand = new TrimCircleCommand(this.editor, el, trimData.action)
                 }
+            } else if (trimData.type === 'spline') {
+                trimCommand = new TrimSplineCommand(this.editor, el, { type: trimData.actionType, splines: trimData.splines })
             }
 
             if (trimCommand) this.editor.execute(trimCommand)

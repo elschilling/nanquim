@@ -33,7 +33,202 @@ function Outliner(editor) {
     renderCollections()
   })
 
+  signals.paperViewportsChanged.add(() => {
+    drawingTree.innerHTML = ''
+    renderCollections()
+  })
+
   function renderCollections() {
+    if (editor.mode === 'paper') {
+      renderPaperModeOutliner()
+    } else {
+      renderModelModeCollections()
+    }
+  }
+
+  // ── Paper-mode outliner ────────────────────────────────────────────────────
+
+  function renderPaperModeOutliner() {
+    // 1. Viewports pseudo-collection (at top)
+    renderViewportsPseudoCollection()
+
+    // 2. Annotations pseudo-collection
+    renderAnnotationsPseudoCollection()
+
+    // 3. Model collections (locked, visibility-only)
+    editor.drawing.children().each((child) => {
+      if (child.attr('data-collection') !== 'true') return
+      const id = child.attr('id')
+      const data = editor.collections.get(id)
+      if (!data) return
+      renderLockedModelCollection(child, data, id)
+    })
+  }
+
+  function renderViewportsPseudoCollection() {
+    const vps = editor.paperViewports || []
+
+    const collectionUl = document.createElement('ul')
+    collectionUl.className = 'outliner-collection outliner-paper-collection'
+
+    const collectionLi = document.createElement('li')
+    collectionLi.className = 'collection-row'
+
+    const leftSide = document.createElement('div')
+    leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
+
+    const folderIcon = document.createElement('div')
+    folderIcon.className = 'icon icon-collection'
+    folderIcon.style.marginRight = '6px'
+    folderIcon.style.color = '#8888ff'
+
+    const nameSpan = document.createElement('span')
+    nameSpan.className = 'collection-name'
+    nameSpan.textContent = `Viewports (${vps.length})`
+    nameSpan.style.color = '#aaaaff'
+
+    leftSide.appendChild(folderIcon)
+    leftSide.appendChild(nameSpan)
+    collectionLi.appendChild(leftSide)
+    collectionUl.appendChild(collectionLi)
+
+    // Children: each viewport
+    const childrenDiv = document.createElement('div')
+    vps.forEach((vp) => {
+      const vpUl = document.createElement('ul')
+      const vpLi = document.createElement('li')
+      vpLi.className = 'collection-row'
+
+      const vpLeft = document.createElement('div')
+      vpLeft.style.cssText = 'display:flex;align-items:center;flex:1;padding-left:20px;cursor:pointer;'
+
+      const vpIcon = document.createElement('div')
+      vpIcon.className = 'icon icon-element-rect'
+      vpIcon.style.margin = '0 6px 0 0'
+      vpIcon.style.color = '#8888ff'
+
+      const vpName = document.createElement('span')
+      vpName.className = 'collection-name'
+      vpName.textContent = `${vp.id} — 1:${vp.scale}`
+
+      vpLeft.appendChild(vpIcon)
+      vpLeft.appendChild(vpName)
+
+      // Click: select the viewport to show its properties
+      vpLeft.addEventListener('click', (e) => {
+        e.stopPropagation()
+        editor.selected = [{ _paperVp: vp }]
+        editor.signals.updatedProperties.dispatch()
+      })
+
+      // Visibility
+      const iconsDiv = document.createElement('div')
+      iconsDiv.className = 'collection-icons'
+      const eyeIcon = document.createElement('div')
+      eyeIcon.className = 'icon collection-icon icon-restrict-screen' + (vp.visible ? '' : ' icon-off')
+      eyeIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        vp.setVisible(!vp.visible)
+        editor.signals.paperViewportsChanged.dispatch()
+      })
+      iconsDiv.appendChild(eyeIcon)
+
+      vpLi.appendChild(vpLeft)
+      vpLi.appendChild(iconsDiv)
+      vpUl.appendChild(vpLi)
+      childrenDiv.appendChild(vpUl)
+    })
+
+    collectionUl.appendChild(childrenDiv)
+    drawingTree.appendChild(collectionUl)
+  }
+
+  function renderAnnotationsPseudoCollection() {
+    const collectionUl = document.createElement('ul')
+    collectionUl.className = 'outliner-collection outliner-paper-collection'
+
+    const collectionLi = document.createElement('li')
+    collectionLi.className = 'collection-row collection-active'
+
+    const leftSide = document.createElement('div')
+    leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
+
+    const folderIcon = document.createElement('div')
+    folderIcon.className = 'icon icon-collection'
+    folderIcon.style.marginRight = '6px'
+    folderIcon.style.color = '#88cc88'
+
+    const nameSpan = document.createElement('span')
+    nameSpan.className = 'collection-name'
+    nameSpan.textContent = 'Annotations'
+    nameSpan.style.color = '#88cc88'
+
+    leftSide.appendChild(folderIcon)
+    leftSide.appendChild(nameSpan)
+    collectionLi.appendChild(leftSide)
+    collectionUl.appendChild(collectionLi)
+    drawingTree.appendChild(collectionUl)
+  }
+
+  function renderLockedModelCollection(child, data, id) {
+    const collectionUl = document.createElement('ul')
+    collectionUl.className = 'outliner-collection outliner-model-collection-locked'
+
+    const collectionLi = document.createElement('li')
+    collectionLi.className = 'collection-row collection-locked-row'
+    if (!data.visible) collectionLi.classList.add('collection-hidden-row')
+
+    const leftSide = document.createElement('div')
+    leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
+
+    const chevron = document.createElement('div')
+    chevron.className = 'icon icon-right'
+    chevron.style.marginRight = '4px'
+
+    const folderIcon = document.createElement('div')
+    folderIcon.className = 'icon icon-collection'
+    folderIcon.style.marginRight = '6px'
+    folderIcon.style.opacity = '0.5'
+
+    const nameSpan = document.createElement('span')
+    nameSpan.className = 'collection-name'
+    nameSpan.textContent = (child.attr('name') || 'Collection') + ' 🔒'
+    nameSpan.style.opacity = '0.6'
+
+    leftSide.appendChild(chevron)
+    leftSide.appendChild(folderIcon)
+    leftSide.appendChild(nameSpan)
+
+    // Right side: only visibility toggle
+    const iconsDiv = document.createElement('div')
+    iconsDiv.className = 'collection-icons'
+
+    const eyeIcon = document.createElement('div')
+    eyeIcon.className = 'icon collection-icon icon-restrict-screen'
+    if (!data.visible) eyeIcon.classList.add('icon-off')
+    eyeIcon.title = data.visible ? 'Hide' : 'Show'
+    eyeIcon.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleVisibility(editor, id)
+    })
+
+    // Lock icon (always locked, informational only)
+    const lockIcon = document.createElement('div')
+    lockIcon.className = 'icon collection-icon icon-restrict-edit-mode icon-on'
+    lockIcon.title = 'Locked in Paper mode'
+
+    iconsDiv.appendChild(eyeIcon)
+    iconsDiv.appendChild(lockIcon)
+
+    collectionLi.appendChild(leftSide)
+    collectionLi.appendChild(iconsDiv)
+    collectionUl.appendChild(collectionLi)
+    drawingTree.appendChild(collectionUl)
+  }
+
+  // ── Model-mode outliner (original) ─────────────────────────────────────────
+
+  function renderModelModeCollections() {
     // Iterate collections in DOM order
     editor.drawing.children().each((child) => {
       if (child.attr('data-collection') !== 'true') return
@@ -266,7 +461,13 @@ function Outliner(editor) {
       const pt = svgNode.createSVGPoint()
       pt.x = x
       pt.y = y
-      const elementCTM = element.node.getCTM()
+      let elementCTM
+      if (element.node) {
+        elementCTM = element.node.getCTM()
+      } else {
+        // Fallback for mock objects like paper viewports
+        elementCTM = svgNode.getCTM()
+      }
       const svgCTM = svgNode.getCTM()
       if (!elementCTM || !svgCTM) return { x, y }
 
@@ -419,21 +620,33 @@ function Outliner(editor) {
               signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
-      } else if (el.type === 'rect') {
-        const rx = el.node.x.baseVal.value
-        const ry = el.node.y.baseVal.value
-        const rw = el.node.width.baseVal.value
-        const rh = el.node.height.baseVal.value
+      } else if (el.type === 'rect' || el._paperVp) {
+        
+        let rx, ry, rw, rh, s
+        if (el._paperVp) {
+          const vp = el._paperVp
+          rx = vp.x
+          ry = vp.y
+          rw = vp.w
+          rh = vp.h
+          s = editor.paperSvg // use paper SVG as the space reference
+        } else {
+          rx = el.node.x.baseVal.value
+          ry = el.node.y.baseVal.value
+          rw = el.node.width.baseVal.value
+          rh = el.node.height.baseVal.value
+          s = el
+        }
 
         const points = [
-          { pt: localToWorld(el, rx, ry), index: 0 },
-          { pt: localToWorld(el, rx + rw, ry), index: 1 },
-          { pt: localToWorld(el, rx + rw, ry + rh), index: 2 },
-          { pt: localToWorld(el, rx, ry + rh), index: 3 },
-          { pt: localToWorld(el, rx + rw / 2, ry), index: 4 },
-          { pt: localToWorld(el, rx + rw, ry + rh / 2), index: 5 },
-          { pt: localToWorld(el, rx + rw / 2, ry + rh), index: 6 },
-          { pt: localToWorld(el, rx, ry + rh / 2), index: 7 }
+          { pt: localToWorld(s, rx, ry), index: 0, isCorner: true, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx + rw, ry), index: 1, isCorner: true, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx + rw, ry + rh), index: 2, isCorner: true, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx, ry + rh), index: 3, isCorner: true, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx + rw / 2, ry), index: 4, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx + rw, ry + rh / 2), index: 5, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx + rw / 2, ry + rh), index: 6, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
+          { pt: localToWorld(s, rx, ry + rh / 2), index: 7, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } }
         ]
 
         points.forEach((p) => {
@@ -452,7 +665,11 @@ function Outliner(editor) {
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+              if (el._paperVp) {
+                signals.vertexEditStarted.dispatch([{ element: el, vertexIndex: p.index, originalPosition: p._vpOriginal }])
+              } else {
+                signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+              }
             })
         })
       } else if (el.type === 'path' && el.data('arcData')) {
