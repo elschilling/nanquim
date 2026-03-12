@@ -8,26 +8,30 @@ class TrimArcCommand extends Command {
         this.name = 'Trim Arc'
         this.element = element
         this.action = action
-        this.parent = element.node.parentNode
+        this.parent = window.SVG(element.node.parentNode) || this.editor.activeCollection
         this.arcPaths = []
         this.hasExecutedBefore = false
     }
 
     copyStyles(source, target) {
-        const stroke = source.attr('stroke')
-        const strokeWidth = source.attr('stroke-width')
-        const opacity = source.attr('opacity')
-        const strokeDasharray = source.attr('stroke-dasharray')
-        const linecap = source.attr('stroke-linecap')
+        // Securely copy explicit styles (stroke color, width, etc from original)
+        // We use raw DOM methods to avoid reading transient CSS/computed styles like hover effects
+        const copyDOMStyles = (src, dest) => {
+            ['stroke', 'stroke-width', 'opacity', 'stroke-dasharray', 'stroke-linecap'].forEach(prop => {
+                const attrVal = src.getAttribute(prop)
+                if (attrVal !== null) dest.setAttribute(prop, attrVal)
 
-        if (stroke) target.attr('stroke', stroke)
-        if (strokeWidth) target.attr('stroke-width', strokeWidth)
-        if (opacity !== undefined) target.attr('opacity', opacity)
-        if (strokeDasharray) target.attr('stroke-dasharray', strokeDasharray)
-        if (linecap) target.attr('stroke-linecap', linecap)
+                const styleVal = src.style[prop]
+                if (styleVal) dest.style[prop] = styleVal
+            })
+            const overrides = src.getAttribute('data-style-overrides')
+            if (overrides) dest.setAttribute('data-style-overrides', overrides)
+        }
+
+        copyDOMStyles(source.node, target.node)
 
         target.attr('fill', 'none')
-        target.addClass('newDrawing')
+        target
     }
 
     execute() {
@@ -70,7 +74,7 @@ class TrimArcCommand extends Command {
 
                 const d = `M ${startPt.x} ${startPt.y} A ${r} ${r} 0 ${largeArcFlag} ${sweepFlag} ${endPt.x} ${endPt.y}`
 
-                let newArc = this.editor.drawing.path(d)
+                let newArc = this.parent.path(d)
 
                 // Set the arcData for editability and snapping
                 // p1 = start point, p2 = mid point, p3 = end point (following our DrawArcCommand convention)

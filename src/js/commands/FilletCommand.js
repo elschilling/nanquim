@@ -49,7 +49,6 @@ class FilletCommand extends Command {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     if (!el) return
     this.selectedElements.push([el, this.editor.lastClick])
-    console.log('selectedElements', this.selectedElements)
     if (this.selectedElements.length < 2) {
       this.startSelection()
     } else {
@@ -76,7 +75,6 @@ class FilletCommand extends Command {
   }
 
   filletElements() {
-    console.log('lastClick', this.editor.lastClick)
     if (this.selectedElements.length !== 2) return
 
     const line1Data = this.selectedElements[0] // [element, clickPosition]
@@ -144,18 +142,13 @@ class FilletCommand extends Command {
 
       const intersection = getLineIntersection(line1, line2)
 
-      console.log('Intersection:', intersection)
-      console.log('Click1:', click1)
-      console.log('Click2:', click2)
 
       if (!click1 || !click2 || !intersection) {
-        console.log('Missing click positions or intersection')
         return
       }
 
       // For line1: Find which endpoint is on the same side as the click relative to intersection
       const l1 = getLineEquation(line1)
-      console.log('Line1 before:', l1)
 
       // Calculate vectors from intersection to each endpoint and to click
       const vecToStart1 = { x: l1.x1 - intersection.x, y: l1.y1 - intersection.y }
@@ -166,21 +159,16 @@ class FilletCommand extends Command {
       const dotStart1 = vecToStart1.x * vecToClick1.x + vecToStart1.y * vecToClick1.y
       const dotEnd1 = vecToEnd1.x * vecToClick1.x + vecToEnd1.y * vecToClick1.y
 
-      console.log('Line1 - dot product start:', dotStart1, 'dot product end:', dotEnd1)
-
       if (dotStart1 > dotEnd1) {
         // Start is more aligned with click direction (same side), keep start and move end to intersection
-        console.log('Line1: Keeping start (same side as click), moving end to intersection')
         line1.attr({ x2: intersection.x, y2: intersection.y })
       } else {
         // End is more aligned with click direction (same side), keep end and move start to intersection
-        console.log('Line1: Keeping end (same side as click), moving start to intersection')
         line1.attr({ x1: intersection.x, y1: intersection.y })
       }
 
       // For line2: Same logic
       const l2 = getLineEquation(line2)
-      console.log('Line2 before:', l2)
 
       const vecToStart2 = { x: l2.x1 - intersection.x, y: l2.y1 - intersection.y }
       const vecToEnd2 = { x: l2.x2 - intersection.x, y: l2.y2 - intersection.y }
@@ -188,21 +176,13 @@ class FilletCommand extends Command {
 
       const dotStart2 = vecToStart2.x * vecToClick2.x + vecToStart2.y * vecToClick2.y
       const dotEnd2 = vecToEnd2.x * vecToClick2.x + vecToEnd2.y * vecToClick2.y
-
-      console.log('Line2 - dot product start:', dotStart2, 'dot product end:', dotEnd2)
-
       if (dotStart2 > dotEnd2) {
         // Start is more aligned with click direction (same side), keep start and move end to intersection
-        console.log('Line2: Keeping start (same side as click), moving end to intersection')
         line2.attr({ x2: intersection.x, y2: intersection.y })
       } else {
         // End is more aligned with click direction (same side), keep end and move start to intersection
-        console.log('Line2: Keeping end (same side as click), moving start to intersection')
         line2.attr({ x1: intersection.x, y1: intersection.y })
       }
-
-      console.log('Line1 after:', getLineEquation(line1))
-      console.log('Line2 after:', getLineEquation(line2))
     } catch (error) {
       console.error('Error in extendLinesToIntersection:', error)
       throw error // Re-throw to trigger undo in filletElements
@@ -377,14 +357,14 @@ class FilletCommand extends Command {
     // Create the arc path
     const pathData = `M ${point1.x} ${point1.y} A ${radius} ${radius} 0 0 ${sweepFlag} ${point2.x} ${point2.y}`
 
-    // Try to find the correct drawing context
+    // Try to find the correct drawing context (same collection as source line)
     let drawContext = null
-    if (this.editor.drawing) {
-      drawContext = this.editor.drawing
-    } else if (this.editor.svg) {
-      drawContext = this.editor.svg
-    } else if (line1.parent) {
+    if (line1.parent() && line1.parent().attr('data-collection') === 'true') {
       drawContext = line1.parent()
+    } else if (this.editor.activeCollection) {
+      drawContext = this.editor.activeCollection
+    } else if (this.editor.drawing) {
+      drawContext = this.editor.drawing
     } else {
       throw new Error('Cannot find SVG drawing context')
     }
@@ -438,7 +418,7 @@ class FilletCommand extends Command {
     arcPath.attr('name', 'Arc')
 
     arcPath.attr(inheritedStyles)
-    arcPath.addClass('newDrawing')
+    arcPath
     this.editor.signals.updatedOutliner.dispatch()
 
     // Store created arc for undo
@@ -485,15 +465,11 @@ class FilletCommand extends Command {
     const dotStart = vecToStart.x * vecToClick.x + vecToStart.y * vecToClick.y
     const dotEnd = vecToEnd.x * vecToClick.x + vecToEnd.y * vecToClick.y
 
-    console.log('Trimming line - dot product start:', dotStart, 'dot product end:', dotEnd)
-
     if (dotStart > dotEnd) {
       // Start is more aligned with click direction (same side), preserve start and trim end
-      console.log('Preserving start, trimming end to arc point')
       line.attr({ x2: trimPoint.x, y2: trimPoint.y })
     } else {
       // End is more aligned with click direction (same side), preserve end and trim start
-      console.log('Preserving end, trimming start to arc point')
       line.attr({ x1: trimPoint.x, y1: trimPoint.y })
     }
   }
@@ -543,8 +519,6 @@ class FilletCommand extends Command {
     for (let i = 0; i < this.createdElements.length; i++) {
       this.createdElements[i].remove()
     }
-
-    console.log('Fillet undone')
   }
 
   redo() {
@@ -562,14 +536,11 @@ class FilletCommand extends Command {
         } else {
           this.createFilletArc(this.selectedElements[0], this.selectedElements[1], radius)
         }
-        console.log('Fillet redone')
       } catch (error) {
         console.error('Error in redo:', error)
         // If redo fails, restore original state again
         this.undo()
       }
-    } else {
-      console.log('Cannot redo: missing original states or selected elements')
     }
   }
 }

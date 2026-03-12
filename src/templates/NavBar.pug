@@ -1,19 +1,19 @@
 section.web-section
-  .icon.icon-blender-logo
+  .icon.icon-nanquim-logo
   ul
     li
       a.navbar-menus(onclick='menuFile()') File
       .dropdown-menu
         ul
-          li(onclick='fileInput.click()') 
+          li(onclick='openSVG()') 
             | Open SVG
-          li
+          li(onclick='saveSVG()')
             | Save SVG
           li(onclick='fileInput.click()')
             | Import DXF
           li
             | Export DXF
     li
-      a(href="#") Preferences
+      a(onclick='openPreferences()') Preferences
     li
       a(href="#") Help

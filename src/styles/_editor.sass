@@ -10,3 +10,68 @@
   > .wgt+.wgt
     // &:not(.wgt-pulldown)
     margin-left: var(--spacer-xs)
+
+// ── Editor Mode Dropdown ────────────────────────────────────────────────────
+
+.editor-mode-menu
+  position: relative
+  cursor: pointer
+  user-select: none
+  display: flex
+  align-items: center
+  padding: 0 8px
+
+  .editor-mode-label
+    font-size: 11px
+    opacity: 0.8
+    margin-left: 6px
+
+  .editor-mode-dropdown
+    display: none
+    position: absolute
+    top: 100%
+    left: 0
+    background: var(--editor-header-bg, #2a2a2a)
+    border: 1px solid #444
+    border-radius: 4px
+    z-index: 1000
+    min-width: 160px
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5)
+    &.show-menu
+      display: block
+
+  .menu-item
+    padding: 6px 10px
+    font-size: 12px
+    cursor: pointer
+    white-space: nowrap
+    display: flex
+    align-items: center
+    gap: 8px
+    &:hover
+      background: rgba(255,255,255,0.1)
+    &.active
+      background: rgba(100,150,255,0.2)
+      color: #aaaaff
+
+// ── Paper Canvas ────────────────────────────────────────────────────────────
+
+.paper-canvas-svg
+  touch-action: none
+
+.paper-canvas-svg
+  touch-action: none
+
+.vp-handle
+  opacity: 0.8
+  &:hover
+    opacity: 1
+
+.vp-label
+  pointer-events: none
+  font-size: 0.3px
+
+// Locked model collections in paper mode
+.outliner-model-collection-locked
+  .collection-name
+    font-style: italic

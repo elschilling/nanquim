@@ -82,3 +82,23 @@ export function calculateDeltaFromBasepoint(basePoint, mouse, distance) {
 
   return { dx, dy }
 }
+
+export function calculateLocalDelta(el, dx, dy) {
+  if (!el || typeof el.parent !== 'function' || !el.parent()) return { dx, dy }
+  try {
+    const parentNode = el.parent().node
+    const svgNode = el.root().node
+    const parentCTM = parentNode.getCTM()
+    const svgCTM = svgNode.getCTM()
+    if (!parentCTM || !svgCTM) return { dx, dy }
+
+    const m = parentCTM.multiply(svgCTM.inverse())
+    const mInv = m.inverse()
+
+    const localDx = mInv.a * dx + mInv.c * dy
+    const localDy = mInv.b * dx + mInv.d * dy
+    return { dx: localDx, dy: localDy }
+  } catch (e) {
+    return { dx, dy }
+  }
+}

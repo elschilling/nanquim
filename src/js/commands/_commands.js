@@ -12,6 +12,14 @@ import { eraseCommand } from './EraseCommand'
 import { extendCommand } from './ExtendCommand'
 import { trimCommand } from './TrimCommand'
 import { drawArcCommand } from './DrawArcCommand'
+import { measureDistanceCommand } from './MeasureDistanceCommand'
+import { mirrorCommand } from './MirrorCommand'
+import { groupCommand } from './GroupCommand'
+import { ungroupCommand } from './UngroupCommand'
+import { hatchCommand } from './HatchCommand'
+import { textCommand } from './TextCommand'
+import { drawSplineCommand } from './DrawSplineCommand'
+import { createViewportCommand } from './CreateViewportCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -70,6 +78,38 @@ const commands = {
   ARC: {
     execute: drawArcCommand,
     aliases: ['a'],
+  },
+  DIST: {
+    execute: measureDistanceCommand,
+    aliases: ['d', 'dist'],
+  },
+  MIRROR: {
+    execute: mirrorCommand,
+    aliases: ['mi'],
+  },
+  GROUP: {
+    execute: groupCommand,
+    aliases: ['g', 'group'],
+  },
+  UNGROUP: {
+    execute: ungroupCommand,
+    aliases: ['ug', 'ungroup'],
+  },
+  HATCH: {
+    execute: hatchCommand,
+    aliases: ['h', 'hatch'],
+  },
+  TEXT: {
+    execute: textCommand,
+    aliases: ['t', 'text'],
+  },
+  SPLINE: {
+    execute: drawSplineCommand,
+    aliases: ['sp'],
+  },
+  VIEWPORT: {
+    execute: createViewportCommand,
+    aliases: ['vp', 'viewport'],
   },
   // Add more commands and functions as needed
 }

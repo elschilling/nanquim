@@ -16,14 +16,27 @@ My dream would be to see this kind of editor inside Blender one day. For now, I�
 
 ## Features
 
-Nanquim is still in early development, but it already includes basic CAD functionalities:
+Nanquim is in active development but already sports a robust set of 2D CAD features:
 
-*   **Drawing Tools:** Create lines, circles, rectangles, and more.
-*   **Modification Tools:** Move, rotate, fillet, and offset elements.
-*   **Viewport:** A familiar interface with pan and zoom capabilities.
-*   **Outliner:** A hierarchical view of all the elements in the drawing.
-*   **Properties Editor:** Inspect and modify the attributes of selected elements.
-*   **File Support:** Basic support for importing `.dxf` files.
+### 🛠️ Drawing & Modification Commands
+*   **Draw**: Line (`L`), Circle (`C`), Rectangle (`REC`), Arc (`A`)
+*   **Modify**: Move (`M`), Copy (`CO`), Rotate (`R`), Scale (`S`), Offset (`O`), Fillet (`F`), Mirror (`MI`)
+*   **Edit**: Trim (`TR`), Extend (`EX`), Erase (`E`)
+*   **Utilities**: Measure Distance (`D`), Match Properties (`MA`)
+
+### 📦 Layers & Organization
+*   **Collections System**: Group elements into manageable, hierarchical collections (layers).
+*   **Outliner**: A Photoshop/Blender-style hierarchical tree view to easily select, hide (`eye icon`), or lock (`padlock icon`) elements and collections.
+*   **Properties Panel**: Inspect and tweak attributes (color, stroke width, collection assignment) of selected elements.
+
+### 📐 Precision & Workflow
+*   **Snapping**: `OSNAP` (endpoints, midpoints, intersections) and `ORTHO` (orthogonal locking) modes for precise drawing.
+*   **Viewport**: Infinite canvas with smooth pan (`Middle Mouse`) and zoom (`Scroll`) capabilities.
+*   **Command Line Interface**: AutoCAD-style command aliases for fast, keyboard-driven workflows.
+
+### 💾 File Support
+*   **Import**: Load existing `.dxf` (CAD files) or `.svg` drawings.
+*   **Export**: Save your drawings natively to standalone, standard `.svg` files (with smart white-to-black stroke conversion for external viewing).
 
 ## Tech Stack
 

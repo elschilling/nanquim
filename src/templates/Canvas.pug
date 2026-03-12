@@ -1,8 +1,16 @@
 .editor.canvas-editor
   .editor-header
-    .wgt.wgt-menu
-        span.icon.icon-editor-svgcad
+    .wgt.wgt-menu.editor-mode-menu(onclick='toggleEditorModeMenu(event)')
+        span.icon.icon-mode-draw#editor-mode-icon
+        span.editor-mode-label#editor-mode-label Draw Space
         .icon.icon-dropdown
+        .dropdown-menu.editor-mode-dropdown#editor-mode-dropdown
+          .menu-item.editor-mode-item(data-mode='model' onclick='switchEditorMode("model")')
+            span.icon.icon-mode-draw
+            | Draw Space
+          .menu-item.editor-mode-item(data-mode='paper' onclick='switchEditorMode("paper")')
+            span.icon.icon-mode-paper
+            | Paper Space
     .layout-row
       .align-buttons-center
         .wgt.wgt-menu
@@ -17,6 +25,9 @@
         .overlay-menu
           | Grid
           | Axis
+          label.overlay-menu-item(style='display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 0')
+            input(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
+            | Non-scaling stroke
 
   .layout-editor#canvas
     include Terminal

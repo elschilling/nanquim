@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawLineCommand extends Command {
   constructor(editor) {
@@ -7,7 +8,7 @@ class DrawLineCommand extends Command {
     this.type = 'DrawLineCommand'
     this.name = 'Line'
     // this.draw = this.draw.bind(this)
-    this.drawing = this.editor.drawing
+    this.drawing = this.editor.activeCollection
   }
 
   execute() {
@@ -21,14 +22,14 @@ class DrawLineCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let line = this.drawing.line().addClass('newDrawing').draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
+      let line = this.drawing.line().draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
+      applyCollectionStyleToElement(this.editor, line)
       line.on('drawstart', (e) => {
         startPoint = e.detail.startPoint
       })
       line.on('drawstop', (e) => {
         line.attr('id', this.editor.elementIndex++)
         line.attr('name', 'Line')
-        // console.log('drawstop', this.editor.elementIndex)
         line.off()
         this.editor.history.undos.push(new AddElementCommand(editor, line))
         this.editor.lastCommand = this
@@ -37,17 +38,16 @@ class DrawLineCommand extends Command {
         this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
-      this.editor.svg.on('valueInput', (e) => {
-        console.log(e.detail)
+      const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+      activeSvg.on('valueInput', (e) => {
         if (line) {
-          console.log('length line')
           line.off()
           line.draw('cancel')
           line = null
           this.draw(startPoint, this.editor.length)
         }
       })
-      this.editor.svg.on('coordinateInput', (e) => {
+      activeSvg.on('coordinateInput', (e) => {
         if (line) {
           const coord = this.editor.inputCoord
           line.off()
@@ -59,7 +59,8 @@ class DrawLineCommand extends Command {
             this.draw({ x: coord.x, y: coord.y })
           } else {
             // Start point exists - draw line to absolute coordinate
-            let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y).addClass('newDrawing')
+            let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y)
+            applyCollectionStyleToElement(this.editor, newLine)
             newLine.attr('id', this.editor.elementIndex++)
             newLine.attr('name', 'Line')
             this.editor.history.undos.push(new AddElementCommand(this.editor, newLine))
@@ -70,16 +71,15 @@ class DrawLineCommand extends Command {
           }
         }
       })
-      this.editor.svg.on('orthoChange', () => {
+      activeSvg.on('orthoChange', () => {
         if (line) {
-          console.log('line', line)
           line.off()
           line.draw('cancel')
           line = null
           this.draw(startPoint, this.editor.length)
         }
       })
-      this.editor.svg.on('cancelDrawing', (e) => {
+      activeSvg.on('cancelDrawing', (e) => {
         if (line) {
           line.off()
           line.draw('cancel')

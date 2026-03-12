@@ -66,7 +66,6 @@ class History {
 
     this.redos = []
     // this.editor.signals.historyChanged.dispatch(cmd)
-    console.log('history', this.undos)
   }
 
   undo() {

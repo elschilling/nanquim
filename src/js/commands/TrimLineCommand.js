@@ -14,7 +14,7 @@ class TrimLineCommand extends Command {
         this.oldX2 = element.node.x2.baseVal.value
         this.oldY2 = element.node.y2.baseVal.value
 
-        this.parent = element.node.parentNode
+        this.parent = window.SVG(element.node.parentNode) || this.editor.activeCollection
         this.newLine = null // If 'split', store the new line created
     }
 
@@ -31,24 +31,29 @@ class TrimLineCommand extends Command {
             // Shorten the original line
             this.element.plot(this.oldX1, this.oldY1, this.action.splitX1, this.action.splitY1)
 
-            // Create a new line for the remaining part
+            // Create a new line for the remaining part in the same parent layer
             if (!this.newLine) {
-                this.newLine = this.editor.drawing.line(this.action.splitX2, this.action.splitY2, this.oldX2, this.oldY2)
+                this.newLine = this.parent.line(this.action.splitX2, this.action.splitY2, this.oldX2, this.oldY2)
 
-                // Copy styles (stroke color, width, etc from original)
-                const stroke = this.element.attr('stroke')
-                const strokeWidth = this.element.attr('stroke-width')
-                const opacity = this.element.attr('opacity')
-                const strokeDasharray = this.element.attr('stroke-dasharray')
+                // Securely copy explicit styles (stroke color, width, etc from original)
+                // We use raw DOM methods to avoid reading transient CSS/computed styles like hover effects
+                const copyDOMStyles = (src, dest) => {
+                    ['stroke', 'stroke-width', 'opacity', 'stroke-dasharray', 'stroke-linecap'].forEach(prop => {
+                        const attrVal = src.getAttribute(prop)
+                        if (attrVal !== null) dest.setAttribute(prop, attrVal)
 
-                if (stroke) this.newLine.attr('stroke', stroke)
-                if (strokeWidth) this.newLine.attr('stroke-width', strokeWidth)
-                if (opacity !== undefined) this.newLine.attr('opacity', opacity)
-                if (strokeDasharray) this.newLine.attr('stroke-dasharray', strokeDasharray)
+                        const styleVal = src.style[prop]
+                        if (styleVal) dest.style[prop] = styleVal
+                    })
+                    const overrides = src.getAttribute('data-style-overrides')
+                    if (overrides) dest.setAttribute('data-style-overrides', overrides)
+                }
+
+                copyDOMStyles(this.element.node, this.newLine.node)
 
                 const rawId = this.newLine.node.id.replace('SvgjsLine', '')
                 this.newLine.attr('name', 'Line ' + rawId)
-                this.newLine.addClass('newDrawing')
+                this.newLine
 
                 this.editor.signals.updatedOutliner.dispatch()
             } else {

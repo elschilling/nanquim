@@ -153,23 +153,22 @@ main
   background: rgba(0,0,0,0)
   border: 0
   outline: none
-.newDrawing
-    // vector-effect: non-scaling-stroke
-    stroke: white
-    stroke-width: .1
-    stroke-linecap: round
-    fill: transparent
-    // &:hover
-    //     stroke: red
-.elementHover
+.non-scaling-stroke *
+    vector-effect: non-scaling-stroke
+    stroke-width: 1px !important
+.elementHover:not(.vp-frame)
     // stroke: orange
     opacity: .4 !important
-    stroke-width: .4 !important   
-.elementSelected
+    stroke-width: var(--hover-stroke-width, 0.4) 
+.elementSelected:not(.vp-frame)
     // stroke: yellow
     opacity: .4 !important
-    // stroke-width: .4    
-
+    stroke-width: var(--hover-stroke-width, 0.4) 
+    // filter: drop-shadow(0px 0px 1px yellow);
+.ghostLine
+    stroke: #F44336 !important
+    stroke-width: var(--hover-stroke-width, 0.4) !important
+    opacity: 0.8 !important
 .svg_select_points_point
     vector-effect: non-scaling-stroke
     fill-opacity: .5
@@ -197,6 +196,13 @@ main
         stroke: orange
         stroke-width: 2
 
+.selection-handler-circle
+    vector-effect: non-scaling-stroke
+    fill: orange
+    stroke: black
+    stroke-width: 1
+    cursor: pointer
+
 .handlers-editing
     pointer-events: none
 
@@ -210,7 +216,6 @@ main
     // background: #282828
     li
         cursor: default
-        text-indent: 10px
         line-height: 22px
 
         // box-sizing: 
@@ -221,18 +226,16 @@ main
         
 .outliner-list  
     padding: 0
-    ul
-        padding-left: 15px
+
     li
         width: 100%
         cursor: pointer
         display: flex
         flex-direction: row
-        // align-items: center
-        // padding: 0px 20px
-        // height: 22px
-        // list-style-type: none
-        // text-indent: 0
+        height: 22px
+        align-items: center
+        padding: 0 6px 0 0
+        box-sizing: border-box
     li
         &:hover
             background: #464646
@@ -250,8 +253,82 @@ main
 
 .outliner-selected
     background: var(--accent-color) !important
+    width: 100%
+    box-sizing: border-box
     &:hover
         background: #4d6490 !important
+
+// Collection system styles
+.outliner-collection
+    padding-left: 0
+    list-style: none
+    ul
+        padding-left: 0
+        list-style: none
+
+.collection-row
+    display: flex
+    align-items: center
+    justify-content: space-between
+    height: 22px
+    padding: 0 6px 0 4px
+    box-sizing: border-box
+    cursor: pointer
+    user-select: none
+    border-left: 3px solid transparent
+    width: 100%
+    &:hover
+        background: #3a3a3a
+
+.collection-active
+    border-left-color: var(--accent-color) !important
+    background: #323844
+
+.collection-hidden-row
+    opacity: 0.4
+
+.collection-locked-row
+    .collection-name
+        font-style: italic
+
+.collection-name
+    flex: 1
+    font-size: 12px
+    white-space: nowrap
+    overflow: hidden
+    text-overflow: ellipsis
+    line-height: 22px
+
+.collection-icons
+    display: flex
+    gap: 2px
+    align-items: center
+
+.collection-icon
+    cursor: pointer
+    width: 18px
+    height: 18px
+    border-radius: 3px
+    opacity: 0.5
+    &:hover
+        background-color: #555
+        opacity: 1
+    &.icon-off
+        opacity: 0.3
+    &.icon-on
+        opacity: 1
+        background-color: #444
+
+.collection-rename-input
+    flex: 1
+    background: #1f1f1f
+    border: 1px solid var(--accent-color)
+    border-radius: 3px
+    color: #fff
+    font-size: 12px
+    padding: 1px 4px
+    outline: none
+    line-height: 20px
 
 .properties-container
     flex: 1
@@ -283,6 +360,7 @@ main
     padding: 10px
     border-radius: 5px
     background-color: #3d3d3d
+    overflow: hidden
 
 .properties-content
     display: flex
@@ -294,23 +372,29 @@ main
     flex-direction: row
     align-items: center
     justify-content: space-between
-    gap: 10px
+    gap: 6px
+    overflow: hidden
 
 .property-label
     font-size: 12px
     color: #b8b8b8
-    min-width: 60px
+    min-width: 50px
+    max-width: 60px
     text-align: left
+    flex-shrink: 0
 
 .property-input
     flex: 1
+    min-width: 0
+    max-width: 100%
     background-color: #2a2a2a
     border: 1px solid #1d1d1d
     border-radius: 3px
     color: #ffffff
-    padding: 4px 8px
+    padding: 4px 6px
     font-size: 12px
     outline: none
+    box-sizing: border-box
     &:focus
         border-color: #4d6490
         background-color: #333333
@@ -366,14 +450,143 @@ main
     z-index: 10
 
 
-/* Flip the vertical axis in <g> to emulate cartesian. */
-svg.cartesian
-  transform: scaleY(-1)
-
-/* Re-flip all <text> element descendants to their original side up. */
-svg.cartesian text
-  transform: scaleY(-1)
 
 .is-active
     background-color: var(--accent-color)
     opacity: 1
+
+// Measure distance command
+.measure-ghost
+    vector-effect: non-scaling-stroke
+    stroke: cyan
+    stroke-width: 1
+    stroke-dasharray: 6 4
+    fill: none
+    pointer-events: none
+
+.measure-line
+    vector-effect: non-scaling-stroke
+    stroke: #4fc34f
+    fill: none
+    pointer-events: none
+
+.measure-text
+    fill: white
+    pointer-events: none
+    font-family: monospace
+
+// Custom context menu
+.collection-context-menu
+    position: fixed
+    z-index: 1000
+    background-color: var(--editor-header-bg)
+    border: 1px solid var(--editor-border-color)
+    border-radius: 4px
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3)
+    padding: 4px 0
+    font-size: 13px
+    color: #e0e0e0
+    min-width: 150px
+    pointer-events: auto
+
+.collection-context-menu-item
+    padding: 6px 12px
+    cursor: pointer
+    transition: background-color 0.1s
+    display: flex
+    align-items: center
+    
+    &:hover
+        background-color: var(--accent-color)
+        color: white
+        
+.collection-context-menu-item.danger
+    color: #ff5e5e
+    
+    &:hover
+        background-color: #ff5e5e
+        color: white
+
+// Preferences modal
+.prefs-overlay
+    position: fixed
+    inset: 0
+    z-index: 100
+    background: rgba(0, 0, 0, 0.5)
+    display: flex
+    align-items: center
+    justify-content: center
+
+.prefs-dialog
+    background: #2a2a2a
+    border: 1px solid #444
+    border-radius: 12px
+    padding: 24px
+    min-width: 340px
+    max-width: 420px
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5)
+    color: #e0e0e0
+
+.prefs-title
+    margin: 0 0 18px 0
+    font-size: 16px
+    font-weight: 600
+    color: #fff
+    border-bottom: 1px solid #444
+    padding-bottom: 12px
+
+.prefs-row
+    display: flex
+    align-items: center
+    justify-content: space-between
+    margin-bottom: 12px
+    gap: 12px
+
+.prefs-label
+    font-size: 13px
+    color: #b8b8b8
+    flex: 1
+    white-space: nowrap
+
+.prefs-input
+    width: 80px
+    background: #1d1d1d
+    border: 1px solid #555
+    border-radius: 4px
+    color: #fff
+    padding: 5px 8px
+    font-size: 13px
+    outline: none
+    text-align: right
+    &:focus
+        border-color: var(--accent-color)
+        background: #333
+
+.prefs-buttons
+    display: flex
+    justify-content: flex-end
+    gap: 8px
+    margin-top: 20px
+    padding-top: 12px
+    border-top: 1px solid #444
+
+.prefs-btn
+    padding: 6px 18px
+    border-radius: 5px
+    border: none
+    font-size: 13px
+    font-weight: 500
+    cursor: pointer
+    transition: background-color 0.15s
+
+.prefs-btn-save
+    background: var(--accent-color)
+    color: white
+    &:hover
+        filter: brightness(1.2)
+
+.prefs-btn-cancel
+    background: #444
+    color: #ccc
+    &:hover
+        background: #555

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/svg.js/3.2.0/svg.min.js"></script>
+</head>
+<body>
+  <div id="canvas"></div>
+  <script>
+    var draw = SVG().addTo('#canvas').size(300, 300);
+    var group = draw.group().attr('data-collection', 'true');
+    var svgString = '<circle cx="10" cy="10" r="10" class="newDrawing" data-test="123" stroke="#fff"></circle><line x1="0" y1="0" x2="20" y2="20" stroke="#fff" class="newDrawing"></line>';
+    
+    // Nanquim does exactly this:
+    group.svg(svgString);
+
+    console.log("Children added:", group.children().length);
+    if(group.children().length > 0) {
+      console.log("Child classes:", group.children()[0].attr('class'));
+    }
+  </script>
+</body>
+</html>

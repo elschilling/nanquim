@@ -1,5 +1,7 @@
 import { History as _History } from './History'
 import { DXFLoader } from './utils/DXFloader'
+import { initCollections } from './Collection'
+import { SpatialIndex } from './SpatialIndex'
 
 function Editor() {
   const Signal = signals.Signal
@@ -29,6 +31,12 @@ function Editor() {
     refreshHandlers: new Signal(),
     commandCancelled: new Signal(),
     requestHoverCheck: new Signal(),
+    updatedCollections: new Signal(),
+    preferencesChanged: new Signal(),
+    editorModeChanged: new Signal(),   // dispatched when switching model <-> paper
+    modelContentChanged: new Signal(), // dispatched when model drawing is modified
+    paperViewportsChanged: new Signal(), // dispatched when paper viewports change
+    colorMapUpdated: new Signal(),      // dispatched when print colors are modified
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -41,6 +49,7 @@ function Editor() {
   this.drawing.attr('id', 'Collection')
   this.handlers = this.svg.group()
   this.handlers.attr('id', 'Handlers')
+  this.modelHandlers = this.handlers // Store reference for mode-switching
   this.isDrawing = false
   this.isInteracting = false
   this.selectSingleElement = false
@@ -62,6 +71,34 @@ function Editor() {
   this.cmdParams = {
     filletRadius: 0,
   }
+
+  // ── Paper Mode ──────────────────────────────────────────────────────────────
+  // 'model' | 'paper'
+  this.mode = 'model'
+
+  // Paper configuration (persisted into saved SVG metadata)
+  this.paperConfig = {
+    // Paper size preset: 'A0'|'A1'|'A2'|'A3'|'A4'|'custom'
+    size: 'A4',
+    // Paper dimensions in mm (used when size === 'custom' or derived from preset)
+    width: 210,
+    height: 297,
+    // 'portrait' | 'landscape'
+    orientation: 'portrait',
+    // Coordinate scale: SVG units per centimeter.
+    // Default 1 means 1 SVG unit = 1cm.
+    // At 1:100 scale, 1m in draw space maps to 1cm on paper.
+    // Users can change this in Paper Settings.
+    unitsPerCm: 1,
+    // Color translation map: { '#rrggbb': { printColor: '#rrggbb', enabled: true } }
+    colorMap: {},
+  }
+
+  // Initialize collection system (creates default collection)
+  initCollections(this)
+
+  // Spatial index for fast hit-testing (R-tree)
+  this.spatialIndex = new SpatialIndex()
 }
 
 Editor.prototype = {
@@ -70,16 +107,21 @@ Editor.prototype = {
   },
 
   addElement: function (element, parent) {
-    console.log('addElement', element)
-    console.log('addElement parent', parent)
     // parent.put(element)
     element.putIn(parent)
     // element[0].remove()
+    this.spatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
   },
 
   removeElement: function (element) {
-    console.log('removeElement', element)
+    if (element._paperVp) {
+      if (this.paperEditor) {
+        this.paperEditor.removeViewport(element._paperVp.id)
+      }
+      this.signals.updatedProperties.dispatch()
+      return
+    }
 
     // Check if element is in selection and remove it
     if (this.selected.includes(element)) {
@@ -93,7 +135,19 @@ Editor.prototype = {
 
     element.remove()
     // element[0].remove()
+    this.spatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
+  },
+
+  resetPaperConfig: function () {
+    this.paperConfig = {
+      size: 'A4',
+      width: 210,
+      height: 297,
+      orientation: 'portrait',
+      unitsPerCm: 1,
+      colorMap: {},
+    }
   },
 
   execute: function (cmd) {

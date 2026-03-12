@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { calculateDeltaFromBasepoint } from '../utils/calculateDistance'
+import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
 
 class MoveCommand extends Command {
   constructor(editor) {
@@ -32,6 +32,7 @@ class MoveCommand extends Command {
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
@@ -140,9 +141,20 @@ class MoveCommand extends Command {
 
   // Helper method to get consistent position data for any element type
   getElementPosition(element) {
+    if (element._paperVp) {
+      const vp = element._paperVp
+      return {
+        type: 'viewport',
+        vp: vp,
+        x: vp.x,
+        y: vp.y
+      }
+    }
+
     const data = {
-      arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      arcData: typeof element.data === 'function' ? element.data('arcData') : null,
+      circleTrimData: typeof element.data === 'function' ? element.data('circleTrimData') : null,
+      splineData: typeof element.data === 'function' ? element.data('splineData') : null
     }
 
     if (element.type === 'line') {
@@ -156,6 +168,19 @@ class MoveCommand extends Command {
         type: 'center',
         cx: element.cx(),
         cy: element.cy(),
+        ...data
+      }
+    } else if (element._paperVp) {
+      return {
+        type: 'viewport',
+        vp: element._paperVp,
+        x: element._paperVp.x,
+        y: element._paperVp.y
+      }
+    } else if (element.type === 'text') {
+      return {
+        type: 'text',
+        transform: element.transform(),
         ...data
       }
     } else {
@@ -194,20 +219,38 @@ class MoveCommand extends Command {
     this.dy = dy
     this.editor.selected.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
+      
+      let ldx = dx
+      let ldy = dy
+
+      if (originalPos.type !== 'viewport') {
+        const localDelta = calculateLocalDelta(element, dx, dy)
+        ldx = localDelta.dx
+        ldy = localDelta.dy
+      }
 
       if (originalPos.type === 'line') {
         // For lines, translate all points
-        const newPoints = originalPos.points.map((point) => [point[0] + dx, point[1] + dy])
+        const newPoints = originalPos.points.map((point) => [point[0] + ldx, point[1] + ldy])
         element.plot(newPoints)
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
-        element.center(originalPos.cx + dx, originalPos.cy + dy)
+        element.center(originalPos.cx + ldx, originalPos.cy + ldy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x + ldx
+        vp.y = originalPos.y + ldy
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
+      } else if (originalPos.type === 'text') {
+        const matrix = originalPos.transform
+        element.transform(matrix).translate(ldx, ldy)
       } else {
         // For other elements, move position
-        element.move(originalPos.x + dx, originalPos.y + dy)
+        element.move(originalPos.x + ldx, originalPos.y + ldy)
       }
 
-      this.updateArcData(element, originalPos, dx, dy)
+      this.updateArcData(element, originalPos, ldx, ldy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
@@ -240,6 +283,12 @@ class MoveCommand extends Command {
         endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
       })
     }
+    if (originalPos.splineData) {
+      const sd = originalPos.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      })
+    }
   }
 
   undo() {
@@ -252,6 +301,14 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx, originalPos.cy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x
+        vp.y = originalPos.y
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
+      } else if (originalPos.type === 'text') {
+        element.transform(originalPos.transform)
       } else {
         // For other elements, move position
         element.move(originalPos.x, originalPos.y)
@@ -260,6 +317,7 @@ class MoveCommand extends Command {
       // Restore original data
       if (originalPos.arcData) element.data('arcData', originalPos.arcData)
       if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
+      if (originalPos.splineData) element.data('splineData', originalPos.splineData)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })
@@ -276,6 +334,14 @@ class MoveCommand extends Command {
       } else if (originalPos.type === 'center') {
         // For circles/ellipses, move center
         element.center(originalPos.cx + this.dx, originalPos.cy + this.dy)
+      } else if (originalPos.type === 'viewport') {
+        const vp = originalPos.vp
+        vp.x = originalPos.x + this.dx
+        vp.y = originalPos.y + this.dy
+        vp.refreshGeometry()
+        vp._editor.signals.paperViewportsChanged.dispatch()
+      } else if (originalPos.type === 'text') {
+        element.transform(originalPos.transform).translate(this.dx, this.dy)
       } else {
         // For other elements, move position
         element.move(originalPos.x + this.dx, originalPos.y + this.dy)

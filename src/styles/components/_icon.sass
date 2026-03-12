@@ -38,9 +38,9 @@
   width: var(--icon-size)
 
   /* UI. */
-  &.icon-blender-logo
-    --icon-bg-column-x: 25
-    --icon-bg-column-y: var(--icon-svg-column-c)
+  &.icon-nanquim-logo
+    --icon-bg-column-x: 17
+    --icon-bg-column-y: var(--icon-svg-column-w)
 
   &.icon-canvas
     --icon-bg-column-x: 2
@@ -53,6 +53,44 @@
   &.icon-plus
     --icon-bg-column-x: 6
     --icon-bg-column-y: var(--icon-svg-column-ca)
+
+  &.icon-down
+    --icon-bg-column-x: 6
+    --icon-bg-column-y: var(--icon-svg-column-da)
+    +is_last_row_icon
+
+  &.icon-right
+    --icon-bg-column-x: 5
+    --icon-bg-column-y: var(--icon-svg-column-da)
+    +is_last_row_icon
+
+  &.icon-collection
+    --icon-bg-column-x: 17
+    --icon-bg-column-y: var(--icon-svg-column-u)
+
+  &.icon-group
+    --icon-bg-column-x: 22
+    --icon-bg-column-y: var(--icon-svg-column-c)
+
+  &.icon-element-line
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-t)
+
+  &.icon-element-circle
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-t)
+
+  &.icon-element-arc
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-t)
+
+  &.icon-element-rect
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-t)
+
+  &.icon-element-default
+    --icon-bg-column-x: 2
+    --icon-bg-column-y: var(--icon-svg-column-t)
 
   &.icon-overlay
     --icon-bg-column-x: 6
@@ -159,12 +197,17 @@
     --icon-bg-column-y: var(--icon-svg-column-u)
 
   &.icon-restrict-edit-mode
-    --icon-bg-column-x: 2
-    --icon-bg-column-y: var(--icon-svg-column-y)
+    --icon-bg-column-x: 22
+    --icon-bg-column-y: var(--icon-svg-column-u)
+    &.icon-off
+      --icon-bg-column-x: 23
 
   &.icon-restrict-screen
     --icon-bg-column-x: 25
-    --icon-bg-column-y: var(--icon-svg-column-t)
+    --icon-bg-column-y: var(--icon-svg-column-k)
+    &.icon-off
+      --icon-bg-column-x: 20
+      --icon-bg-column-y: var(--icon-svg-column-u)
 
   &.icon-restrict-render
     --icon-bg-column-x: 25
@@ -197,9 +240,13 @@
     --icon-bg-column-x: 18
     --icon-bg-column-y: var(--icon-svg-column-z)
 
-  &.icon-editor-svgcad
+  &.icon-editor-svgcad, &.icon-mode-draw
     --icon-bg-column-x: 4
     --icon-bg-column-y: var(--icon-svg-column-m)
+
+  &.icon-mode-paper
+    --icon-bg-column-x: 24
+    --icon-bg-column-y: var(--icon-svg-column-q)
 
   &.icon-properties-collection
     --icon-bg-column-x: 16

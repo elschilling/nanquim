@@ -1,4 +1,6 @@
 import { Command } from '../Command'
+import { Matrix } from '@svgdotjs/svg.js'
+import { bakeTransforms } from '../utils/transformGeometry'
 
 class RotateCommand extends Command {
   constructor(editor) {
@@ -10,6 +12,11 @@ class RotateCommand extends Command {
   }
 
   execute() {
+    if (this.editor.mode === 'paper') {
+      this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+      this.editor.signals.terminalLogged.dispatch({ type: 'error', msg: 'Command not available in Paper Space.' })
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     if (this.editor.selected.length > 0) {
       this.editor.suppressHandlers = true
@@ -26,6 +33,7 @@ class RotateCommand extends Command {
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
@@ -140,6 +148,12 @@ class RotateCommand extends Command {
         return
       }
 
+      if (element._paperVp) {
+        this.editor.signals.terminalLogged.dispatch({ msg: 'Viewports cannot be rotated.', type: 'error' })
+        newSelectedElements.push(element)
+        return
+      }
+
       if (element.type === 'line') {
       }
 
@@ -165,7 +179,8 @@ class RotateCommand extends Command {
   getElementCoordinates(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     // Store just the coordinate data that we need for rotation
@@ -198,11 +213,10 @@ class RotateCommand extends Command {
         height: element.height(),
         ...data
       }
-    } else if (element.type === 'text') {
+    } else if (element.type === 'text' || element.type === 'g') {
       return {
-        type: 'text',
-        x: element.x(),
-        y: element.y(),
+        type: element.type,
+        transform: element.transform(),
         ...data
       }
     } else if (element.type === 'path') {
@@ -264,6 +278,16 @@ class RotateCommand extends Command {
       })
     }
 
+    if (originalCoords.splineData) {
+      const sd = originalCoords.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => {
+          const rp = rotatePoint(p.x, p.y)
+          return { x: rp.x, y: rp.y }
+        })
+      })
+    }
+
     if (originalCoords.type === 'points') {
       // Rotate all points from the original coordinates
 
@@ -320,11 +344,10 @@ class RotateCommand extends Command {
           element.transform({ rotate: this.angle })
         }
       }
-    } else if (originalCoords.type === 'text') {
-      // Rotate text position from original
-      const rotated = rotatePoint(originalCoords.x, originalCoords.y)
-      element.move(rotated.x, rotated.y)
-      element.transform({ rotate: this.angle })
+    } else if (originalCoords.type === 'text' || originalCoords.type === 'g') {
+      // Use pure Matrix transformation for text and block groups to avoid coordinate lock bugs
+      const matrix = new Matrix(originalCoords.transform)
+      element.transform(matrix.rotate(this.angle, centerPoint.x, centerPoint.y))
     } else if (originalCoords.type === 'path') {
       // For paths, rotate from original path data
       this.rotatePathFromOriginal(element, originalCoords.d, angleRad, centerPoint)
@@ -338,6 +361,7 @@ class RotateCommand extends Command {
         element.transform({ rotate: this.angle })
       }
     }
+
     return element
   }
 
@@ -479,12 +503,10 @@ class RotateCommand extends Command {
         height: element.height(),
         attrs: { ...element.attr() }, // Copy all attributes
       }
-    } else if (element.type === 'text') {
+    } else if (element.type === 'text' || element.type === 'g') {
       return {
-        type: 'text',
-        x: element.x(),
-        y: element.y(),
-        transform: element.transform ? element.transform() : null,
+        type: element.type,
+        transform: element.transform(),
       }
     } else if (element.type === 'path') {
       return {
@@ -538,9 +560,9 @@ class RotateCommand extends Command {
         } else {
           element.move(originalState.x, originalState.y)
         }
-      } else if (originalState.type === 'text') {
-        element.move(originalState.x, originalState.y)
-        element.transform(originalState.transform)
+      } else if (originalState.type === 'text' || originalState.type === 'g') {
+        const matrix = originalState.transform
+        element.transform(matrix)
       } else if (originalState.type === 'path') {
         element.attr('d', originalState.d)
       } else {

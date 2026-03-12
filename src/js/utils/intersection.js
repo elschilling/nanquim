@@ -1,3 +1,5 @@
+import { getArcGeometry, isPointInArc } from './arcUtils'
+
 function onSegment(p, q, r) {
   if (q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) &&
     q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y)) {
@@ -121,14 +123,14 @@ export function isPolygonIntersectingRect(polygon, rect) {
 
 // Utility functions for line geometry
 export function getLineEquation(line) {
-  // SVG.js uses attr() method instead of getAttribute()
-  // Works with svg.js elements or raw objects with x1,y1,x2,y2 properties
-  const x1 = typeof line.attr === 'function' ? parseFloat(line.attr('x1')) : line.x1;
-  const y1 = typeof line.attr === 'function' ? parseFloat(line.attr('y1')) : line.y1;
-  const x2 = typeof line.attr === 'function' ? parseFloat(line.attr('x2')) : line.x2;
-  const y2 = typeof line.attr === 'function' ? parseFloat(line.attr('y2')) : line.y2;
-
-  return { x1, y1, x2, y2 }
+  const getVal = (name) => {
+    if (typeof line.attr === 'function') {
+      const v = line.attr(name)
+      if (v !== null) return parseFloat(v)
+    }
+    return line[name] !== undefined ? line[name] : 0
+  }
+  return { x1: getVal('x1'), y1: getVal('y1'), x2: getVal('x2'), y2: getVal('y2') }
 }
 
 export function getLineIntersection(line1, line2) {
@@ -236,4 +238,154 @@ export function getCircleCircleIntersections(c1, c2) {
 
   if (h === 0) return [int1];
   return [int1, int2];
+}
+
+export function getPathSegments(el, samples = 200) {
+  const segments = []
+  let len, getPt;
+
+  // el can be an SVG.js element or a simple line object
+  if (typeof el.length === 'function') {
+    len = el.length()
+    // For SVG.js elements, try pointAt (paths/arcs/splines) or calculate for lines
+    if (typeof el.pointAt === 'function') {
+      getPt = (t) => el.pointAt(t)
+    } else if (el.attr('x1') !== null) {
+      const x1 = parseFloat(el.attr('x1')), y1 = parseFloat(el.attr('y1'))
+      const x2 = parseFloat(el.attr('x2')), y2 = parseFloat(el.attr('y2'))
+      const dx = x2 - x1, dy = y2 - y1
+      getPt = (t) => ({ x: x1 + (t / len) * dx, y: y1 + (t / len) * dy })
+    }
+  } else if (el.x1 !== undefined && el.x2 !== undefined) {
+    const dx = el.x2 - el.x1, dy = el.y2 - el.y1
+    len = Math.hypot(dx, dy)
+    getPt = (t) => ({ x: el.x1 + (t / len) * dx, y: el.y1 + (t / len) * dy })
+  }
+
+  if (len === undefined || len <= 1e-6) return []
+
+  const step = len / samples
+  let lastPt = getPt(0)
+
+  for (let i = 1; i <= samples; i++) {
+    const pt = getPt(i * step)
+    if (lastPt && pt) {
+      segments.push({ x1: lastPt.x, y1: lastPt.y, x2: pt.x, y2: pt.y, t1: (i - 1) / samples, t2: i / samples })
+    }
+    lastPt = pt
+  }
+  return segments
+}
+
+
+
+
+export function isPointOnSegment(pt, seg) {
+  const minX = Math.min(seg.x1, seg.x2) - 1e-3
+  const maxX = Math.max(seg.x1, seg.x2) + 1e-3
+  const minY = Math.min(seg.y1, seg.y2) - 1e-3
+  const maxY = Math.max(seg.y1, seg.y2) + 1e-3
+  return pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY
+}
+
+
+export function getPathIntersections(el, boundary) {
+  const segments = getPathSegments(el)
+  const results = []
+  const bType = typeof boundary.type === 'string' ? boundary.type : (boundary.node ? boundary.node.nodeName.toLowerCase() : '')
+
+  const getAttrValue = (name) => {
+    if (typeof boundary[name] === 'function') return boundary[name]()
+    if (typeof boundary.attr === 'function') {
+      const val = boundary.attr(name)
+      return val !== null ? parseFloat(val) : boundary[name]
+    }
+    return boundary[name]
+  }
+
+  let boundaryData = null
+  if (bType === 'line') {
+    boundaryData = { type: 'line' }
+  } else if (bType === 'circle' || bType === 'ellipse') {
+    boundaryData = {
+      type: 'circle',
+      cx: getAttrValue('cx'),
+      cy: getAttrValue('cy'),
+      r: getAttrValue('radius') || getAttrValue('r') || getAttrValue('rx')
+    }
+  } else if (bType === 'rect') {
+    boundaryData = {
+      type: 'rect',
+      x: getAttrValue('x'),
+      y: getAttrValue('y'),
+      width: getAttrValue('width'),
+      height: getAttrValue('height')
+    }
+  } else if (bType === 'path') {
+    const data = typeof boundary.data === 'function' ? boundary.data : null
+    const arcData = data ? data('arcData') : null
+    const circleTrimData = data ? data('circleTrimData') : null
+
+    if (arcData || circleTrimData) {
+      const arcGeo = circleTrimData || (arcData ? getArcGeometry(arcData.p1, arcData.p2, arcData.p3) : null)
+      if (arcGeo) {
+        boundaryData = {
+          type: 'arc',
+          cx: arcGeo.cx,
+          cy: arcGeo.cy,
+          r: arcGeo.radius !== undefined ? arcGeo.radius : arcGeo.r,
+          startAngle: circleTrimData ? arcGeo.theta2 : arcGeo.theta1,
+          endAngle: circleTrimData ? arcGeo.theta1 : arcGeo.theta3,
+          ccw: arcGeo.ccw
+        }
+      }
+    } else {
+      boundaryData = { type: 'segments', bSegments: getPathSegments(boundary) }
+    }
+  } else if (boundary.x1 !== undefined && boundary.x2 !== undefined) {
+    // Fallback for raw line objects
+    boundaryData = { type: 'line' }
+  }
+
+  if (!boundaryData) return []
+
+  segments.forEach(seg => {
+    let pts = []
+    if (boundaryData.type === 'line') {
+      const bEq = getLineEquation(boundary)
+      const intersect = getLineIntersection(seg, bEq)
+      if (intersect) {
+        if (isPointOnSegment(intersect, bEq)) pts.push(intersect)
+      }
+    } else if (boundaryData.type === 'circle') {
+      pts = getLineCircleIntersections(seg, boundaryData)
+    } else if (boundaryData.type === 'rect') {
+      pts = getLineRectIntersections(seg, boundaryData)
+    } else if (boundaryData.type === 'arc') {
+      getLineCircleIntersections(seg, boundaryData).forEach(pt => {
+        if (isPointInArc(pt, boundaryData.cx, boundaryData.cy, boundaryData.startAngle, boundaryData.endAngle, boundaryData.ccw)) {
+          pts.push(pt)
+        }
+      })
+    } else if (boundaryData.type === 'segments') {
+      boundaryData.bSegments.forEach(bSeg => {
+        const intersect = getLineIntersection(seg, bSeg)
+        if (intersect && isPointOnSegment(intersect, bSeg)) {
+          pts.push(intersect)
+        }
+      })
+    }
+
+    pts.forEach(pt => {
+      if (isPointOnSegment(pt, seg)) {
+        const segLen = Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1)
+        const distFromStart = Math.hypot(pt.x - seg.x1, pt.y - seg.y1)
+        const localT = segLen > 1e-6 ? distFromStart / segLen : 0
+        const t = seg.t1 + localT * (seg.t2 - seg.t1)
+        results.push({ x: pt.x, y: pt.y, t: t })
+      }
+    })
+  })
+
+  return results
 }

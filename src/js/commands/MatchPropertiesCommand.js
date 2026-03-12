@@ -1,4 +1,6 @@
 import { Command } from '../Command'
+import { getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from '../Collection'
+import { Matrix } from '@svgdotjs/svg.js'
 
 class MatchPropertiesCommand extends Command {
     constructor(editor) {
@@ -72,12 +74,31 @@ class MatchPropertiesCommand extends Command {
 
         const computedStyle = window.getComputedStyle(node)
 
+        const parseNum = (val, fallback) => {
+            const num = parseFloat(val)
+            return isNaN(num) ? fallback : num
+        }
+
+        const currentFill = element.css('fill') || element.attr('fill') || 'none'
+        let visualFill = computedStyle.fill !== 'none' && computedStyle.fill !== '' ? computedStyle.fill : currentFill
+        if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
+
+        const currentStroke = element.css('stroke') || element.attr('stroke') || 'none'
+        let visualStroke = computedStyle.stroke !== 'none' && computedStyle.stroke !== '' ? computedStyle.stroke : currentStroke
+        if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') visualStroke = 'none'
+
         // Capture properties based on computed style for accuracy
         this.sourceProperties = {
-            fill: computedStyle.fill !== 'none' ? computedStyle.fill : (element.attr('fill') || 'none'),
-            stroke: computedStyle.stroke !== 'none' ? computedStyle.stroke : (element.attr('stroke') || 'none'),
-            strokeWidth: parseFloat(computedStyle.strokeWidth) || parseFloat(element.attr('stroke-width')) || 1,
-            opacity: parseFloat(computedStyle.opacity) || parseFloat(element.attr('opacity')) || 1
+            fill: visualFill,
+            stroke: visualStroke,
+            strokeWidth: parseNum(computedStyle.strokeWidth, parseNum(element.css('stroke-width') || element.attr('stroke-width'), 1)),
+            strokeDasharray: computedStyle.strokeDasharray !== 'none' ? computedStyle.strokeDasharray : (element.attr('stroke-dasharray') || 'none'),
+            opacity: parseNum(computedStyle.opacity, parseNum(element.attr('opacity'), 1)),
+            collectionId: element.parent() && element.parent().attr('data-collection') === 'true' ? element.parent().attr('id') : null,
+            fontFamily: element.type === 'text' ? (element.font('family') || element.css('font-family') || computedStyle.fontFamily || 'monospace') : null,
+            fontSize: element.type === 'text' ? parseNum(element.font('size'), parseNum(element.css('font-size'), 0.5)) : null,
+            rotation: element.transform ? (element.transform().rotate || 0) : 0,
+            overrides: { ...getElementOverrides(element) }
         }
 
         // Restore hover class if needed (though we're about to move away usually)
@@ -112,8 +133,49 @@ class MatchPropertiesCommand extends Command {
             // Apply styles using .css() to ensure override
             if (props.fill) element.css('fill', props.fill)
             if (props.stroke) element.css('stroke', props.stroke)
-            if (props.strokeWidth) element.css('stroke-width', props.strokeWidth)
-            if (props.opacity) element.css('opacity', props.opacity)
+            if (props.strokeWidth !== undefined) element.css('stroke-width', props.strokeWidth)
+            if (props.strokeDasharray) {
+                if (props.strokeDasharray === 'none') {
+                    element.node.style.removeProperty('stroke-dasharray')
+                    element.node.removeAttribute('stroke-dasharray')
+                } else {
+                    element.css('stroke-dasharray', props.strokeDasharray)
+                }
+            }
+            if (props.opacity !== undefined) element.css('opacity', props.opacity)
+
+            if (element.type === 'text') {
+                if (props.fontFamily) element.font({ family: props.fontFamily })
+                if (props.fontSize !== null && props.fontSize !== undefined) element.font({ size: props.fontSize })
+            }
+
+            // Apply rotation safely, mapping to global bounding center
+            if (props.rotation !== undefined && element.transform) {
+                const currentRot = element.transform().rotate || 0
+                const delta = props.rotation - currentRot
+                if (delta !== 0) {
+                    const bbox = element.bbox()
+                    const transform = element.transform()
+                    const matrix = new Matrix(transform)
+
+                    const globalCx = matrix.a * bbox.cx + matrix.c * bbox.cy + matrix.e
+                    const globalCy = matrix.b * bbox.cx + matrix.d * bbox.cy + matrix.f
+
+                    element.transform(matrix.rotate(delta, globalCx, globalCy))
+                }
+            }
+
+            // Move to same collection
+            if (props.collectionId && this.editor.collections.has(props.collectionId)) {
+                this.editor.collections.get(props.collectionId).group.add(element)
+            }
+
+            // Apply same override flags
+            setElementOverrides(element, props.overrides)
+
+            // Reapply collection style base
+            applyCollectionStyleToElement(this.editor, element)
+
             count++
         })
 
@@ -121,8 +183,8 @@ class MatchPropertiesCommand extends Command {
             this.editor.signals.terminalLogged.dispatch({ msg: `Properties applied to ${count} element(s).` })
 
             // Clear selection immediately so they don't remain selected
-            this.editor.selected = []
             this.editor.signals.clearSelection.dispatch()
+            this.editor.signals.updatedOutliner.dispatch()
         }
     }
 

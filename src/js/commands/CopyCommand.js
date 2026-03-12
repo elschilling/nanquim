@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { calculateDeltaFromBasepoint } from '../utils/calculateDistance'
+import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
 
 class CopyCommand extends Command {
   constructor(editor) {
@@ -22,11 +22,14 @@ class CopyCommand extends Command {
       msg: `Select elements to copy and press Enter to confirm.`,
     })
     document.addEventListener('keydown', this.boundOnKeyDown)
+    this.editor.suppressHandlers = true
+    this.editor.handlers.clear()
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
     if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
-      this.cleanup()
+      document.removeEventListener('keydown', this.boundOnKeyDown)
       this.editor.isInteracting = true
       this.onSelectionConfirmed()
     } else if (event.key === 'Escape') {
@@ -51,6 +54,9 @@ class CopyCommand extends Command {
     this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
     this.originalSelection = this.editor.selected.slice()
 
+    // Disable rectangle selection during base/second point picking
+    this.editor.selectSingleElement = true
+
     this.editor.signals.terminalLogged.dispatch({ msg: `Selected ${selectedElements.length} elements.` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify base point.' })
     this.editor.signals.pointCaptured.addOnce(this.onBasePoint, this)
@@ -64,7 +70,19 @@ class CopyCommand extends Command {
     // Clone elements for ghosting
     this.copiedElements = this.originalSelection.map((el) => {
       const clone = el.clone()
-      this.editor.drawing.add(clone)
+
+      // Remove interactive classes that might have been copied
+      const stripClasses = (element) => {
+        element.removeClass('elementHover')
+        element.removeClass('elementSelected')
+        if (element.type === 'g' && element.children) {
+          element.children().each(child => stripClasses(child))
+        }
+      }
+      stripClasses(clone)
+
+      const parent = el.parent() || this.editor.activeCollection
+      parent.add(clone)
       return clone
     })
 
@@ -102,17 +120,23 @@ class CopyCommand extends Command {
     // Move the copied elements to the final position
     this.copiedElements.forEach((clone, index) => {
       const originalPos = this.originalPositions[index]
+      const localDelta = calculateLocalDelta(clone, dx, dy)
+      const ldx = localDelta.dx
+      const ldy = localDelta.dy
 
       if (originalPos.type === 'line') {
-        const newPoints = originalPos.points.map((p) => [p[0] + dx, p[1] + dy])
+        const newPoints = originalPos.points.map((p) => [p[0] + ldx, p[1] + ldy])
         clone.plot(newPoints)
       } else if (originalPos.type === 'center') {
-        clone.center(originalPos.cx + dx, originalPos.cy + dy)
+        clone.center(originalPos.cx + ldx, originalPos.cy + ldy)
+      } else if (originalPos.type === 'text') {
+        const matrix = originalPos.transform
+        clone.transform(matrix).translate(ldx, ldy)
       } else {
-        clone.move(originalPos.x + dx, originalPos.y + dy)
+        clone.move(originalPos.x + ldx, originalPos.y + ldy)
       }
 
-      this.updateArcData(clone, originalPos, dx, dy)
+      this.updateArcData(clone, originalPos, ldx, ldy)
     })
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements copied.' })
@@ -126,6 +150,7 @@ class CopyCommand extends Command {
     this.editor.execute(this)
     this.editor.lastCommand = new CopyCommand(this.editor)
     this.editor.distance = null
+    this.cleanup()
   }
 
   updateArcData(element, originalPos, dx, dy) {
@@ -147,12 +172,19 @@ class CopyCommand extends Command {
         endPt: { x: ctd.endPt.x + dx, y: ctd.endPt.y + dy }
       })
     }
+    if (originalPos.splineData) {
+      const sd = originalPos.splineData
+      element.data('splineData', {
+        points: sd.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      })
+    }
   }
 
   getElementPosition(element) {
     const data = {
       arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData')
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData')
     }
 
     if (element.type === 'line') {
@@ -168,6 +200,12 @@ class CopyCommand extends Command {
         cy: element.cy(),
         ...data
       }
+    } else if (element.type === 'text') {
+      return {
+        type: 'text',
+        transform: element.transform(),
+        ...data
+      }
     } else {
       return {
         type: 'position',
@@ -181,6 +219,10 @@ class CopyCommand extends Command {
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
     this.editor.isInteracting = false
+    this.editor.suppressHandlers = false
+    setTimeout(() => {
+      this.editor.selectSingleElement = false
+    }, 10)
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 
@@ -197,7 +239,8 @@ class CopyCommand extends Command {
 
   redo() {
     this.copiedElements.forEach((element) => {
-      this.editor.drawing.add(element)
+      const parent = element.parent() || this.editor.activeCollection
+      parent.add(element)
     })
 
     this.editor.selected = this.copiedElements.slice()

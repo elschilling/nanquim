@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawRectangleCommand extends Command {
   constructor(editor) {
@@ -6,7 +7,7 @@ class DrawRectangleCommand extends Command {
     this.type = 'DrawRectangleCommand'
     this.name = 'Rectangle'
     this.draw = this.draw.bind(this)
-    this.drawing = this.editor.drawing
+    this.drawing = this.editor.activeCollection
   }
 
   execute() {
@@ -19,11 +20,14 @@ class DrawRectangleCommand extends Command {
     this.draw()
   }
   draw() {
-    this.drawing
+    const rect = this.drawing
       .rect()
-      .addClass('newDrawing')
+
+      .fill('none')
       .attr('id', this.editor.elementIndex++)
-      .draw()
+    applyCollectionStyleToElement(this.editor, rect)
+
+    rect.draw()
       .on('drawstop', () => {
         this.updatedOutliner()
         this.editor.setIsDrawing(false)

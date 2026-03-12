@@ -1,12 +1,13 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class DrawCircleCommand extends Command {
   constructor(editor) {
     super(editor)
     this.type = 'DrawCircleCommand'
     this.name = 'Circle'
-    this.drawing = this.editor.drawing
+    this.drawing = this.editor.activeCollection
   }
 
   execute() {
@@ -21,14 +22,16 @@ class DrawCircleCommand extends Command {
 
   draw(centerPoint) {
     if (this.isDrawing) {
-      let circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw()
+      let circle = this.drawing.circle().fill('transparent').draw()
+      applyCollectionStyleToElement(this.editor, circle)
       let hasCenter = !!centerPoint
 
       if (centerPoint) {
         // Simulate a click at the center point to start drawing
         circle.draw('cancel')
         circle.remove()
-        circle = this.drawing.circle().addClass('newDrawing').fill('transparent').draw({ startPoint: centerPoint })
+        circle = this.drawing.circle().fill('transparent').draw({ startPoint: centerPoint })
+        applyCollectionStyleToElement(this.editor, circle)
         this.editor.signals.terminalLogged.dispatch({
           type: 'span',
           msg: `Center set at (${centerPoint.x.toFixed(2)}, ${centerPoint.y.toFixed(2)}). Click to set radius or type a value. `,
@@ -55,8 +58,10 @@ class DrawCircleCommand extends Command {
         this.editor.setIsDrawing(false)
       })
 
+      const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+
       // Handle @x,y coordinate input for center point
-      this.editor.svg.on('coordinateInput', (e) => {
+      activeSvg.on('coordinateInput', (e) => {
         if (circle) {
           const coord = this.editor.inputCoord
           circle.off()
@@ -69,7 +74,7 @@ class DrawCircleCommand extends Command {
       })
 
       // Handle numeric radius input after center is set
-      this.editor.svg.on('valueInput', (e) => {
+      activeSvg.on('valueInput', (e) => {
         if (circle && hasCenter && centerPoint) {
           const radius = parseFloat(this.editor.length)
           if (!isNaN(radius) && radius > 0) {
@@ -79,9 +84,10 @@ class DrawCircleCommand extends Command {
             // Create circle with exact center and radius
             let newCircle = this.drawing
               .circle(radius * 2)
-              .addClass('newDrawing')
+
               .fill('transparent')
               .center(centerPoint.x, centerPoint.y)
+            applyCollectionStyleToElement(this.editor, newCircle)
             newCircle.attr('id', this.editor.elementIndex++)
             newCircle.attr('name', 'Circle')
             this.editor.history.undos.push(new AddElementCommand(this.editor, newCircle))
@@ -95,7 +101,7 @@ class DrawCircleCommand extends Command {
         }
       })
 
-      this.editor.svg.on('cancelDrawing', (e) => {
+      activeSvg.on('cancelDrawing', (e) => {
         if (circle) {
           circle.off()
           circle.draw('cancel')
