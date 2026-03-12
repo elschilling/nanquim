@@ -184,8 +184,7 @@ PaperViewport.prototype._attachInteractions = function() {
   const { _frame, _editor } = this
 
   this.activeForPanning = false
-
-  _frame.node.addEventListener('dblclick', (e) => {
+  this._onDblClick = (e) => {
     if (_editor.mode !== 'paper' || _editor.isDrawing) return
     if (e.button !== 0) return // Only left double click to activate
     e.stopPropagation()
@@ -198,9 +197,9 @@ PaperViewport.prototype._attachInteractions = function() {
     }
 
     this.activate()
-  })
+  }
 
-  _frame.node.addEventListener('mousedown', (e) => {
+  this._onMouseDown = (e) => {
     // Only intercept if we are in Paper mode (sanity check) and not actively drawing lines
     if (_editor.mode !== 'paper' || _editor.isDrawing) return
 
@@ -254,7 +253,10 @@ PaperViewport.prototype._attachInteractions = function() {
       document.addEventListener('mousemove', onMove)
       document.addEventListener('mouseup', onUp)
     }
-  })
+  }
+
+  _frame.node.addEventListener('dblclick', this._onDblClick)
+  _frame.node.addEventListener('mousedown', this._onMouseDown)
 }
 
 /**
@@ -297,6 +299,10 @@ PaperViewport.prototype.deactivate = function() {
  */
 PaperViewport.prototype.destroy = function () {
   this.deactivate()
+  if (this._frame && this._frame.node) {
+    this._frame.node.removeEventListener('dblclick', this._onDblClick)
+    this._frame.node.removeEventListener('mousedown', this._onMouseDown)
+  }
   this._group.remove()
   this._clipRect.remove()
 }

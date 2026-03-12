@@ -117,6 +117,14 @@ Editor.prototype = {
   },
 
   removeElement: function (element) {
+    if (element._paperVp) {
+      if (this.paperEditor) {
+        this.paperEditor.removeViewport(element._paperVp.id)
+      }
+      this.signals.updatedProperties.dispatch()
+      return
+    }
+
     console.log('removeElement', element)
 
     // Check if element is in selection and remove it
@@ -133,6 +141,17 @@ Editor.prototype = {
     // element[0].remove()
     this.spatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
+  },
+
+  resetPaperConfig: function () {
+    this.paperConfig = {
+      size: 'A4',
+      width: 210,
+      height: 297,
+      orientation: 'portrait',
+      unitsPerCm: 1,
+      colorMap: {},
+    }
   },
 
   execute: function (cmd) {

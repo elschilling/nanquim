@@ -72,6 +72,10 @@ function Properties(editor) {
     render()
   })
 
+  signals.clearSelection.add(() => {
+    render()
+  })
+
   function render() {
     propertiesPanel.innerHTML = ''
 

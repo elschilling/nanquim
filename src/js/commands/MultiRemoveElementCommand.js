@@ -6,7 +6,7 @@ class MultiRemoveElementCommand extends Command {
         this.type = 'MultiRemoveElementCommand'
         this.name = 'Remove Elements'
         this.elements = elements
-        this.parents = elements.map(element => (element !== undefined) ? element.node.parentNode : undefined)
+        this.parents = elements.map(element => (element && element.node) ? element.node.parentNode : undefined)
     }
 
     execute() {

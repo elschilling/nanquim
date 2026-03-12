@@ -5,6 +5,7 @@ import { bakeTransforms } from './transformGeometry'
 function DXFLoader(editor) {
   this.loadFile = function (file) {
     console.log('file', file)
+    editor.resetPaperConfig()
 
     const reader = new FileReader()
     reader.onload = function (e) {
