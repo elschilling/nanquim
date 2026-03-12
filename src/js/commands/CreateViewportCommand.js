@@ -81,7 +81,6 @@ async function createViewportCommand(editor, args) {
       const input = await _captureScaleInput(editor)
       const num = parseFloat(input)
       if (!isNaN(num) && num > 0) scale = num
-      console.log('VP: Scale resolved to:', scale)
     } catch {
       // Default scale
     }

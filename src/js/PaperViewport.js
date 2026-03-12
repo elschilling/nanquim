@@ -1,7 +1,7 @@
 /**
  * PaperViewport.js
  *
- * A viewport region in the Paper editor that shows a live view of the model
+ * A viewport region in the Paper editor that shows a live view of the draw
  * drawing using SVG <use> elements and a <clipPath> to confine the view.
  *
  * Architecture (live reference approach):
@@ -11,7 +11,7 @@
  *         <rect x=vpX y=vpY width=vpW height=vpH />
  *       </clipPath>
  *     </defs>
- *     <!-- Live model reference -->
+ *     <!-- Live draw reference -->
  *     <g clip-path="url(#vp-N-clip)">
  *       <use href="#Collection" transform="translate(...) scale(...)" />
  *     </g>
@@ -23,10 +23,10 @@
  *     <rect class="vp-handle" ... />  × 4 corners + 4 edges
  *   </g>
  *
- * The model drawing group has id="Collection" (set in Editor.js).
- * At scale 1:S: SVG units in model = S × SVG units in paper.
- * So we need to scale model content DOWN by 1/S and translate so that
- * modelOrigin lands at (vpX, vpY).
+ * The draw drawing group has id="Collection" (set in Editor.js).
+ * At scale 1:S: SVG units in draw = S × SVG units in paper.
+ * So we need to scale draw content DOWN by 1/S and translate so that
+ * drawOrigin lands at (vpX, vpY).
  */
 
 function PaperViewport(editor, parentGroup, opts) {

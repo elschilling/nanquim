@@ -87,7 +87,7 @@ function Editor() {
     orientation: 'portrait',
     // Coordinate scale: SVG units per centimeter.
     // Default 1 means 1 SVG unit = 1cm.
-    // At 1:100 scale, 1m in model space maps to 1cm on paper.
+    // At 1:100 scale, 1m in draw space maps to 1cm on paper.
     // Users can change this in Paper Settings.
     unitsPerCm: 1,
     // Color translation map: { '#rrggbb': { printColor: '#rrggbb', enabled: true } }
@@ -107,8 +107,6 @@ Editor.prototype = {
   },
 
   addElement: function (element, parent) {
-    console.log('addElement', element)
-    console.log('addElement parent', parent)
     // parent.put(element)
     element.putIn(parent)
     // element[0].remove()
@@ -124,8 +122,6 @@ Editor.prototype = {
       this.signals.updatedProperties.dispatch()
       return
     }
-
-    console.log('removeElement', element)
 
     // Check if element is in selection and remove it
     if (this.selected.includes(element)) {

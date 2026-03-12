@@ -5,7 +5,6 @@ function SVGLoader(editor) {
     const reader = new FileReader()
     reader.onload = function (e) {
       svgString = e.target.result
-      console.log(svgString)
       editor.drawing.svg(svgString)
     }
     reader.readAsText(file)

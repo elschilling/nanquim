@@ -10,7 +10,6 @@ class AddElementCommand extends Command {
     if (element !== undefined) {
       this.name = `Add Element: ${element.name}`
     }
-    // console.log('construct add', element)
     this.parent = element.node.parentNode
   }
 

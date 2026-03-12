@@ -17,11 +17,14 @@
   position: relative
   cursor: pointer
   user-select: none
+  display: flex
+  align-items: center
+  padding: 0 8px
 
   .editor-mode-label
     font-size: 11px
     opacity: 0.8
-    margin: 0 4px
+    margin-left: 6px
 
   .editor-mode-dropdown
     display: none
@@ -38,10 +41,13 @@
       display: block
 
   .menu-item
-    padding: 8px 12px
+    padding: 6px 10px
     font-size: 12px
     cursor: pointer
     white-space: nowrap
+    display: flex
+    align-items: center
+    gap: 8px
     &:hover
       background: rgba(255,255,255,0.1)
     &.active

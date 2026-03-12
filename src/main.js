@@ -35,9 +35,14 @@ window.switchEditorMode = function(mode) {
 
   editor.mode = mode
 
-  // Update label
+  // Update label and icon
   const label = document.getElementById('editor-mode-label')
-  if (label) label.textContent = mode === 'paper' ? 'Paper Space' : 'Model Space'
+  const icon = document.getElementById('editor-mode-icon')
+  if (label) label.textContent = mode === 'paper' ? 'Paper Space' : 'Draw Space'
+  if (icon) {
+    icon.classList.remove('icon-mode-draw', 'icon-mode-paper')
+    icon.classList.add(mode === 'paper' ? 'icon-mode-paper' : 'icon-mode-draw')
+  }
 
   // Update active state on menu items
   document.querySelectorAll('.editor-mode-item').forEach(el => {

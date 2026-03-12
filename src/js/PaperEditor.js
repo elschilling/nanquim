@@ -7,7 +7,7 @@
  *   - Paper dimensions are stored in mm.
  *   - SVG user units: 1 unit = 1cm by default (editor.paperConfig.unitsPerCm = 1).
  *   - So a paper of 210x297mm (A4) = 21x29.7 SVG units.
- *   - A viewport at 1:100 scale means 1m of model space = 1cm on paper = 1 SVG unit.
+ *   - A viewport at 1:100 scale means 1m of draw space = 1cm on paper = 1 SVG unit.
  *
  * Viewport rendering strategy: LIVE <use> references.
  *   - Each PaperViewport creates an SVG <use> pointing to editor.drawing's DOM id.
@@ -33,7 +33,7 @@ const PAPER_SIZES = {
 function PaperEditor(editor) {
   const signals = editor.signals
 
-  // Paper SVG instance (separate from model SVG)
+  // Paper SVG instance (separate from draw SVG)
   let paperSvg = null
   // SVG group for the white paper sheet rect
   let paperSheet = null
@@ -51,7 +51,7 @@ function PaperEditor(editor) {
   // ── Activation / Deactivation ───────────────────────────────────────────────
 
   function activate() {
-    // Hide the model SVG (preserving the terminal inside editor.canvas)
+    // Hide the draw SVG (preserving the terminal inside editor.canvas)
     editor.svg.node.style.display = 'none'
 
     // Create the paper SVG container if needed
@@ -78,7 +78,7 @@ function PaperEditor(editor) {
   }
 
   function deactivate() {
-    // Show model SVG
+    // Show draw SVG
     editor.svg.node.style.display = ''
 
     // Hide paper SVG container
@@ -87,7 +87,7 @@ function PaperEditor(editor) {
       paperCanvasEl.style.display = 'none'
     }
 
-    // Restore model handlers
+    // Restore draw handlers
     editor.handlers = editor.modelHandlers
     _clearLiveColorMapping()
     

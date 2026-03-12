@@ -4,24 +4,20 @@ import { bakeTransforms } from './transformGeometry'
 
 function DXFLoader(editor) {
   this.loadFile = function (file) {
-    console.log('file', file)
     editor.resetPaperConfig()
 
     const reader = new FileReader()
     reader.onload = function (e) {
       let data = e.target.result
       if (file.type === 'image/vnd.dxf' || file.name.endsWith('.dxf')) {
-        console.log('loading dxf')
         data = new Helper.default(data).toSVG()
       } else if (file.type === 'image/svg+xml' || file.name.endsWith('.svg')) {
-        console.log('loading svg')
 
         // Repair older Nanquim SVGs missing the svgjs namespace definition
         if (!data.includes('xmlns:svgjs=')) {
           data = data.replace('<svg ', '<svg xmlns:svgjs="http://svgjs.com/svgjs" ')
         }
       }
-      console.log(data)
       const parser = new DOMParser()
       const doc = parser.parseFromString(data, 'image/svg+xml')
       const svgRoot = doc.documentElement
@@ -71,8 +67,6 @@ function DXFLoader(editor) {
         svgContent = svgContent.replace(/fill\s*=\s*(["'])#000000\1/gi, 'fill=$1#ffffff$1')
         svgContent = svgContent.replace(/fill\s*:\s*#000000/gi, 'fill: #ffffff')
       }
-
-      console.log('svgContent', svgContent)
       editor.drawing.svg(svgContent)
 
       // For DXF imports: flatten inline styling groups so leaf elements

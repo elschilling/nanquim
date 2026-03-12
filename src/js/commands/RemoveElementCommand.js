@@ -8,10 +8,8 @@ class RemoveElementCommand extends Command {
 
 		this.type = 'RemoveElementCommand';
 		this.name = 'Remove Element';
-		console.log('element', element)
 		this.element = element;
 		this.parent = ( element !== undefined ) ? element.node.parentNode : undefined;
-		console.log('parentNode', this.parent)
 		// if ( this.parent !== undefined ) {
 
 		// 	this.index = this.parent.children.indexOf( this.element );

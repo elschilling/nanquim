@@ -30,7 +30,6 @@ class DrawLineCommand extends Command {
       line.on('drawstop', (e) => {
         line.attr('id', this.editor.elementIndex++)
         line.attr('name', 'Line')
-        // console.log('drawstop', this.editor.elementIndex)
         line.off()
         this.editor.history.undos.push(new AddElementCommand(editor, line))
         this.editor.lastCommand = this
@@ -40,9 +39,7 @@ class DrawLineCommand extends Command {
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
       this.editor.svg.on('valueInput', (e) => {
-        console.log(e.detail)
         if (line) {
-          console.log('length line')
           line.off()
           line.draw('cancel')
           line = null
@@ -75,7 +72,6 @@ class DrawLineCommand extends Command {
       })
       this.editor.svg.on('orthoChange', () => {
         if (line) {
-          console.log('line', line)
           line.off()
           line.draw('cancel')
           line = null

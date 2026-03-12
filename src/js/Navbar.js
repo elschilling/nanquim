@@ -7,7 +7,6 @@ function Navbar(editor) {
   fileInput.type = 'file'
   fileInput.accept = '.svg,.dxf'
   fileInput.addEventListener('change', function () {
-    console.log('load file', fileInput.files)
     editor.loader.loadFile(fileInput.files[0])
     form.reset()
   })

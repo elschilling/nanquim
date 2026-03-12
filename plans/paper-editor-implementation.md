@@ -1,7 +1,7 @@
 # Paper Editor Implementation Plan
 
 ## Overview
-The Paper editor is a layout/printing workspace that allows users to create printable sheets with viewports into the model space, similar to AutoCAD's Paper Space. Users can configure paper size, create viewports with scalable model views, add annotations, and export to PDF/SVG for printing.
+The Paper editor is a layout/printing workspace that allows users to create printable sheets with viewports into the draw space, similar to AutoCAD's Paper Space. Users can configure paper size, create viewports with scalable model views, add annotations, and export to PDF/SVG for printing.
 
 ---
 
@@ -56,7 +56,7 @@ The main `Editor` class will delegate to the active mode. Mode switching trigger
 - Handles viewport creation and management
 
 #### 2.2 ViewportObject.js
-Represents a viewport window into model space:
+Represents a viewport window into draw space:
 ```javascript
 class ViewportObject {
   constructor(x, y, width, height, scale, modelView) {
@@ -74,7 +74,7 @@ class ViewportObject {
 
 **Implementation approach**:
 - Viewport is an SVG `<g>` with a `<clipPath>` containing a `<rect>`
-- Inside the group: a snapshot of the model drawing (clone of elements from model collections)
+- Inside the group: a snapshot of the draw drawing (clone of elements from model collections)
 - The snapshot is transformed (scaled/translated) to match the viewport's scale and view center
 - When model changes, all viewports need to update (signal-driven)
 
@@ -192,7 +192,7 @@ Update Canvas.pug:
     span.icon.icon-editor-svgcad
     .icon.icon-dropdown
     .dropdown-menu(style='...')
-      .menu-item(data-mode='model') Model Space
+      .menu-item(data-mode='model') Draw Space
       .menu-item(data-mode='paper') Paper Space
 ```
 

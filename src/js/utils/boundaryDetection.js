@@ -134,9 +134,6 @@ export function extractSegments(editor) {
             }
         }
     }
-    console.log('[Hatch] Extracted segments:', segments.length,
-        'lines:', segments.filter(s => s.type === 'line').length,
-        'arcs:', segments.filter(s => s.type === 'arc').length)
     return segments
 }
 
@@ -426,15 +423,8 @@ function findBoundaryPath(clickPoint, segments) {
         }
     }
 
-    console.log('[Hatch] Graph: nodes=', nodes.length, 'segments=', segments.length)
-    for (let i = 0; i < nodes.length; i++) {
-        if (adj[i].length > 0) {
-            console.log(`  node ${i}: (${nodes[i].x.toFixed(2)}, ${nodes[i].y.toFixed(2)}) edges=${adj[i].length}`)
-        }
-    }
 
     if (nodes.length < 2) {
-        console.log('[Hatch] Not enough nodes for boundary')
         return null
     }
 
@@ -456,14 +446,9 @@ function findBoundaryPath(clickPoint, segments) {
     }
 
     if (!bestEdgeHit) {
-        console.log('[Hatch] No edge hit by ray')
         return null
     }
 
-    console.log('[Hatch] Ray hit segment', bestEdgeHit.segIdx, 'type=', segments[bestEdgeHit.segIdx].type,
-        'at', bestEdgeHit.x.toFixed(2), bestEdgeHit.y.toFixed(2))
-
-    // Find closest graph nodes to the hit point
     const hitSegIdx = bestEdgeHit.segIdx
     const pts = segIntersections.get(hitSegIdx) || []
     const nodeDistances = []
@@ -489,15 +474,12 @@ function findBoundaryPath(clickPoint, segments) {
         const result = traceBoundary(nodes, adj, segments, startNode, incomingAngle)
 
         if (result && result.length >= 2) {
-            // Verify click point is inside by ray-count check
             if (verifyPointInside(clickPoint, result, segments)) {
-                console.log('[Hatch] Found boundary with', result.length, 'edges')
                 return result
             }
         }
     }
 
-    console.log('[Hatch] No valid boundary found enclosing click point')
     return null
 }
 
@@ -671,7 +653,6 @@ export function findEnclosingBoundary(editor, clickPoint) {
     if (segments.length === 0) return null
 
     const testHits = castRays(clickPoint, segments, 8)
-    console.log('[Hatch] Ray hits:', testHits.length)
     if (testHits.length < 3) return null
 
     return findBoundaryPath(clickPoint, segments)

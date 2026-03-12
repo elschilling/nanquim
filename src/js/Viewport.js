@@ -350,11 +350,8 @@ function Viewport(editor) {
   }
 
   function onOffsetGhostingStarted(element, distance) {
-    // Create clone ghosts in overlays and track initial transforms
-    console.log('ghost started. ghost element:', element)
     const el = element[0]
     initialTransforms.set(el, el.transform())
-    console.log('initial transforms', initialTransforms)
     ghostElements = el
     isGhostingOffset = true
     offsetDistance = distance
@@ -374,14 +371,12 @@ function Viewport(editor) {
     editor.isEditingVertex = true
     editor.editingVertices = vertices
     editor.handlers.addClass('handlers-editing')
-    console.log('Vertex edit started for', vertices.length, 'vertices')
   }
 
   function onVertexEditStopped() {
     editor.handlers.removeClass('handlers-editing')
     editor.isEditingVertex = false
     editor.editingVertices = []
-    console.log('Vertex edit stopped')
   }
 
   function getOrthoConstrainedPoint(point, vertexData) {
@@ -960,7 +955,6 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
-    console.log('[DEBUG handleMousedown] isDrawing=', editor.isDrawing, 'isInteracting=', editor.isInteracting, 'isEditingVertex=', editor.isEditingVertex)
     if (editor.isDrawing) return
 
     // Handle vertex editing commit
@@ -1124,7 +1118,6 @@ function Viewport(editor) {
     if (e.button === 1) {
       // Middle click is handled by the panzoom plugin and the native dblclick listener at the top
     } else if (!editor.isDrawing) {
-      console.log('hoveredElements', hoveredElements)
       if (hoveredElements.length > 0) {
         signals.toogledSelect.dispatch(hoveredElements[0])
       } else {
@@ -1339,12 +1332,8 @@ function Viewport(editor) {
     clearHover()
 
     backupHovered.forEach((el) => {
-      // Check if element is already selected before adding it using node identity
       if (!editor.selected.some((item) => item.node === el.node)) {
         editor.selected.push(el)
-        console.log('Added element to selection:', el.type)
-      } else {
-        console.log('Element already selected, skipping:', el.type)
       }
     })
 
