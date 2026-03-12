@@ -12,6 +12,11 @@ class RotateCommand extends Command {
   }
 
   execute() {
+    if (this.editor.mode === 'paper') {
+      this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+      this.editor.signals.terminalLogged.dispatch({ type: 'error', msg: 'Command not available in Paper Space.' })
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     if (this.editor.selected.length > 0) {
       this.editor.suppressHandlers = true
