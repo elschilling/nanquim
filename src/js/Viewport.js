@@ -12,6 +12,7 @@ import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersecting
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
 import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
+import { EditViewportCommand } from './commands/EditViewportCommand'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -90,7 +91,8 @@ function Viewport(editor) {
   })
 
   function clearSelectionRectangle() {
-    svg.find('.selectionRectangle').each(el => el.remove())
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (activeSvg) activeSvg.find('.selectionRectangle').each(el => el.remove())
   }
 
   signals.requestHoverCheck.add(() => {
@@ -102,65 +104,75 @@ function Viewport(editor) {
   const gridGroup = editor.overlays.group().addClass('grid')
   const axisGroup = editor.overlays.group().addClass('axis-group')
 
-  svg
-    .addClass('canvas')
-    .mousemove(handleMove)
-    .mousedown(handleMousedown)
-    // .mouseup(handleClick)
-    // .click(handleClick)
-    .panZoom({ zoomFactor, panButton: 1 })
-    .on('zoom', updateGrid)
-    .on('pan', updateGrid)
+  function attachCanvasListeners(svgInstance) {
+    if (svgInstance.node.dataset.viewportListenersAttached) return
+    svgInstance.node.dataset.viewportListenersAttached = 'true'
+
+    svgInstance
+      .mousemove(handleMove)
+      .mousedown(handleMousedown)
+      .panZoom({ zoomFactor, panButton: 1 })
+      .on('zoom', updateGrid)
+      .on('pan', updateGrid)
+
+    // Handle middle-click double click on this specific instance
+    svgInstance.on('mousedown', (e) => {
+      if (e.button === 1 && e.detail >= 2) {
+        e.preventDefault()
+        e.stopPropagation()
+
+        if (editor.mode === 'paper') {
+          // For paper space, double-middle click could mean zoom to paper or something else
+          // For now let's just do nothing or zoom to paper sheet
+          return
+        }
+
+        const wasHandlersVisible = editor.handlers.visible()
+        if (wasHandlersVisible) editor.handlers.hide()
+        const box = editor.drawing.bbox()
+        if (wasHandlersVisible) editor.handlers.show()
+
+        if (box.width > 0 || box.height > 0) {
+          const padding = Math.max(box.width, box.height) * 0.1 || 2
+          svgInstance.animate(300, '>').viewbox(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2).after(() => {
+            updateGrid()
+          })
+        }
+      }
+    })
+  }
+
+  svg.addClass('canvas')
+  attachCanvasListeners(svg)
 
   svg.viewbox(-5, -5, 10, 10)
   updateGrid()
 
-  signals.preferencesChanged.add((newPrefs) => {
-    hoverTreshold = newPrefs.hoverThreshold
-    gridSpacing = newPrefs.gridSize
+  signals.editorModeChanged.add((mode) => {
+    if (mode === 'paper' && editor.paperSvg) {
+      attachCanvasListeners(editor.paperSvg)
+    }
     updateGrid()
   })
 
-  // Zoom to extents (drawing elements only) on double middle click
-  svg.on('mousedown', (e) => {
-    // Check for middle click (button === 1) and double click (detail >= 2, handles rapid clicks by OS)
-    if (e.button === 1 && e.detail >= 2) {
-      e.preventDefault()
-      e.stopPropagation()
-
-      // Hide handlers temporarily so their bounding boxes don't affect the extents
-      const wasHandlersVisible = editor.handlers.visible()
-      if (wasHandlersVisible) editor.handlers.hide()
-
-      const box = editor.drawing.bbox()
-
-      if (wasHandlersVisible) editor.handlers.show()
-
-      // Only zoom if there's actual content
-      if (box.width > 0 || box.height > 0) {
-        const padding = Math.max(box.width, box.height) * 0.1 || 2
-
-        // Disable rendering handlers temporarily while animating
-        svg.animate(300, '>').viewbox(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2).after(() => {
-          updateGrid()
-        })
-
-        // Keep grid updating slightly during animation if needed, or rely on .after
-      }
-    }
-  })
-
   function updateGrid() {
-    const rect = svg.node.getBoundingClientRect()
-    const p1 = svg.point(rect.left, rect.top)
-    const p2 = svg.point(rect.right, rect.top)
-    const p3 = svg.point(rect.left, rect.bottom)
-    const p4 = svg.point(rect.right, rect.bottom)
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (!activeSvg) return
+    const rect = activeSvg.node.getBoundingClientRect()
+    const p1 = activeSvg.point(rect.left, rect.top)
+    const p2 = activeSvg.point(rect.right, rect.top)
+    const p3 = activeSvg.point(rect.left, rect.bottom)
+    const p4 = activeSvg.point(rect.right, rect.bottom)
 
     const xMin = Math.min(p1.x, p2.x, p3.x, p4.x)
     const xMax = Math.max(p1.x, p2.x, p3.x, p4.x)
     const yMin = Math.min(p1.y, p2.y, p3.y, p4.y)
     const yMax = Math.max(p1.y, p2.y, p3.y, p4.y)
+
+    if (isNaN(xMin) || isNaN(yMin) || isNaN(xMax) || isNaN(yMax)) {
+      // SVG might be hidden or not yet in DOM
+      return
+    }
 
     // Add a generous margin so the grid extends beyond the visible viewport,
     // preventing blank borders when zooming out
@@ -178,11 +190,17 @@ function Viewport(editor) {
     const spacing = gridSpacing
 
     // Optimization: Don't draw the grid if it's too dense (lines would be < 2px apart)
-    const zoom = svg.zoom()
-    if (spacing * zoom < 2) {
-      gridGroup.clear()
-      axisGroup.clear()
-      drawAxis(axisGroup, vb)
+    try {
+      const zoom = activeSvg.zoom()
+      if (spacing * zoom < 2) {
+        gridGroup.clear()
+        axisGroup.clear()
+        drawAxis(axisGroup, vb)
+        return
+      }
+    } catch (e) {
+      // svg.js might throw "Impossible to get absolute width and height" if not visible
+      console.warn('Grid update failed: activeSvg zoom not available yet')
       return
     }
 
@@ -238,7 +256,11 @@ function Viewport(editor) {
     ghostElements = elements
     basePoint = point
     ghostElements.forEach((el) => {
-      initialTransforms.set(el, el.transform())
+      if (el._paperVp) {
+        initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
+      } else {
+        initialTransforms.set(el, el.transform())
+      }
     })
   }
 
@@ -246,7 +268,15 @@ function Viewport(editor) {
     isGhostingMove = false
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
-      el.transform(initial)
+      if (el._paperVp) {
+        el._paperVp.x = initial.x
+        el._paperVp.y = initial.y
+        el._paperVp.w = initial.w
+        el._paperVp.h = initial.h
+        el._paperVp.refreshGeometry()
+      } else {
+        el.transform(initial)
+      }
     })
     ghostElements = []
     basePoint = null
@@ -258,7 +288,11 @@ function Viewport(editor) {
     ghostElements = elements
     basePoint = point
     ghostElements.forEach((el) => {
-      initialTransforms.set(el, el.transform())
+      if (el._paperVp) {
+        initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
+      } else {
+        initialTransforms.set(el, el.transform())
+      }
     })
   }
 
@@ -266,7 +300,15 @@ function Viewport(editor) {
     isGhostingScale = false
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
-      el.transform(initial)
+      if (el._paperVp) {
+        el._paperVp.x = initial.x
+        el._paperVp.y = initial.y
+        el._paperVp.w = initial.w
+        el._paperVp.h = initial.h
+        el._paperVp.refreshGeometry()
+      } else {
+        el.transform(initial)
+      }
     })
     ghostElements = []
     basePoint = null
@@ -279,7 +321,11 @@ function Viewport(editor) {
     centerPoint = cPoint
     referencePoint = rPoint
     ghostElements.forEach((el) => {
-      initialTransforms.set(el, el.transform())
+      if (el._paperVp) {
+        initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
+      } else {
+        initialTransforms.set(el, el.transform())
+      }
     })
   }
 
@@ -287,7 +333,15 @@ function Viewport(editor) {
     isGhostingRotate = false
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
-      el.transform(initial)
+      if (el._paperVp) {
+        el._paperVp.x = initial.x
+        el._paperVp.y = initial.y
+        el._paperVp.w = initial.w
+        el._paperVp.h = initial.h
+        el._paperVp.refreshGeometry()
+      } else {
+        el.transform(initial)
+      }
     })
     ghostElements = []
     centerPoint = null
@@ -378,7 +432,9 @@ function Viewport(editor) {
     } else {
       editor.snapPoint = null
     }
-    coordinates = svg.point(e.pageX, e.pageY)
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (!activeSvg) return
+    coordinates = activeSvg.point(e.pageX, e.pageY)
     if (ghostElements.length > 0) {
       if (isGhostingMove) {
         let dx = coordinates.x - basePoint.x
@@ -403,8 +459,14 @@ function Viewport(editor) {
         }
         ghostElements.forEach((el) => {
           const initial = initialTransforms.get(el)
-          const localDelta = calculateLocalDelta(el, dx, dy)
-          el.transform(initial).translate(localDelta.dx, localDelta.dy)
+          if (el._paperVp) {
+            el._paperVp.x = initial.x + dx
+            el._paperVp.y = initial.y + dy
+            el._paperVp.refreshGeometry()
+          } else {
+            const localDelta = calculateLocalDelta(el, dx, dy)
+            el.transform(initial).translate(localDelta.dx, localDelta.dy)
+          }
         })
       }
       if (isGhostingRotate) {
@@ -414,8 +476,10 @@ function Viewport(editor) {
         }
         ghostElements.forEach((el) => {
           const initial = initialTransforms.get(el)
-          el.transform(initial)
-          el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+          if (!el._paperVp) {
+            el.transform(initial)
+            el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+          }
         })
       }
       if (isGhostingScale) {
@@ -427,7 +491,19 @@ function Viewport(editor) {
 
         ghostElements.forEach((el) => {
           const initial = initialTransforms.get(el)
-          el.transform(initial).scale(scaleFactor, scaleFactor, basePoint.x, basePoint.y)
+          if (el._paperVp) {
+            el._paperVp.w = initial.w * scaleFactor
+            el._paperVp.h = initial.h * scaleFactor
+            // Also adjust position based on scaling from basePoint
+            const ox = initial.x - basePoint.x
+            const oy = initial.y - basePoint.y
+            el._paperVp.x = basePoint.x + ox * scaleFactor
+            el._paperVp.y = basePoint.y + oy * scaleFactor
+            el._paperVp.refreshGeometry()
+          } else {
+            el.transform(initial)
+            el.scale(scaleFactor, scaleFactor, basePoint.x, basePoint.y)
+          }
         })
       }
     }
@@ -677,7 +753,9 @@ function Viewport(editor) {
       return
     }
     const candidates = []
-    const svgNode = svg.node
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (!activeSvg) return
+    const svgNode = activeSvg.node
 
     // Compute inverted SVG root CTM once per frame (not per element)
     const svgCTM = svgNode.getCTM()
@@ -688,8 +766,8 @@ function Viewport(editor) {
       hasSvgCTM = Math.abs(svgInvDet) > 1e-10
     }
 
-    const vb = svg.viewbox()
-    const svgWidth = svg.node.clientWidth || svg.node.getBoundingClientRect().width || 1
+    const vb = activeSvg.viewbox()
+    const svgWidth = activeSvg.node.clientWidth || activeSvg.node.getBoundingClientRect().width || 1
     const worldPerPixel = vb.width / svgWidth
     const hoverThresholdWorld = hoverTreshold * worldPerPixel
 
@@ -887,7 +965,9 @@ function Viewport(editor) {
 
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
-      let point = editor.snapPoint || svg.point(e.pageX, e.pageY)
+      const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+      if (!activeSvg) return
+      let point = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
 
       if (editor.ortho && editor.editingVertices.length > 0) {
         point = getOrthoConstrainedPoint(point, editor.editingVertices[0])
@@ -899,8 +979,11 @@ function Viewport(editor) {
       const arcUpdates = []
       const splineUpdates = []
 
+      const viewportUpdates = []
+
       editor.editingVertices.forEach(v => {
         if (v.element.type === 'line') {
+          // ... existing line logic ...
           lineUpdates.push({
             element: v.element,
             vertexIndex: v.vertexIndex,
@@ -910,7 +993,7 @@ function Viewport(editor) {
             newY: point.y
           })
         } else if (v.element.type === 'circle') {
-          // For circle, we calculate the final state
+          // ... existing circle logic ...
           let newCx = v.originalPosition.cx
           let newCy = v.originalPosition.cy
           let newR = v.originalPosition.r
@@ -951,6 +1034,18 @@ function Viewport(editor) {
           const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
 
           splineUpdates.push({ element: v.element, oldPoints, newPoints })
+        } else if (v.element._paperVp) {
+          const vp = v.element._paperVp
+          viewportUpdates.push({
+            viewport: vp,
+            oldValues: v.originalPosition,
+            newValues: {
+              x: vp.x,
+              y: vp.y,
+              width: vp.w,
+              height: vp.h
+            }
+          })
         }
       })
 
@@ -992,11 +1087,20 @@ function Viewport(editor) {
         })
       }
 
+      if (viewportUpdates.length > 0) {
+        viewportUpdates.forEach(update => {
+          editor.execute(new EditViewportCommand(editor, update.viewport, update.oldValues, update.newValues))
+        })
+        signals.updatedSelection.dispatch()
+      }
+
       return
     }
 
     if (editor.isInteracting) {
-      const point = svg.point(e.pageX, e.pageY)
+      const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+      if (!activeSvg) return
+      const point = activeSvg.point(e.pageX, e.pageY)
 
       // Only capture points for single-click operations here. 
       // Rectangle selection captures its own points via draw plugin.
@@ -1028,16 +1132,17 @@ function Viewport(editor) {
       }
     }
   }
+
   function handleRectSelection(e) {
     e.preventDefault()
     e.stopImmediatePropagation()
     if (!editor.isDrawing) {
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (activeSvg && !editor.isSelecting) {
       const startX = coordinates.x
       editor.isDrawing = true
       editor.isSelecting = true
-      svg.click(null)
-      svg
-        .rect()
+      activeSvg.drawRect(e)
         .addClass('selectionRectangle')
         .draw()
         .on('drawupdate', (e) => {
@@ -1062,6 +1167,7 @@ function Viewport(editor) {
         })
     }
   }
+}
 
   function findElements(rect, selectionMode) {
     // ---- R-TREE SPATIAL QUERY for rectangle selection ----
@@ -1118,7 +1224,8 @@ function Viewport(editor) {
         if (isFullyEnclosed) {
           isInsideOrIntersecting = true
         } else {
-          const svgNode = svg.node
+          const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+          const svgNode = activeSvg.node
           const svgCTM = svgNode.getCTM()
           let svgInvDet = 1
           let hasSvgCTM = false
@@ -1249,14 +1356,16 @@ function Viewport(editor) {
 
   function checkSnap(coordinates) {
     let targets = []
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    if (!activeSvg) return
 
     // ---- R-TREE SPATIAL QUERY for snap ----
     // Convert snap tolerance from screen pixels to world units
-    const vb = svg.viewbox()
-    const svgWidth = svg.node.clientWidth || svg.node.getBoundingClientRect().width || 1
+    const vb = activeSvg.viewbox()
+    const svgWidth = activeSvg.node.clientWidth || activeSvg.node.getBoundingClientRect().width || 1
     const worldPerPixel = vb.width / svgWidth
     const snapWorldRadius = snapTolerance * worldPerPixel
-    const cursorWorld = svg.point(coordinates.x, coordinates.y)
+    const cursorWorld = activeSvg.point(coordinates.x, coordinates.y)
 
     editor.spatialIndex.ensureFresh(editor)
     const nearbyCandidates = editor.spatialIndex.search({
@@ -1280,7 +1389,7 @@ function Viewport(editor) {
       if (el.type === 'line') {
         el.array().forEach((pointArr) => {
           let worldPoint = { x: pointArr[0], y: pointArr[1] }
-          let screenPoint = worldToScreen(worldPoint, editor.svg)
+          let screenPoint = worldToScreen(worldPoint, activeSvg)
           targets.push(screenPoint)
         })
       } else if (el.type === 'circle') {
@@ -1297,7 +1406,7 @@ function Viewport(editor) {
         ]
 
         points.forEach(p => {
-          targets.push(worldToScreen(p, editor.svg))
+          targets.push(worldToScreen(p, activeSvg))
         })
       } else if (el.type === 'rect') {
         const rx = el.node.x.baseVal.value
@@ -1317,7 +1426,7 @@ function Viewport(editor) {
         ]
 
         points.forEach(p => {
-          targets.push(worldToScreen(p, editor.svg))
+          targets.push(worldToScreen(p, activeSvg))
         })
       } else if (el.type === 'path' && el.data('arcData')) {
         const arcData = el.data('arcData')
@@ -1328,12 +1437,12 @@ function Viewport(editor) {
         ]
 
         points.forEach(p => {
-          targets.push(worldToScreen(p, editor.svg))
+          targets.push(worldToScreen(p, activeSvg))
         })
       } else if (el.type === 'polygon' || el.type === 'polyline') {
         el.array().forEach((pointArr) => {
           let worldPoint = { x: pointArr[0], y: pointArr[1] }
-          let screenPoint = worldToScreen(worldPoint, editor.svg)
+          let screenPoint = worldToScreen(worldPoint, activeSvg)
           targets.push(screenPoint)
         })
       }
@@ -1347,10 +1456,10 @@ function Viewport(editor) {
         closest = target
       }
     }
-    const currentZoom = editor.svg.zoom()
+    const currentZoom = activeSvg.zoom()
     if (closest) {
-      let closestWorld = svg.point(closest.x, closest.y)
-      drawSnap(closestWorld, currentZoom, editor.snap)
+      let closestWorld = activeSvg.point(closest.x, closest.y)
+      drawSnap(closestWorld, currentZoom, activeSvg) // Pass the SVG instance to drawSnap
       editor.snapPoint = closestWorld
     } else {
       editor.snapPoint = null
@@ -1406,12 +1515,22 @@ function Viewport(editor) {
   }
 }
 
-function drawSnap(point, zoom, svg) {
+function drawSnap(point, zoom, svgInstance) {
+  // Use a group for snap if provided, or the svg instance itself
+  const target = svgInstance.group ? svgInstance : svgInstance
+  // Ensure we have a snap group on the instance
+  let snapGroup = svgInstance.findOne('#Snap') || svgInstance.findOne('.snap-group')
+  if (!snapGroup) {
+    snapGroup = svgInstance.group().attr('id', 'Snap').addClass('snap-group')
+  }
+  
   const snapSquareScreenSize = 15
   const currentZoom = zoom && zoom ? zoom : 1
   const snapSquareWorldSize = snapSquareScreenSize / currentZoom
   const strokeWorldUnits = 3 / currentZoom
-  svg
+  
+  snapGroup.clear()
+  snapGroup
     .rect(snapSquareWorldSize, snapSquareWorldSize)
     .center(point.x, point.y)
     .fill('none')
@@ -1479,7 +1598,8 @@ function handleToogleOrtho() {
     editor.ortho = true
     editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Ortho ON' })
   }
-  editor.svg.fire('orthoChange')
+  const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+  if (activeSvg) activeSvg.fire('orthoChange')
 }
 
 function handleToogleSnap() {

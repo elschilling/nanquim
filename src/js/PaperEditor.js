@@ -45,6 +45,8 @@ function PaperEditor(editor) {
   let viewports = []
   // Viewport counter for unique IDs
   let viewportCounter = 0
+  // Paper-specific handlers group
+  let paperHandlers = null
 
   // ── Activation / Deactivation ───────────────────────────────────────────────
 
@@ -62,6 +64,11 @@ function PaperEditor(editor) {
     _renderPaperSheet()
     _refreshAllViewports()
 
+    // Swap handlers to the paper canvas
+    if (paperHandlers) {
+      editor.handlers = paperHandlers
+    }
+
     // Dispatch signals to update Outliner and Properties
     signals.updatedOutliner.dispatch()
     signals.updatedProperties.dispatch()
@@ -76,6 +83,9 @@ function PaperEditor(editor) {
     if (paperCanvasEl) {
       paperCanvasEl.style.display = 'none'
     }
+
+    // Restore model handlers
+    editor.handlers = editor.modelHandlers
 
     signals.updatedOutliner.dispatch()
     signals.updatedProperties.dispatch()
@@ -101,11 +111,9 @@ function PaperEditor(editor) {
 
     // Create SVG.js instance
     paperSvg = SVG().addTo('#paper-canvas')
+      .size('100%', '100%')
     paperSvg.addClass('paper-canvas-svg')
     paperSvg.node.style.cssText = 'width:100%;height:100%;'
-
-    // Enable pan-zoom on paper canvas (middle button pan, scroll zoom)
-    paperSvg.panZoom({ zoomFactor: 0.1, panButton: 1 })
 
     // Groups in stacking order
     const bgGroup = paperSvg.group().attr('id', 'paper-background')
@@ -115,6 +123,8 @@ function PaperEditor(editor) {
     annotationsGroup = paperSvg.group().attr('id', 'paper-annotations')
     annotationsGroup.attr('data-collection', 'true')
     annotationsGroup.attr('name', 'Annotations')
+
+    paperHandlers = paperSvg.group().attr('id', 'paper-handlers')
 
     // Store reference so commands can add to annotations
     editor.paperAnnotations = annotationsGroup

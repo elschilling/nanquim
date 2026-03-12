@@ -13,13 +13,13 @@ import { PaperEditor } from './js/PaperEditor'
 
 const editor = new Editor()
 const navbar = new Navbar(editor)
+const paperEditor = new PaperEditor(editor) // Initialize before Viewport
 const viewport = new Viewport(editor)
 const outliner = new Outliner(editor)
 const properties = new Properties(editor)
 const terminal = new Terminal(editor)
 const statusbar = new StatusBar(editor)
 const preferences = new Preferences(editor)
-const paperEditor = new PaperEditor(editor)
 
 // Expose paperEditor on editor so commands and UI can access it
 editor.paperEditor = paperEditor

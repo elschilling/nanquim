@@ -141,6 +141,18 @@ class ScaleCommand extends Command {
       matrix: element.matrix(), // Store local matrix relative to parent
       ...data
     }
+    if (element._paperVp) {
+      const vp = element._paperVp
+      return {
+        type: 'viewport',
+        vp: vp,
+        x: vp.x,
+        y: vp.y,
+        width: vp.w,
+        height: vp.h,
+        scale: vp.scale
+      }
+    }
     if (element.type === 'line' || element.type === 'polyline' || element.type === 'polygon' || element.type === 'path') {
       pos.points = element.array().slice()
       if (element.type === 'path') {
@@ -172,6 +184,23 @@ class ScaleCommand extends Command {
 
   applyScale(element, originalPos, factor) {
     if (typeof factor !== 'number' || isNaN(factor)) return element
+
+    if (originalPos.type === 'viewport') {
+      const vp = originalPos.vp
+      // Scale dimensions
+      vp.w = originalPos.width * factor
+      vp.h = originalPos.height * factor
+      
+      // Scale position relative to base point
+      const dx = originalPos.x - this.basePoint.x
+      const dy = originalPos.y - this.basePoint.y
+      vp.x = this.basePoint.x + dx * factor
+      vp.y = this.basePoint.y + dy * factor
+      
+      vp.refreshGeometry()
+      vp._editor.signals.paperViewportsChanged.dispatch()
+      return element
+    }
 
     const parent = element.parent()
     const worldToParent = parent.ctm().inverse().multiply(this.editor.drawing.ctm())

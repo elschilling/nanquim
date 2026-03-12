@@ -141,10 +141,20 @@ class MoveCommand extends Command {
 
   // Helper method to get consistent position data for any element type
   getElementPosition(element) {
+    if (element._paperVp) {
+      const vp = element._paperVp
+      return {
+        type: 'viewport',
+        vp: vp,
+        x: vp.x,
+        y: vp.y
+      }
+    }
+
     const data = {
-      arcData: element.data('arcData'),
-      circleTrimData: element.data('circleTrimData'),
-      splineData: element.data('splineData')
+      arcData: typeof element.data === 'function' ? element.data('arcData') : null,
+      circleTrimData: typeof element.data === 'function' ? element.data('circleTrimData') : null,
+      splineData: typeof element.data === 'function' ? element.data('splineData') : null
     }
 
     if (element.type === 'line') {
@@ -209,9 +219,15 @@ class MoveCommand extends Command {
     this.dy = dy
     this.editor.selected.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
-      const localDelta = calculateLocalDelta(element, dx, dy)
-      const ldx = localDelta.dx
-      const ldy = localDelta.dy
+      
+      let ldx = dx
+      let ldy = dy
+
+      if (originalPos.type !== 'viewport') {
+        const localDelta = calculateLocalDelta(element, dx, dy)
+        ldx = localDelta.dx
+        ldy = localDelta.dy
+      }
 
       if (originalPos.type === 'line') {
         // For lines, translate all points

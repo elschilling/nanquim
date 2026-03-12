@@ -156,11 +156,11 @@ main
 .non-scaling-stroke *
     vector-effect: non-scaling-stroke
     stroke-width: 1px !important
-.elementHover
+.elementHover:not(.vp-frame)
     // stroke: orange
     opacity: .4 !important
     stroke-width: var(--hover-stroke-width, 0.4) 
-.elementSelected
+.elementSelected:not(.vp-frame)
     // stroke: yellow
     opacity: .4 !important
     stroke-width: var(--hover-stroke-width, 0.4) 

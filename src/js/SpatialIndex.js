@@ -97,7 +97,9 @@ SpatialIndex.prototype = {
      */
     rebuild: function (editor) {
         this.tree.clear()
-        this._svgNode = editor.svg.node
+        const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+        if (!activeSvg) return
+        this._svgNode = activeSvg.node
         const elements = getSelectableElements(editor)
         const items = []
         for (let i = 0; i < elements.length; i++) {

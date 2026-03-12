@@ -310,6 +310,12 @@ function getSelectableElements(editor) {
         if (!data.visible || data.locked) return
         collectLeaves(data.group)
     })
+
+    if (editor.mode === 'paper') {
+        if (editor.paperViewportsGroup) collectLeaves(editor.paperViewportsGroup)
+        if (editor.paperAnnotations) collectLeaves(editor.paperAnnotations)
+    }
+
     return elements
 }
 
@@ -322,9 +328,12 @@ function getSelectableElements(editor) {
 function findSelectableAncestor(element) {
     let current = element
     let groupAncestor = null
-    while (current && current.type === 'g' || (current && current.parent && current.parent())) {
+    while (current && (current.type === 'g' || (current.parent && current.parent()))) {
         const parent = current.parent()
         if (!parent) break
+        if (parent.attr('data-paper-viewport') === 'true') {
+            return parent
+        }
         if (parent.attr('data-collection') === 'true') break
         if (parent.attr('data-group') === 'true') {
             groupAncestor = parent

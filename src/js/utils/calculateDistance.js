@@ -84,7 +84,7 @@ export function calculateDeltaFromBasepoint(basePoint, mouse, distance) {
 }
 
 export function calculateLocalDelta(el, dx, dy) {
-  if (!el.parent()) return { dx, dy }
+  if (!el || typeof el.parent !== 'function' || !el.parent()) return { dx, dy }
   try {
     const parentNode = el.parent().node
     const svgNode = el.root().node

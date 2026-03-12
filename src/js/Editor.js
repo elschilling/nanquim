@@ -48,6 +48,7 @@ function Editor() {
   this.drawing.attr('id', 'Collection')
   this.handlers = this.svg.group()
   this.handlers.attr('id', 'Handlers')
+  this.modelHandlers = this.handlers // Store reference for mode-switching
   this.isDrawing = false
   this.isInteracting = false
   this.selectSingleElement = false

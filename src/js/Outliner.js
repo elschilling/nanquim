@@ -414,6 +414,7 @@ function Outliner(editor) {
   signals.updatedSelection.add(() => {
     clearSelectionVisuals()
     editor.selected.forEach((el) => {
+      if (el._paperVp) return // Viewports don't have Outliner rows or elementSelected class
       const li = document.getElementById('li' + el.node.id)
       if (el.attr('data-collection') !== 'true') {
         el.addClass('elementSelected')
@@ -436,6 +437,7 @@ function Outliner(editor) {
 
     // Only remove elementSelected from previously-selected elements (O(k) not O(n))
     const removeSelectedRecursive = (el) => {
+      if (!el.removeClass) return // Viewport wrappers don't have removeClass
       el.removeClass('elementSelected')
       if (el.type === 'g' && el.children) {
         el.children().each(child => removeSelectedRecursive(child))
@@ -449,12 +451,16 @@ function Outliner(editor) {
     // Clear existing handlers
     editor.handlers.clear()
 
-    // Get current zoom level
-    const currentZoom = editor.svg.zoom()
+    // Get current SVG and zoom level based on mode
+    const isPaper = editor.mode === 'paper'
+    const activeSvg = isPaper ? editor.paperSvg : editor.svg
+    if (!activeSvg) return
+
+    const currentZoom = activeSvg.zoom()
     const handlerScreenSize = getPreferences().handlerSize
     const handlerWorldSize = handlerScreenSize / currentZoom
 
-    const svgNode = editor.svg.node
+    const svgNode = activeSvg.node
 
     // Helper to transform a local element point to world coordinates
     const localToWorld = (element, x, y) => {
@@ -748,7 +754,12 @@ function Outliner(editor) {
   signals.toogledSelect.add((el) => {
     if (editor.preventSelection || editor.isInteracting) return
 
-    if (!editor.selected.map((item) => item.node.id).includes(el.node.id)) {
+    const isElementSelected = editor.selected.some(item => {
+      if (item._paperVp) return false
+      return item.node.id === el.node.id
+    })
+
+    if (!isElementSelected) {
       if (editor.selectSingleElement) {
         editor.selected = [el]
       } else {
