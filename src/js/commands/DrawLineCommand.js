@@ -38,7 +38,8 @@ class DrawLineCommand extends Command {
         this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
-      this.editor.svg.on('valueInput', (e) => {
+      const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+      activeSvg.on('valueInput', (e) => {
         if (line) {
           line.off()
           line.draw('cancel')
@@ -46,7 +47,7 @@ class DrawLineCommand extends Command {
           this.draw(startPoint, this.editor.length)
         }
       })
-      this.editor.svg.on('coordinateInput', (e) => {
+      activeSvg.on('coordinateInput', (e) => {
         if (line) {
           const coord = this.editor.inputCoord
           line.off()
@@ -70,7 +71,7 @@ class DrawLineCommand extends Command {
           }
         }
       })
-      this.editor.svg.on('orthoChange', () => {
+      activeSvg.on('orthoChange', () => {
         if (line) {
           line.off()
           line.draw('cancel')
@@ -78,7 +79,7 @@ class DrawLineCommand extends Command {
           this.draw(startPoint, this.editor.length)
         }
       })
-      this.editor.svg.on('cancelDrawing', (e) => {
+      activeSvg.on('cancelDrawing', (e) => {
         if (line) {
           line.off()
           line.draw('cancel')

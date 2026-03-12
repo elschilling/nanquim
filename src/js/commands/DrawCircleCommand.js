@@ -58,8 +58,10 @@ class DrawCircleCommand extends Command {
         this.editor.setIsDrawing(false)
       })
 
+      const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+
       // Handle @x,y coordinate input for center point
-      this.editor.svg.on('coordinateInput', (e) => {
+      activeSvg.on('coordinateInput', (e) => {
         if (circle) {
           const coord = this.editor.inputCoord
           circle.off()
@@ -72,7 +74,7 @@ class DrawCircleCommand extends Command {
       })
 
       // Handle numeric radius input after center is set
-      this.editor.svg.on('valueInput', (e) => {
+      activeSvg.on('valueInput', (e) => {
         if (circle && hasCenter && centerPoint) {
           const radius = parseFloat(this.editor.length)
           if (!isNaN(radius) && radius > 0) {
@@ -99,7 +101,7 @@ class DrawCircleCommand extends Command {
         }
       })
 
-      this.editor.svg.on('cancelDrawing', (e) => {
+      activeSvg.on('cancelDrawing', (e) => {
         if (circle) {
           circle.off()
           circle.draw('cancel')

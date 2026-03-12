@@ -144,14 +144,29 @@ function Outliner(editor) {
   }
 
   function renderAnnotationsPseudoCollection() {
+    const data = editor.collections.get('paper-annotations')
+    if (!data) return
+
     const collectionUl = document.createElement('ul')
     collectionUl.className = 'outliner-collection outliner-paper-collection'
 
     const collectionLi = document.createElement('li')
-    collectionLi.className = 'collection-row collection-active'
+    collectionLi.className = 'collection-row'
+    if (editor.activeCollection === data.group) collectionLi.classList.add('collection-active')
 
     const leftSide = document.createElement('div')
     leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
+
+    // Chevron toggle icon
+    const toggleIcon = document.createElement('div')
+    toggleIcon.className = 'icon ' + (data.collapsed ? 'icon-right' : 'icon-down')
+    toggleIcon.style.marginRight = '4px'
+    toggleIcon.style.cursor = 'pointer'
+    toggleIcon.addEventListener('click', (e) => {
+      e.stopPropagation()
+      data.collapsed = !data.collapsed
+      signals.updatedOutliner.dispatch()
+    })
 
     const folderIcon = document.createElement('div')
     folderIcon.className = 'icon icon-collection'
@@ -163,10 +178,21 @@ function Outliner(editor) {
     nameSpan.textContent = 'Annotations'
     nameSpan.style.color = '#88cc88'
 
+    leftSide.appendChild(toggleIcon)
     leftSide.appendChild(folderIcon)
     leftSide.appendChild(nameSpan)
     collectionLi.appendChild(leftSide)
     collectionUl.appendChild(collectionLi)
+
+    // Container for children
+    const childrenContainer = document.createElement('div')
+    childrenContainer.style.display = data.collapsed ? 'none' : 'block'
+
+    if (!data.collapsed) {
+      childElements(data.group, childrenContainer, 1)
+    }
+
+    collectionUl.appendChild(childrenContainer)
     drawingTree.appendChild(collectionUl)
   }
 
@@ -199,7 +225,7 @@ function Outliner(editor) {
 
     const nameSpan = document.createElement('span')
     nameSpan.className = 'collection-name'
-    nameSpan.textContent = (child.attr('name') || 'Collection') + ' 🔒'
+    nameSpan.textContent = (child.attr('name') || 'Collection')
     nameSpan.style.opacity = '0.6'
 
     leftSide.appendChild(toggleIcon)
@@ -645,7 +671,7 @@ function Outliner(editor) {
             })
         })
       } else if (el.type === 'rect' || el._paperVp) {
-        
+
         let rx, ry, rw, rh, s
         if (el._paperVp) {
           const vp = el._paperVp

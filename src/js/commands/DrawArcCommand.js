@@ -24,12 +24,14 @@ class DrawArcCommand extends Command {
         })
         this.editor.setIsDrawing(true)
 
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+
         // Bind directly to svg mousedown, capturing phase to avoid conflicts
-        this.editor.svg.on('mousedown.arc', this.boundHandleClick)
+        activeSvg.on('mousedown.arc', this.boundHandleClick)
         document.addEventListener('mousemove', this.boundHandleMove)
 
         // Listen for cancellation
-        this.editor.svg.on('cancelDrawing', (e) => {
+        activeSvg.on('cancelDrawing', (e) => {
             this.cleanup()
         })
     }
@@ -38,7 +40,8 @@ class DrawArcCommand extends Command {
         // Only left clicks
         if (e.button !== 0) return
 
-        const point = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
         this.points.push(point)
 
         if (this.points.length === 1) {
@@ -67,7 +70,8 @@ class DrawArcCommand extends Command {
     handleMove(e) {
         if (this.points.length === 0 || !this.arcPath) return
 
-        const point = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
 
         if (this.points.length === 1) {
             // Drawing line from start point to current mouse position (end point preview)
@@ -120,7 +124,9 @@ class DrawArcCommand extends Command {
     }
 
     cleanup() {
-        this.editor.svg.off('mousedown.arc')
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        activeSvg.off('mousedown.arc')
+        activeSvg.off('cancelDrawing')
         document.removeEventListener('mousemove', this.boundHandleMove)
         this.editor.setIsDrawing(false)
         this.points = []

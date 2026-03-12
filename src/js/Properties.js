@@ -97,11 +97,21 @@ function Properties(editor) {
         return
       }
 
-      const sel = editor.selected[0]
+      const sel = editor.selected[editor.selected.length - 1]
 
       // Check if a paper viewport is selected
       if (sel && sel._paperVp) {
         renderViewportPropertiesTab(content, sel._paperVp)
+        return
+      }
+
+      // Support selecting annotation elements in paper mode
+      if (sel && sel.node) {
+        if (activeTab === 'transform') {
+          renderTransformTab(content, sel, sel.node)
+        } else if (activeTab === 'style') {
+          renderStyleTab(content, sel, sel.node)
+        }
         return
       }
 

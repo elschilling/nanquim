@@ -47,6 +47,8 @@ function PaperEditor(editor) {
   let viewportCounter = 0
   // Paper-specific handlers group
   let paperHandlers = null
+  // Saved active collection to restore after deactivating paper mode
+  let savedActiveCollection = null
 
   // ── Activation / Deactivation ───────────────────────────────────────────────
 
@@ -70,7 +72,9 @@ function PaperEditor(editor) {
       editor.handlers = paperHandlers
     }
 
-    editor.preventSelection = true
+    // Save current active collection and set to paper annotations
+    savedActiveCollection = editor.activeCollection
+    editor.activeCollection = annotationsGroup
 
     // Dispatch signals to update Outliner and Properties
     signals.updatedOutliner.dispatch()
@@ -90,9 +94,12 @@ function PaperEditor(editor) {
     // Restore draw handlers
     editor.handlers = editor.modelHandlers
     _clearLiveColorMapping()
-    
-    editor.preventSelection = false
 
+    // Restore active collection
+    if (savedActiveCollection) {
+      editor.activeCollection = savedActiveCollection
+    }
+    
     signals.updatedOutliner.dispatch()
     signals.updatedProperties.dispatch()
   }
@@ -129,6 +136,21 @@ function PaperEditor(editor) {
     annotationsGroup = paperSvg.group().attr('id', 'paper-annotations')
     annotationsGroup.attr('data-collection', 'true')
     annotationsGroup.attr('name', 'Annotations')
+
+    // Register annotationsGroup in editor.collections for styling and outliner
+    if (editor.collections) {
+      editor.collections.set('paper-annotations', {
+        group: annotationsGroup,
+        visible: true,
+        locked: false,
+        style: {
+          stroke: 'black',
+          'stroke-width': 0.1,
+          'stroke-linecap': 'round',
+          fill: 'transparent',
+        },
+      })
+    }
 
     paperHandlers = paperSvg.group().attr('id', 'paper-handlers')
 

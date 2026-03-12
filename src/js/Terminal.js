@@ -161,16 +161,17 @@ function Terminal(editor) {
 
         // Drawing (Direct SVG manipulation tools) follow
         if (editor.isDrawing) {
+          const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
           if (isNumericString(inputVal)) {
             editor.length = inputVal
-            editor.svg.fire('valueInput')
+            activeSvg.fire('valueInput')
           } else if (inputVal.startsWith('@')) {
             const coords = inputVal.substring(1).split(',')
             if (coords.length === 2) {
               const x = parseFloat(coords[0]), y = parseFloat(coords[1])
               if (!isNaN(x) && !isNaN(y)) {
                 editor.inputCoord = { x, y }
-                editor.svg.fire('coordinateInput')
+                activeSvg.fire('coordinateInput')
               }
             }
           }

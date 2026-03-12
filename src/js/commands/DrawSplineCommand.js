@@ -74,12 +74,14 @@ class DrawSplineCommand extends Command {
         })
         this.editor.setIsDrawing(true)
 
-        this.editor.svg.on('mousedown.spline', this.boundHandleClick)
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+
+        activeSvg.on('mousedown.spline', this.boundHandleClick)
         document.addEventListener('mousemove', this.boundHandleMove)
         document.addEventListener('contextmenu', this.boundHandleRightClick, true)
         document.addEventListener('keydown', this.boundHandleKeyDown)
 
-        this.editor.svg.on('cancelDrawing.spline', this.boundCancelDrawing)
+        activeSvg.on('cancelDrawing.spline', this.boundCancelDrawing)
     }
 
     handleKeyDown(e) {
@@ -104,7 +106,8 @@ class DrawSplineCommand extends Command {
     handleClick(e) {
         if (e.button !== 0) return
 
-        const point = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
         this.points.push({ x: point.x, y: point.y })
 
         if (this.points.length === 1) {
@@ -131,7 +134,8 @@ class DrawSplineCommand extends Command {
     handleMove(e) {
         if (this.points.length === 0 || !this.splinePath) return
 
-        const point = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
 
         // Preview with cursor as virtual next point
         const previewPoints = [...this.points, { x: point.x, y: point.y }]
@@ -176,8 +180,9 @@ class DrawSplineCommand extends Command {
     }
 
     cleanupListeners() {
-        this.editor.svg.off('mousedown.spline')
-        this.editor.svg.off('cancelDrawing.spline')
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        activeSvg.off('mousedown.spline')
+        activeSvg.off('cancelDrawing.spline')
         document.removeEventListener('mousemove', this.boundHandleMove)
         document.removeEventListener('contextmenu', this.boundHandleRightClick, true)
         document.removeEventListener('keydown', this.boundHandleKeyDown)
