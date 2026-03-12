@@ -335,6 +335,7 @@ function Properties(editor) {
             cfg.colorMap[c].printColor = preset
           }
         })
+        editor.signals.colorMapUpdated.dispatch()
         render()
       })
       presetsRow.appendChild(btn)
@@ -366,7 +367,10 @@ function Properties(editor) {
       cb.type = 'checkbox'
       cb.checked = mapping.enabled
       cb.style.flexShrink = '0'
-      cb.addEventListener('change', () => { mapping.enabled = cb.checked })
+      cb.addEventListener('change', () => { 
+        mapping.enabled = cb.checked 
+        editor.signals.colorMapUpdated.dispatch()
+      })
 
       // Source color swatch
       const srcSwatch = document.createElement('div')
@@ -386,6 +390,7 @@ function Properties(editor) {
           mapping.printColor = newColor
           printSwatch.style.background = newColor
           printSwatch.title = `Print: ${newColor}`
+          editor.signals.colorMapUpdated.dispatch()
         })
       })
 

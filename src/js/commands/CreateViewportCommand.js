@@ -26,26 +26,19 @@ async function createViewportCommand(editor, args) {
     return
   }
 
-  // ── Step 1: First corner ──────────────────────────────────────────────────
-  signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify first corner of viewport:' })
-
-  let p1 = null
-  try {
-    p1 = await _capturePointOnPaper(editor)
-  } catch {
-    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Cancelled.' })
-    return
-  }
-
-  // ── Step 2: Opposite corner ───────────────────────────────────────────────
-  signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify opposite corner:' })
-
-  let p2 = null
-  let ghostRect = null
-  let ghostUpdater = null
+  editor.isInteracting = true // Lock the terminal for the entire command flow
 
   try {
-    // Draw a ghost rectangle following the mouse
+    // ── Step 1: First corner ──────────────────────────────────────────────────
+    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify first corner of viewport:' })
+    const p1 = await _capturePointOnPaper(editor)
+
+    // ── Step 2: Opposite corner ───────────────────────────────────────────────
+    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify opposite corner:' })
+
+    let ghostRect = null
+    let ghostUpdater = null
+
     ghostRect = editor.paperSvg.rect(0, 0)
       .fill('rgba(100,150,255,0.15)')
       .stroke('#5599ff')
@@ -62,46 +55,49 @@ async function createViewportCommand(editor, args) {
     }
     editor.paperSvg.node.addEventListener('mousemove', ghostUpdater)
 
-    p2 = await _capturePointOnPaper(editor)
-  } catch {
-    if (ghostRect) ghostRect.remove()
-    if (ghostUpdater) editor.paperSvg.node.removeEventListener('mousemove', ghostUpdater)
-    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Cancelled.' })
-    return
+    let p2
+    try {
+      p2 = await _capturePointOnPaper(editor)
+    } finally {
+      if (ghostRect) ghostRect.remove()
+      if (ghostUpdater) editor.paperSvg.node.removeEventListener('mousemove', ghostUpdater)
+    }
+
+    const x = Math.min(p1.x, p2.x)
+    const y = Math.min(p1.y, p2.y)
+    const w = Math.abs(p2.x - p1.x)
+    const h = Math.abs(p2.y - p1.y)
+
+    if (w < 0.1 || h < 0.1) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Viewport too small. Cancelled.' })
+      return
+    }
+
+    // ── Step 3: Scale input ───────────────────────────────────────────────────
+    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Enter scale denominator (e.g. 100 for 1:100) [100]:' })
+
+    let scale = 100
+    try {
+      const input = await _captureScaleInput(editor)
+      const num = parseFloat(input)
+      if (!isNaN(num) && num > 0) scale = num
+      console.log('VP: Scale resolved to:', scale)
+    } catch {
+      // Default scale
+    }
+
+    // ── Create the viewport ───────────────────────────────────────────────────
+    const vp = editor.paperEditor.createViewport(x, y, w, h, scale)
+    signals.terminalLogged.dispatch({
+      type: 'span',
+      msg: `VP: Created viewport ${vp.id} (${w.toFixed(2)}×${h.toFixed(2)} cm) at 1:${scale}`
+    })
+  } catch (err) {
+    if (err.message !== 'cancelled') console.error(err)
+  } finally {
+    editor.isInteracting = false
+    signals.updatedOutliner.dispatch()
   }
-
-  if (ghostRect) ghostRect.remove()
-  if (ghostUpdater) editor.paperSvg.node.removeEventListener('mousemove', ghostUpdater)
-
-  const x = Math.min(p1.x, p2.x)
-  const y = Math.min(p1.y, p2.y)
-  const w = Math.abs(p2.x - p1.x)
-  const h = Math.abs(p2.y - p1.y)
-
-  if (w < 0.1 || h < 0.1) {
-    signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Viewport too small. Cancelled.' })
-    return
-  }
-
-  // ── Step 3: Scale input ───────────────────────────────────────────────────
-  signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Enter scale denominator (e.g. 100 for 1:100) [100]:' })
-
-  let scale = 100
-  try {
-    const input = await _captureScaleInput(editor)
-    const num = parseFloat(input)
-    if (!isNaN(num) && num > 0) scale = num
-  } catch {
-    // Default scale if cancelled or empty
-  }
-
-  // ── Create the viewport ───────────────────────────────────────────────────
-  const vp = editor.paperEditor.createViewport(x, y, w, h, scale)
-  signals.terminalLogged.dispatch({
-    type: 'span',
-    msg: `VP: Created viewport ${vp.id} (${w.toFixed(2)}×${h.toFixed(2)} cm) at 1:${scale}`
-  })
-  signals.updatedOutliner.dispatch()
 }
 
 /**
@@ -112,8 +108,7 @@ function _capturePointOnPaper(editor) {
     const paperSvgNode = editor.paperSvg.node
 
     const onCancel = () => {
-      paperSvgNode.removeEventListener('click', onClick)
-      editor.signals.commandCancelled.remove(onCancel)
+      cleanup()
       reject(new Error('cancelled'))
     }
 
@@ -121,13 +116,28 @@ function _capturePointOnPaper(editor) {
       if (e.button !== 0) return
       e.stopPropagation()
       const pt = _screenToPaperSVG(editor, e.clientX, e.clientY)
-      paperSvgNode.removeEventListener('click', onClick)
-      editor.signals.commandCancelled.remove(onCancel)
+      cleanup()
       resolve(pt)
     }
 
+    const onCoord = () => {
+      cleanup()
+      resolve(editor.inputCoord)
+    }
+
+    const cleanup = () => {
+      paperSvgNode.removeEventListener('click', onClick)
+      editor.signals.commandCancelled.remove(onCancel)
+      editor.signals.coordinateInput.remove(onCoord)
+    }
+
     paperSvgNode.addEventListener('click', onClick)
-    editor.signals.commandCancelled.add(onCancel)
+    editor.signals.commandCancelled.addOnce(onCancel)
+    editor.signals.coordinateInput.addOnce(onCoord)
+    
+    // Ensure terminal has focus
+    const term = document.getElementById('terminalInput')
+    if (term) term.focus()
   })
 }
 
@@ -136,12 +146,10 @@ function _capturePointOnPaper(editor) {
  */
 function _captureScaleInput(editor) {
   return new Promise((resolve, reject) => {
-    editor.isInteracting = true
-
-    const cleanup = () => {
-      editor.isInteracting = false
-      editor.signals.inputValue.remove(onInput)
-      editor.signals.commandCancelled.remove(onCancel)
+    const term = document.getElementById('terminalInput')
+    if (term) {
+      term.value = ''
+      term.focus()
     }
 
     const onInput = (val) => {
@@ -154,8 +162,13 @@ function _captureScaleInput(editor) {
       reject(new Error('cancelled'))
     }
 
-    editor.signals.inputValue.add(onInput)
-    editor.signals.commandCancelled.add(onCancel)
+    const cleanup = () => {
+      editor.signals.inputValue.remove(onInput)
+      editor.signals.commandCancelled.remove(onCancel)
+    }
+
+    editor.signals.inputValue.addOnce(onInput)
+    editor.signals.commandCancelled.addOnce(onCancel)
   })
 }
 

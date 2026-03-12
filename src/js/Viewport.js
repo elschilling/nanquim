@@ -1142,7 +1142,7 @@ function Viewport(editor) {
       const startX = coordinates.x
       editor.isDrawing = true
       editor.isSelecting = true
-      activeSvg.drawRect(e)
+      activeSvg.rect()
         .addClass('selectionRectangle')
         .draw()
         .on('drawupdate', (e) => {

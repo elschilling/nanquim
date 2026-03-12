@@ -132,75 +132,103 @@ function Terminal(editor) {
       return
     }
 
-    // Don't auto-focus terminal if user is editing a property input
+    // ── Input Handling (on keydown to intercept Space/Enter correctly) ──
+    const isConfirmKey = (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')
+    const inputVal = terminalText.value.trim()
+
+    if (editor.isInteracting || editor.isDrawing) {
+      if (isConfirmKey) {
+        e.preventDefault()
+        
+        // Interaction (Commands using promises/signals) takes priority
+        if (editor.isInteracting) {
+          if (isNumericString(inputVal)) {
+            editor.signals.inputValue.dispatch(inputVal)
+          } else if (inputVal.startsWith('@') || inputVal.includes(',')) {
+            const raw = inputVal.startsWith('@') ? inputVal.substring(1) : inputVal
+            const coords = raw.split(',')
+            if (coords.length === 2) {
+              const x = parseFloat(coords[0]), y = parseFloat(coords[1])
+              if (!isNaN(x) && !isNaN(y)) {
+                editor.inputCoord = { x, y }
+                editor.signals.coordinateInput.dispatch()
+              }
+            }
+          } else {
+            editor.signals.inputValue.dispatch(inputVal)
+          }
+        }
+
+        // Drawing (Direct SVG manipulation tools) follow
+        if (editor.isDrawing) {
+          if (isNumericString(inputVal)) {
+            editor.length = inputVal
+            editor.svg.fire('valueInput')
+          } else if (inputVal.startsWith('@')) {
+            const coords = inputVal.substring(1).split(',')
+            if (coords.length === 2) {
+              const x = parseFloat(coords[0]), y = parseFloat(coords[1])
+              if (!isNaN(x) && !isNaN(y)) {
+                editor.inputCoord = { x, y }
+                editor.svg.fire('coordinateInput')
+              }
+            }
+          }
+        }
+        terminalText.value = ''
+        return
+      }
+    } else {
+      // Normal mode command execution
+      if (isConfirmKey) {
+        if (e.code === 'Space' && inputVal === '') {
+          if (editor.lastCommand) {
+            e.preventDefault()
+            editor.lastCommand.execute()
+          }
+          return
+        }
+        if (inputVal !== '') {
+          e.preventDefault()
+          const typed = inputVal.toLowerCase()
+          for (const [command, { execute, aliases }] of Object.entries(commands)) {
+            if (aliases.includes(typed)) {
+              signals.commandCancelled.dispatch()
+              editor.lastCommand = { execute: () => execute(editor) }
+              execute(editor)
+              terminalText.value = ''
+              return
+            }
+          }
+        }
+      }
+    }
+
+    // Global focus management
     const activeElement = document.activeElement
     if (activeElement && (activeElement.classList.contains('property-input') || activeElement.classList.contains('prefs-input'))) {
       return
     }
-    terminalInput.focus()
+    terminalText.focus()
   }
 
   function handleKeyUp(e) {
-    console.log('editor.lastCommand', editor.lastCommand)
-    console.log('editor.isDrawing', editor.isDrawing)
-    console.log('editor.isInteracting', editor.isInteracting)
-    if (!editor.isDrawing && !editor.isInteracting && e.code === 'Space' && terminalInput.value.trim() === '') {
-      // const lastCommand = editor.history.undos[editor.history.undos.length - 1]
-      if (editor.lastCommand) {
-        console.log('call last command')
-        editor.lastCommand.execute()
-      }
-    } else if (
-      (!editor.isDrawing && !editor.isInteracting && e.code === 'Space') ||
-      (!editor.isDrawing && !editor.isInteracting && e.code === 'Enter') ||
-      e.code === 'NumpadEnter'
-    ) {
-      const typedCommand = terminalInput.value.trim().toLowerCase()
-
-      for (const [command, { execute, aliases }] of Object.entries(commands)) {
-        if (aliases.includes(typedCommand)) {
-          // Cancel any active command before starting a new one
-          signals.commandCancelled.dispatch()
-
-          // Set default repeat behavior: execute the command factory again
-          // Individual commands can override this if they want to reuse the instance
-          editor.lastCommand = { execute: () => execute(editor) }
-
-          // Execute the command function
-          execute(editor)
-          // Clear input after execution
-          terminalText.value = ''
-          return // Exit the loop after executing the command
-        }
-      }
-      // If no matching command or alias found
-      console.log('Command not found')
-    } else if (e.code === 'Escape') {
-      console.log('Escape')
-
-      // Cancel vertex editing if active
-      // Cancel vertex editing if active
+    if (e.code === 'Escape') {
       if (editor.isEditingVertex) {
         editor.editingVertices.forEach((v) => {
           const element = v.element
           const vertexIndex = v.vertexIndex
           const oldPos = v.originalPosition
-
           if (element.type === 'line') {
-            // Restore original position
-            if (vertexIndex === 0) {
-              element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-            } else {
-              element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
-            }
+            if (vertexIndex === 0) element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+            else element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
           } else if (element.type === 'circle') {
             element.center(oldPos.cx, oldPos.cy)
             element.radius(oldPos.r)
           }
         })
-
         signals.vertexEditStopped.dispatch()
-        signals.updatedSelection.dispatch() // Redraw handlers at original position
+        signals.updatedSelection.dispatch()
         return
       }
 
@@ -219,64 +247,17 @@ function Terminal(editor) {
     } else if (e.code === 'F9') {
       handleToogleSnap()
     } else if (e.code === 'Delete') {
-      if (editor.selected.length === 0) return
-      // Store elements to delete before clearing selection
-      const elementsToDelete = [...editor.selected]
-      // Clear selection and reset array first
-      signals.clearSelection.dispatch()
-      editor.selected = []
-      // Then delete all elements
-      import('./commands/MultiRemoveElementCommand.js').then(({ MultiRemoveElementCommand }) => {
-        editor.execute(new MultiRemoveElementCommand(editor, elementsToDelete))
-      })
+      if (editor.selected.length > 0) {
+        const toDelete = [...editor.selected]
+        signals.clearSelection.dispatch()
+        editor.selected = []
+        import('./commands/MultiRemoveElementCommand.js').then(({ MultiRemoveElementCommand }) => {
+          editor.execute(new MultiRemoveElementCommand(editor, toDelete))
+        })
+      }
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()
       else editor.undo()
-    } else if (editor.isDrawing) {
-      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-        const input = terminalInput.value.trim()
-        if (isNumericString(input)) {
-          editor.length = input
-          editor.svg.fire('valueInput')
-          terminalText.value = ''
-        } else if (input.startsWith('@')) {
-          const coords = input.substring(1).split(',')
-          if (coords.length === 2) {
-            const x = parseFloat(coords[0])
-            const y = parseFloat(coords[1])
-            if (!isNaN(x) && !isNaN(y)) {
-              editor.inputCoord = { x, y }
-              editor.svg.fire('coordinateInput')
-              terminalText.value = ''
-            }
-          }
-        }
-      }
-    } else if (editor.isInteracting) {
-      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
-        const input = terminalInput.value.trim()
-        if (isNumericString(input)) {
-          console.log('distance input', input)
-          editor.distance = input
-          editor.signals.inputValue.dispatch(input)
-          terminalText.value = ''
-        } else if (input.startsWith('@')) {
-          const coords = input.substring(1).split(',')
-          if (coords.length === 2) {
-            const x = parseFloat(coords[0])
-            const y = parseFloat(coords[1])
-            if (!isNaN(x) && !isNaN(y)) {
-              editor.inputCoord = { x, y }
-              editor.signals.coordinateInput.dispatch()
-              terminalText.value = ''
-            }
-          }
-        } else {
-          console.log('command params', input)
-          editor.signals.inputValue.dispatch(input)
-          terminalText.value = ''
-        }
-      }
     }
   }
 }

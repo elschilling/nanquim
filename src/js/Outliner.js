@@ -181,9 +181,16 @@ function Outliner(editor) {
     const leftSide = document.createElement('div')
     leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
 
-    const chevron = document.createElement('div')
-    chevron.className = 'icon icon-right'
-    chevron.style.marginRight = '4px'
+    // Chevron toggle icon
+    const toggleIcon = document.createElement('div')
+    toggleIcon.className = 'icon ' + (data.collapsed ? 'icon-right' : 'icon-down')
+    toggleIcon.style.marginRight = '4px'
+    toggleIcon.style.cursor = 'pointer'
+    toggleIcon.addEventListener('click', (e) => {
+      e.stopPropagation()
+      data.collapsed = !data.collapsed
+      signals.updatedOutliner.dispatch()
+    })
 
     const folderIcon = document.createElement('div')
     folderIcon.className = 'icon icon-collection'
@@ -195,7 +202,7 @@ function Outliner(editor) {
     nameSpan.textContent = (child.attr('name') || 'Collection') + ' 🔒'
     nameSpan.style.opacity = '0.6'
 
-    leftSide.appendChild(chevron)
+    leftSide.appendChild(toggleIcon)
     leftSide.appendChild(folderIcon)
     leftSide.appendChild(nameSpan)
 
@@ -223,6 +230,17 @@ function Outliner(editor) {
     collectionLi.appendChild(leftSide)
     collectionLi.appendChild(iconsDiv)
     collectionUl.appendChild(collectionLi)
+
+    // Container for children
+    const childrenContainer = document.createElement('div')
+    childrenContainer.style.display = data.collapsed ? 'none' : 'block'
+
+    // Render children if not collapsed
+    if (!data.collapsed) {
+      childElements(data.dataGroup || data.group, childrenContainer, 1)
+    }
+
+    collectionUl.appendChild(childrenContainer)
     drawingTree.appendChild(collectionUl)
   }
 

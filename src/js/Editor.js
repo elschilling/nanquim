@@ -36,6 +36,7 @@ function Editor() {
     editorModeChanged: new Signal(),   // dispatched when switching model <-> paper
     modelContentChanged: new Signal(), // dispatched when model drawing is modified
     paperViewportsChanged: new Signal(), // dispatched when paper viewports change
+    colorMapUpdated: new Signal(),      // dispatched when print colors are modified
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')

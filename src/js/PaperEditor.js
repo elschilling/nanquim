@@ -63,11 +63,14 @@ function PaperEditor(editor) {
 
     _renderPaperSheet()
     _refreshAllViewports()
+    _applyLiveColorMapping()
 
     // Swap handlers to the paper canvas
     if (paperHandlers) {
       editor.handlers = paperHandlers
     }
+
+    editor.preventSelection = true
 
     // Dispatch signals to update Outliner and Properties
     signals.updatedOutliner.dispatch()
@@ -86,6 +89,9 @@ function PaperEditor(editor) {
 
     // Restore model handlers
     editor.handlers = editor.modelHandlers
+    _clearLiveColorMapping()
+    
+    editor.preventSelection = false
 
     signals.updatedOutliner.dispatch()
     signals.updatedProperties.dispatch()
@@ -289,10 +295,104 @@ function PaperEditor(editor) {
     exportPaperPDF(editor, viewports)
   }
 
+  // ── Live Color Mapping ─────────────────────────────────────────────────────
+
+  function _applyLiveColorMapping() {
+    const cfg = editor.paperConfig
+    const colorMap = cfg.colorMap
+
+    const scan = (el) => {
+      if (!el || !el.node) return
+      
+      const node = el.node
+      // Only process geometry elements that might have stroke/fill
+      if (['g', 'path', 'line', 'circle', 'ellipse', 'rect', 'text', 'polyline', 'polygon'].includes(node.nodeName)) {
+        ['stroke', 'fill'].forEach(attr => {
+          const dataKey = 'nanquimOrig' + attr.charAt(0).toUpperCase() + attr.slice(1)
+          
+          // Get the TRUE source value. If already mapped, it's in dataset.
+          // Note: we check for existence of the key, as the value might be an empty string.
+          const isAlreadyMapped = dataKey in node.dataset
+          const sourceVal = isAlreadyMapped ? (node.dataset[dataKey] || node.getAttribute(attr)) : (node.style[attr] || node.getAttribute(attr))
+
+          if (!sourceVal || sourceVal === 'none' || sourceVal === 'transparent' || sourceVal === 'inherit') {
+            // If it was previously mapped but the source is now gone/none, clear tracking
+            if (isAlreadyMapped) {
+              node.style[attr] = node.dataset[dataKey]
+              delete node.dataset[dataKey]
+            }
+            return
+          }
+
+          let norm = normalizeColor(sourceVal)
+          if (norm && colorMap[norm] && colorMap[norm].enabled && colorMap[norm].printColor !== norm) {
+            // Store original inline style if not already stored
+            if (!isAlreadyMapped) {
+              node.dataset[dataKey] = node.style[attr] || ''
+            }
+            // Apply theme color
+            node.style[attr] = colorMap[norm].printColor
+          } else {
+            // Restore if previously mapped but no longer needed (e.g. disabled in map or maps to itself)
+            if (isAlreadyMapped) {
+              node.style[attr] = node.dataset[dataKey]
+              delete node.dataset[dataKey]
+            }
+          }
+        })
+      }
+
+      if (el.children && typeof el.children === 'function') {
+        el.children().each(child => scan(child))
+      }
+    }
+    scan(editor.drawing)
+  }
+
+  function _clearLiveColorMapping() {
+    const scan = (el) => {
+      if (!el || !el.node) return
+      const node = el.node
+      
+      // Restore original colors
+      ;['Stroke', 'Fill'].forEach(suffix => {
+        const dataKey = 'nanquimOrig' + suffix
+        if (dataKey in node.dataset) {
+          node.style[suffix.toLowerCase()] = node.dataset[dataKey]
+          delete node.dataset[dataKey]
+        }
+      })
+
+      if (el.children && typeof el.children === 'function') {
+        el.children().each(child => scan(child))
+      }
+    }
+    scan(editor.drawing)
+  }
+
   // ── Signals: keep viewports in sync with model changes ────────────────────
   signals.modelContentChanged.add(() => {
     if (editor.mode === 'paper') {
       _refreshAllViewports()
+      _applyLiveColorMapping()
+    }
+  })
+
+  signals.colorMapUpdated.add(() => {
+    if (editor.mode === 'paper') {
+      _applyLiveColorMapping()
+    }
+  })
+
+  signals.updatedCollections.add(() => {
+    if (editor.mode === 'paper') {
+      _applyLiveColorMapping()
+    }
+  })
+
+  signals.updatedOutliner.add(() => {
+    if (editor.mode === 'paper') {
+      _applyLiveColorMapping()
     }
   })
 
@@ -321,10 +421,24 @@ function PaperEditor(editor) {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function normalizeColor(color) {
-  if (!color || color === 'none' || color === 'transparent') return null
+  if (!color || typeof color !== 'string') return null
+  const c = color.trim().toLowerCase()
+  if (c === 'none' || c === 'transparent' || c === 'inherit' || c.startsWith('url(')) return null
+
+  // Use a shared canvas context if possible for performance, but for now this is safe
   const ctx = document.createElement('canvas').getContext('2d')
+  
+  // To detect invalid colors, we set a known color first and see if it changes
+  ctx.fillStyle = '#123456'
   ctx.fillStyle = color
-  return ctx.fillStyle // returns '#rrggbb'
+  const result = ctx.fillStyle
+  
+  // If result is still #123456, it means setting 'color' failed OR 'color' was actually #123456
+  if (result === '#123456' && c !== '#123456') {
+    return null
+  }
+  
+  return result // returns '#rrggbb'
 }
 
 export { PaperEditor }
