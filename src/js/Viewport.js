@@ -698,6 +698,57 @@ function Viewport(editor) {
           const d = catmullRomToBezierPath(newPoints)
           element.plot(d)
           element.data('splineData', { points: newPoints })
+        } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
+          // Live render during move
+          try {
+              const dimData = JSON.parse(element.attr('data-dim-data'))
+
+              if (vertexIndex === 0) dimData.p1 = { x: point.x, y: point.y }
+              else if (vertexIndex === 1) dimData.p2 = { x: point.x, y: point.y }
+              else if (vertexIndex === 2) dimData.p3 = { x: point.x, y: point.y }
+              else if (vertexIndex === 3) {
+                  // Dragging the text moves its offset relative to default center
+                  const base = JSON.parse(element.attr('data-dim-text-base'))
+                  dimData.textPosition = {
+                      x: point.x - base.x,
+                      y: point.y - base.y
+                  }
+              }
+
+              const styleId = dimData.styleId || 'Standard'
+              const style = editor.dimensionManager.getStyle(styleId)
+              
+              // We need to inject textPosition into the style data dynamically
+              // or handle it in linearDimensionCommand.
+              // Actually, textPosition is unique per dimension instance!
+              // Let's modify linearDimensionCommand to accept dimData directly if passed into style
+              const tempStyle = JSON.parse(JSON.stringify(style))
+              if (dimData.textPosition) {
+                  tempStyle.textPosition = dimData.textPosition
+              }
+              
+              if (window.LinearDimensionCommand) {
+                  window.LinearDimensionCommand.renderDimensionGraphics(
+                      element,
+                      dimData.p1, dimData.p2, dimData.p3,
+                      tempStyle,
+                      1,
+                      false
+                  )
+              } else {
+                 import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
+                   window.LinearDimensionCommand = LinearDimensionCommand
+                   LinearDimensionCommand.renderDimensionGraphics(
+                      element,
+                      dimData.p1, dimData.p2, dimData.p3,
+                      tempStyle,
+                      1,
+                      false
+                  )
+                 })
+              }
+
+          } catch(e) {}
         }
       })
 
@@ -1040,6 +1091,54 @@ function Viewport(editor) {
               height: vp.h
             }
           })
+        } else if (v.element.type === 'g' && v.element.attr('data-element-type') === 'dimension') {
+          // Live-update dimensions instantly without needing a full command for now, 
+          // or we can implement an EditDimensionCommand. Let's do a direct update
+          // and emit a signal so history catches it (though History might need a specific command).
+          try {
+              const dimData = JSON.parse(v.element.attr('data-dim-data'))
+              const oldData = JSON.parse(JSON.stringify(dimData))
+              
+              if (v.vertexIndex === 0) dimData.p1 = { x: point.x, y: point.y }
+              else if (v.vertexIndex === 1) dimData.p2 = { x: point.x, y: point.y }
+              else if (v.vertexIndex === 2) dimData.p3 = { x: point.x, y: point.y }
+              else if (v.vertexIndex === 3) {
+                  const base = JSON.parse(v.element.attr('data-dim-text-base'))
+                  dimData.textPosition = {
+                      x: point.x - base.x,
+                      y: point.y - base.y
+                  }
+              }
+              
+              v.element.attr('data-dim-data', JSON.stringify(dimData))
+              
+              const styleId = dimData.styleId || 'Standard'
+              const style = editor.dimensionManager.getStyle(styleId)
+              
+              const tempStyle = JSON.parse(JSON.stringify(style))
+              if (dimData.textPosition) {
+                  tempStyle.textPosition = dimData.textPosition
+              }
+              
+              import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
+                  LinearDimensionCommand.renderDimensionGraphics(
+                      v.element,
+                      dimData.p1, dimData.p2, dimData.p3,
+                      tempStyle,
+                      1,
+                      false
+                  )
+                  import('./Collection.js').then(({ applyCollectionStyleToElement }) => {
+                      applyCollectionStyleToElement(editor, v.element)
+                  })
+              })
+              
+          } catch(e) {
+              console.error("Failed to update dimension points", e)
+          }
+          
+          // Note: Full command history support for EditDimensionCommand can be added later,
+          // for now direct data modification is sufficient for quick edits.
         }
       })
 

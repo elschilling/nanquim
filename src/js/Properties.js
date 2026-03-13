@@ -665,6 +665,105 @@ function Properties(editor) {
       createPropertyField(container, 'Height', bbox.height.toFixed(2), null, true)
     }
 
+    // DIMENSION PROPERTIES
+    if (node.nodeName === 'g' && element.attr('data-element-type') === 'dimension') {
+      const dimDataRaw = element.attr('data-dim-data')
+      if (dimDataRaw) {
+        try {
+          const dimData = JSON.parse(dimDataRaw)
+          const styleId = dimData.styleId || 'Standard'
+          
+          const dimHeader = document.createElement('div')
+          dimHeader.style.cssText = 'font-weight:bold;padding:12px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;border-top:1px solid #333;margin-top:8px;'
+          dimHeader.textContent = 'Dimension Style'
+          container.appendChild(dimHeader)
+
+          // 1. Style Dropdown
+          const styleRow = document.createElement('div')
+          styleRow.className = 'property-row'
+          
+          const styleLabel = document.createElement('label')
+          styleLabel.textContent = 'Style'
+          styleLabel.className = 'property-label'
+          
+          const styleSelect = document.createElement('select')
+          styleSelect.className = 'property-input'
+          styleSelect.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+          
+          editor.dimensionManager.styles.forEach((styleObj, sId) => {
+            const opt = document.createElement('option')
+            opt.value = sId
+            opt.textContent = styleObj.name
+            if (sId === styleId) opt.selected = true
+            styleSelect.appendChild(opt)
+          })
+          
+          styleSelect.addEventListener('change', (e) => {
+            const newStyleId = e.target.value
+            dimData.styleId = newStyleId
+            element.attr('data-dim-data', JSON.stringify(dimData))
+            editor.signals.refreshDimensions.dispatch({ element: element, data: dimData })
+            safeDispatch('updatedProperties')
+          })
+          
+          styleRow.appendChild(styleLabel)
+          styleRow.appendChild(styleSelect)
+          container.appendChild(styleRow)
+
+          // 2. Style Properties Details (edits the global style!)
+          const activeStyle = editor.dimensionManager.styles.get(styleId)
+          if (activeStyle) {
+            const props = activeStyle.properties
+
+            createPropertyField(container, 'Font Size', props.fontSize, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num) && num > 0) {
+                editor.dimensionManager.updateStyle(styleId, { fontSize: num })
+              }
+            })
+
+            createPropertyField(container, 'Arrow Size', props.arrowSize, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num) && num >= 0) {
+                editor.dimensionManager.updateStyle(styleId, { arrowSize: num })
+              }
+            })
+
+            createPropertyField(container, 'Tick Size (0=Arrows)', props.tickSize, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num) && num >= 0) {
+                editor.dimensionManager.updateStyle(styleId, { tickSize: num })
+              }
+            })
+
+            createPropertyField(container, 'Text Offset', props.textOffset, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num)) {
+                editor.dimensionManager.updateStyle(styleId, { textOffset: num })
+              }
+            })
+
+            createPropertyField(container, 'Ext Line Offset', props.extensionLineOffset, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num)) {
+                editor.dimensionManager.updateStyle(styleId, { extensionLineOffset: num })
+              }
+            })
+
+            createPropertyField(container, 'Ext Line Extend', props.extensionLineExtend, (val) => {
+              const num = parseFloat(val)
+              if (!isNaN(num)) {
+                editor.dimensionManager.updateStyle(styleId, { extensionLineExtend: num })
+              }
+            })
+          }
+
+        } catch (e) {
+          console.warn('Failed to parse dimension data', e)
+        }
+      }
+    }
+
     // Universal Rotation Field
     if (element.transform) {
       const currentRotation = element.transform().rotate || 0

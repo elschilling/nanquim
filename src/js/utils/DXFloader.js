@@ -40,6 +40,9 @@ function DXFLoader(editor) {
       const savedPaperConfigStr = svgRoot.getAttribute('data-paper-config')
       const savedPaperViewportsStr = svgRoot.getAttribute('data-paper-viewports')
 
+      // Read Dimension Styles
+      const savedDimStylesStr = svgRoot.getAttribute('data-dim-styles')
+
       if (savedPaperConfigStr) {
         try {
           const parsedConfig = JSON.parse(savedPaperConfigStr)
@@ -49,7 +52,14 @@ function DXFLoader(editor) {
         }
       }
 
-
+      if (savedDimStylesStr) {
+        try {
+          const parsedStyles = JSON.parse(savedDimStylesStr)
+          editor.dimensionManager.fromJSON(parsedStyles)
+        } catch (e) {
+          console.warn('Failed to parse dimension styles', e)
+        }
+      }
 
       // Clear existing drawing
       editor.drawing.clear()

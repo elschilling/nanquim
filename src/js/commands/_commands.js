@@ -20,6 +20,7 @@ import { hatchCommand } from './HatchCommand'
 import { textCommand } from './TextCommand'
 import { drawSplineCommand } from './DrawSplineCommand'
 import { createViewportCommand } from './CreateViewportCommand'
+import { linearDimensionCommand, LinearDimensionCommand } from './LinearDimensionCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -111,7 +112,12 @@ const commands = {
     execute: createViewportCommand,
     aliases: ['vp', 'viewport'],
   },
+  DIMLINEAR: {
+    execute: linearDimensionCommand,
+    aliases: ['dm', 'dimlinear'],
+  },
   // Add more commands and functions as needed
 }
 
+export { LinearDimensionCommand }
 export default commands

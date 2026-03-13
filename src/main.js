@@ -10,6 +10,8 @@ import { Terminal } from './js/Terminal'
 import { StatusBar } from './js/StatusBar'
 import { Preferences } from './js/PreferencesUI'
 import { PaperEditor } from './js/PaperEditor'
+import { WelcomeScreen } from './js/WelcomeScreen'
+import { LinearDimensionCommand } from './js/commands/LinearDimensionCommand'
 
 const editor = new Editor()
 const navbar = new Navbar(editor)
@@ -23,6 +25,13 @@ const preferences = new Preferences(editor)
 
 // Expose paperEditor on editor so commands and UI can access it
 editor.paperEditor = paperEditor
+
+// Initialize listeners
+LinearDimensionCommand.registerRedrawListener(editor)
+
+// Show welcome screen on startup
+const welcomeScreen = new WelcomeScreen(editor)
+window.welcomeScreen = welcomeScreen
 
 window.editor = editor
 

@@ -610,6 +610,27 @@ function Outliner(editor) {
               vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: spline.points.map(p => ({ x: p.x, y: p.y })) } })
             }
           })
+        } else if (s.type === 'g' && s.attr('data-element-type') === 'dimension') {
+          try {
+            const dimData = JSON.parse(s.attr('data-dim-data'))
+            const textCenter = s.attr('data-dim-text-center') ? JSON.parse(s.attr('data-dim-text-center')) : null
+            
+            // p1, p2, p3, text
+            const pts = [
+                { idx: 0, pt: localToWorld(s, dimData.p1.x, dimData.p1.y) },
+                { idx: 1, pt: localToWorld(s, dimData.p2.x, dimData.p2.y) },
+                { idx: 2, pt: localToWorld(s, dimData.p3.x, dimData.p3.y) }
+            ]
+            if (textCenter) {
+                pts.push({ idx: 3, pt: localToWorld(s, textCenter.x, textCenter.y) })
+            }
+            
+            pts.forEach((p) => {
+                if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
+                    vertices.push({ element: s, vertexIndex: p.idx, originalPosition: dimData })
+                }
+            })
+          } catch(e) {}
         }
       })
       return vertices
@@ -620,6 +641,34 @@ function Outliner(editor) {
       // NOTE: We only draw handlers for atomic elements, not for group elements directly
       if (el.type === 'g' && el.attr('data-group') === 'true') {
         // Optionally, a future update could draw a bounding-box handler for the entire group here
+        return
+      }
+      
+      if (el.type === 'g' && el.attr('data-element-type') === 'dimension') {
+        try {
+            const dimData = JSON.parse(el.attr('data-dim-data'))
+            const textCenter = el.attr('data-dim-text-center') ? JSON.parse(el.attr('data-dim-text-center')) : null
+            
+            const points = [
+                { pt: localToWorld(el, dimData.p1.x, dimData.p1.y) },
+                { pt: localToWorld(el, dimData.p2.x, dimData.p2.y) },
+                { pt: localToWorld(el, dimData.p3.x, dimData.p3.y) }
+            ]
+            if (textCenter) {
+                points.push({ pt: localToWorld(el, textCenter.x, textCenter.y) })
+            }
+            
+            points.forEach((p) => {
+                editor.handlers
+                    .rect(handlerWorldSize, handlerWorldSize)
+                    .center(p.pt.x, p.pt.y)
+                    .addClass('selection-handler')
+                    .mousedown((e) => {
+                        e.stopPropagation()
+                        signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+                    })
+            })
+        } catch(e) {}
         return
       }
 

@@ -2,6 +2,7 @@ import { History as _History } from './History'
 import { DXFLoader } from './utils/DXFloader'
 import { initCollections } from './Collection'
 import { SpatialIndex } from './SpatialIndex'
+import { DimensionManager } from './DimensionManager'
 
 function Editor() {
   const Signal = signals.Signal
@@ -37,6 +38,7 @@ function Editor() {
     modelContentChanged: new Signal(), // dispatched when model drawing is modified
     paperViewportsChanged: new Signal(), // dispatched when paper viewports change
     colorMapUpdated: new Signal(),      // dispatched when print colors are modified
+    refreshDimensions: new Signal(),    // dispatched when a dimension style updates
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -96,6 +98,9 @@ function Editor() {
 
   // Initialize collection system (creates default collection)
   initCollections(this)
+
+  // Initialize Dimension Manager for styles
+  this.dimensionManager = new DimensionManager(this)
 
   // Spatial index for fast hit-testing (R-tree)
   this.spatialIndex = new SpatialIndex()
