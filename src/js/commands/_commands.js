@@ -21,6 +21,7 @@ import { textCommand } from './TextCommand'
 import { drawSplineCommand } from './DrawSplineCommand'
 import { createViewportCommand } from './CreateViewportCommand'
 import { linearDimensionCommand, LinearDimensionCommand } from './LinearDimensionCommand'
+import { alignedDimensionCommand } from './AlignedDimensionCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -115,6 +116,10 @@ const commands = {
   DIMLINEAR: {
     execute: linearDimensionCommand,
     aliases: ['dm', 'dimlinear'],
+  },
+  DIMALIGNED: {
+    execute: alignedDimensionCommand,
+    aliases: ['da', 'dimaligned'],
   },
   // Add more commands and functions as needed
 }

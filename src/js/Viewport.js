@@ -715,6 +715,9 @@ function Viewport(editor) {
                   }
               }
 
+              // Update the source of truth attribute so handlers can see new positions live
+              element.attr('data-dim-data', JSON.stringify(dimData))
+
               const styleId = dimData.styleId || 'Standard'
               const style = editor.dimensionManager.getStyle(styleId)
               
@@ -733,7 +736,8 @@ function Viewport(editor) {
                       dimData.p1, dimData.p2, dimData.p3,
                       tempStyle,
                       1,
-                      false
+                      false,
+                      dimData.dimType || 'linear'
                   )
               } else {
                  import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
@@ -743,7 +747,8 @@ function Viewport(editor) {
                       dimData.p1, dimData.p2, dimData.p3,
                       tempStyle,
                       1,
-                      false
+                      false,
+                      dimData.dimType || 'linear'
                   )
                  })
               }
@@ -1023,7 +1028,7 @@ function Viewport(editor) {
       const circleUpdates = []
       const arcUpdates = []
       const splineUpdates = []
-
+      const dimensionUpdates = []
       const viewportUpdates = []
 
       editor.editingVertices.forEach(v => {
@@ -1092,53 +1097,11 @@ function Viewport(editor) {
             }
           })
         } else if (v.element.type === 'g' && v.element.attr('data-element-type') === 'dimension') {
-          // Live-update dimensions instantly without needing a full command for now, 
-          // or we can implement an EditDimensionCommand. Let's do a direct update
-          // and emit a signal so history catches it (though History might need a specific command).
           try {
-              const dimData = JSON.parse(v.element.attr('data-dim-data'))
-              const oldData = JSON.parse(JSON.stringify(dimData))
-              
-              if (v.vertexIndex === 0) dimData.p1 = { x: point.x, y: point.y }
-              else if (v.vertexIndex === 1) dimData.p2 = { x: point.x, y: point.y }
-              else if (v.vertexIndex === 2) dimData.p3 = { x: point.x, y: point.y }
-              else if (v.vertexIndex === 3) {
-                  const base = JSON.parse(v.element.attr('data-dim-text-base'))
-                  dimData.textPosition = {
-                      x: point.x - base.x,
-                      y: point.y - base.y
-                  }
-              }
-              
-              v.element.attr('data-dim-data', JSON.stringify(dimData))
-              
-              const styleId = dimData.styleId || 'Standard'
-              const style = editor.dimensionManager.getStyle(styleId)
-              
-              const tempStyle = JSON.parse(JSON.stringify(style))
-              if (dimData.textPosition) {
-                  tempStyle.textPosition = dimData.textPosition
-              }
-              
-              import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
-                  LinearDimensionCommand.renderDimensionGraphics(
-                      v.element,
-                      dimData.p1, dimData.p2, dimData.p3,
-                      tempStyle,
-                      1,
-                      false
-                  )
-                  import('./Collection.js').then(({ applyCollectionStyleToElement }) => {
-                      applyCollectionStyleToElement(editor, v.element)
-                  })
-              })
-              
-          } catch(e) {
-              console.error("Failed to update dimension points", e)
-          }
-          
-          // Note: Full command history support for EditDimensionCommand can be added later,
-          // for now direct data modification is sufficient for quick edits.
+              const oldData = v.originalPosition
+              const newData = JSON.parse(v.element.attr('data-dim-data'))
+              dimensionUpdates.push({ element: v.element, oldData, newData })
+          } catch(e) {}
         }
       })
 
@@ -1148,6 +1111,13 @@ function Viewport(editor) {
       if (lineUpdates.length > 0) {
         import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
           editor.execute(new MultiEditVertexCommand(editor, lineUpdates))
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (dimensionUpdates.length > 0) {
+        import('./commands/EditDimensionCommand.js').then(({ EditDimensionCommand }) => {
+          editor.execute(new EditDimensionCommand(editor, dimensionUpdates))
           signals.updatedSelection.dispatch()
         })
       }

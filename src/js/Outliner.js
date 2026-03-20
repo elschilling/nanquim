@@ -638,12 +638,6 @@ function Outliner(editor) {
 
     // Draw handlers for each selected element
     editor.selected.forEach((el) => {
-      // NOTE: We only draw handlers for atomic elements, not for group elements directly
-      if (el.type === 'g' && el.attr('data-group') === 'true') {
-        // Optionally, a future update could draw a bounding-box handler for the entire group here
-        return
-      }
-      
       if (el.type === 'g' && el.attr('data-element-type') === 'dimension') {
         try {
             const dimData = JSON.parse(el.attr('data-dim-data'))
@@ -669,6 +663,12 @@ function Outliner(editor) {
                     })
             })
         } catch(e) {}
+        return
+      }
+
+      // NOTE: We only draw handlers for atomic elements, not for group elements directly
+      if (el.type === 'g' && el.attr('data-group') === 'true') {
+        // Optionally, a future update could draw a bounding-box handler for the entire group here
         return
       }
 

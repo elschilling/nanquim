@@ -14,7 +14,7 @@ export class DimensionStyle {
       textOffset: config.textOffset !== undefined ? config.textOffset : 0.1,
       textColor: config.textColor || '#ffffff',
       lineColor: config.lineColor || '#ffffff',
-      lineWidth: config.lineWidth !== undefined ? config.lineWidth : 'inherit'
+      lineWidth: config.lineWidth !== undefined ? config.lineWidth : 0.01
     }
   }
 

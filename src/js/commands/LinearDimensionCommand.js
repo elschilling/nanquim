@@ -167,9 +167,11 @@ class LinearDimensionCommand extends Command {
             p1: this.p1,
             p2: this.p2,
             p3: this.p3,
-            styleId: activeStyleId
+            styleId: activeStyleId,
+            dimType: 'linear'
         }
         dimGroup.attr('data-element-type', 'dimension')
+        dimGroup.attr('data-group', 'true')
         dimGroup.attr('data-dim-data', JSON.stringify(paramData))
         
         // ID & Name
@@ -221,7 +223,7 @@ class LinearDimensionCommand extends Command {
         }, 10)
     }
 
-    static renderDimensionGraphics(group, p1, p2, p3, style, zoom = 1, isGhost = false) {
+    static renderDimensionGraphics(group, p1, p2, p3, style, zoom = 1, isGhost = false, dimType = 'linear') {
         group.clear() // Remove existing graphics
 
         const props = style.properties
@@ -240,24 +242,43 @@ class LinearDimensionCommand extends Command {
         const offX = Math.abs(p3.x - p1.x)
         const offY = Math.abs(p3.y - p1.y)
 
-        let isHorizontalDir = true 
-        if (Math.abs(dy) > Math.abs(dx)) {
-            if (Math.abs(p3.x - p1.x) > Math.abs(p3.y - p1.y)) {
-                isHorizontalDir = false 
-            }
-        } else {
-            if (Math.abs(p3.y - p1.y) > Math.abs(p3.x - p1.x)) {
-                isHorizontalDir = true 
-            } else {
-                isHorizontalDir = false
-            }
-        }
+        // Determine orientation
+        const isAligned = dimType === 'aligned'
+        const isHorizontalDir = !isAligned && Math.abs(dx) > Math.abs(dy)
 
         let ex1Start, ex1End, ex2Start, ex2End
         let dimStart, dimEnd
         let textVal = ''
+        let angle = 0
 
-        if (isHorizontalDir) {
+        if (isAligned) {
+            textVal = p1p2Dist.toFixed(2)
+            
+            // Vector math for aligned dimension
+            const ux = dx / p1p2Dist
+            const uy = dy / p1p2Dist
+            const nx = -uy
+            const ny = ux
+            
+            // Offset distance d
+            const d = (p3.x - p1.x) * nx + (p3.y - p1.y) * ny
+            const signD = Math.sign(d) || 1
+            
+            dimStart = { x: p1.x + d * nx, y: p1.y + d * ny }
+            dimEnd = { x: p2.x + d * nx, y: p2.y + d * ny }
+            
+            ex1Start = { x: p1.x + (props.extensionLineOffset * signD) * nx, y: p1.y + (props.extensionLineOffset * signD) * ny }
+            ex1End = { x: dimStart.x + (props.extensionLineExtend * signD) * nx, y: dimStart.y + (props.extensionLineExtend * signD) * ny }
+            
+            ex2Start = { x: p2.x + (props.extensionLineOffset * signD) * nx, y: p2.y + (props.extensionLineOffset * signD) * ny }
+            ex2End = { x: dimEnd.x + (props.extensionLineExtend * signD) * nx, y: dimEnd.y + (props.extensionLineExtend * signD) * ny }
+            
+            angle = Math.atan2(dy, dx) * (180 / Math.PI)
+            // Normalize angle for text readability (usually keep it between -90 and 90)
+            if (angle > 90) angle -= 180
+            if (angle < -90) angle += 180
+            
+        } else if (isHorizontalDir) {
             textVal = Math.abs(p2.x - p1.x).toFixed(2)
             dimStart = { x: p1.x, y: p3.y }
             dimEnd = { x: p2.x, y: p3.y }
@@ -282,8 +303,8 @@ class LinearDimensionCommand extends Command {
         // 2. Styling
         const lColor = props.lineColor !== 'inherit' && props.lineColor ? props.lineColor : '#ffffff'
         const tColor = props.textColor !== 'inherit' && props.textColor ? props.textColor : '#ffffff'
-        // If zoom is 1 (creation), use a standard weight like 0.1 instead of 1.0 which is too huge for meters
-        const lWidth = props.lineWidth === 'inherit' ? (isGhost ? 1/zoom : 0.1) : props.lineWidth
+        // If zoom is 1 (creation), use a standard weight like 0.01 instead of 1.0 which is too huge for meters
+        const lWidth = props.lineWidth === 'inherit' ? (isGhost ? 1/zoom : 0.01) : props.lineWidth
 
         const lStyle = { stroke: lColor, fill: 'none', 'stroke-width': lWidth }
         if (isGhost) lStyle.opacity = 0.5
@@ -309,7 +330,20 @@ class LinearDimensionCommand extends Command {
             const buildArrow = (pt, isStart) => {
                 const factor = isStart ? 1 : -1
                 let p1x, p1y, p2x, p2y, p3x, p3y
-                if (isHorizontalDir) {
+                
+                if (isAligned) {
+                    const ux = dx / p1p2Dist
+                    const uy = dy / p1p2Dist
+                    const nx = -uy
+                    const ny = ux
+                    
+                    p1x = pt.x
+                    p1y = pt.y
+                    p2x = pt.x + (props.arrowSize * factor * ux) + (props.arrowSize * 0.3 * nx)
+                    p2y = pt.y + (props.arrowSize * factor * uy) + (props.arrowSize * 0.3 * ny)
+                    p3x = pt.x + (props.arrowSize * factor * ux) - (props.arrowSize * 0.3 * nx)
+                    p3y = pt.y + (props.arrowSize * factor * uy) - (props.arrowSize * 0.3 * ny)
+                } else if (isHorizontalDir) {
                     p1x = pt.x; p1y = pt.y
                     p2x = pt.x + (props.arrowSize * factor); p2y = pt.y + (props.arrowSize * 0.3)
                     p3x = pt.x + (props.arrowSize * factor); p3y = pt.y - (props.arrowSize * 0.3)
@@ -325,8 +359,14 @@ class LinearDimensionCommand extends Command {
             }
             const signX = Math.sign(dimEnd.x - dimStart.x) || 1
             const signY = Math.sign(dimEnd.y - dimStart.y) || 1
-            buildArrow(dimStart, signX > 0 && signY > 0)
-            buildArrow(dimEnd, !(signX > 0 && signY > 0))
+            
+            if (isAligned) {
+                buildArrow(dimStart, true)
+                buildArrow(dimEnd, false)
+            } else {
+                buildArrow(dimStart, signX > 0 && signY > 0)
+                buildArrow(dimEnd, !(signX > 0 && signY > 0))
+            }
         }
 
         // 4. Text
@@ -334,7 +374,16 @@ class LinearDimensionCommand extends Command {
         let textBaseY = (dimStart.y + dimEnd.y) / 2
         
         const displayTextOffset = props.textOffset
-        if (isHorizontalDir) {
+        if (isAligned) {
+            const ux = dx / p1p2Dist
+            const uy = dy / p1p2Dist
+            const nx = -uy
+            const ny = ux
+            const d = (p3.x - p1.x) * nx + (p3.y - p1.y) * ny
+            const signD = Math.sign(d) || 1
+            textBaseX += (displayTextOffset * signD) * nx
+            textBaseY += (displayTextOffset * signD) * ny
+        } else if (isHorizontalDir) {
             const dirY = Math.sign(dimStart.y - Math.min(p1.y, p2.y)) || -1
             textBaseY += displayTextOffset * dirY
         } else {
@@ -352,23 +401,31 @@ class LinearDimensionCommand extends Command {
         }
 
         const t = group.text(textVal).addClass('dim-text')
-        t.center(txtX, txtY)
+        
+        // Reset transform and use absolute positioning attributes
+        t.transform({ translate: [0, 0], scale: 1 })
+        
+        t.attr({
+            x: txtX,
+            y: txtY,
+            fill: tColor,
+            stroke: 'none',
+            'text-anchor': 'middle',
+            'dominant-baseline': 'central',
+            'transform': `rotate(${angle}, ${txtX}, ${txtY})`
+        })
+
+        t.font({
+            family: props.fontFamily || 'Inter',
+            size: props.fontSize || 0.15
+        })
+
+        const tStyle = { 'pointer-events': 'none' }
+        if (isGhost) tStyle['opacity'] = 0.5
+        t.css(tStyle)
         
         group.attr('data-dim-text-center', JSON.stringify({ x: txtX, y: txtY }))
         group.attr('data-dim-text-base', JSON.stringify({ x: textBaseX, y: textBaseY }))
-        
-        t.font({
-            family: props.fontFamily || 'Inter',
-            size: props.fontSize || 0.15,
-            anchor: 'middle'
-        })
-        
-        const tStyle = { 'pointer-events': 'none', 'fill': tColor }
-        if (isGhost) tStyle['opacity'] = 0.5
-        
-        t.css(tStyle)
-        t.attr('fill', tColor).attr('stroke', 'none')
-        t.attr('dy', '0.35em')
         
         setElementOverrides(t, { fill: true, stroke: true })
     }
@@ -393,7 +450,8 @@ class LinearDimensionCommand extends Command {
                 data.p1, data.p2, data.p3,
                 mergedStyle,
                 1,
-                false
+                false,
+                data.dimType || 'linear'
             )
             
             // Reapply collection styling for any "inherit" properties
@@ -407,4 +465,5 @@ function linearDimensionCommand(editor) {
     cmd.execute()
 }
 
+window.LinearDimensionCommand = LinearDimensionCommand
 export { LinearDimensionCommand, linearDimensionCommand }
