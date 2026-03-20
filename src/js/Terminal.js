@@ -29,6 +29,10 @@ function Terminal(editor) {
   document.addEventListener('keyup', handleKeyUp)
 
   function handleInput(e) {
+    if (e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
+      e.preventDefault()
+    }
+
     // Ctrl+S — Save SVG
     if (e.ctrlKey && e.key === 's') {
       e.preventDefault()
@@ -247,6 +251,9 @@ function Terminal(editor) {
       handleToogleOrtho()
     } else if (e.code === 'F9') {
       handleToogleSnap()
+    } else if (e.code === 'F10') {
+      e.preventDefault()
+      handleTogglePolarTracking()
     } else if (e.code === 'Delete') {
       if (editor.selected.length > 0) {
         const toDelete = [...editor.selected]

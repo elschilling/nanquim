@@ -85,7 +85,9 @@ function Viewport(editor) {
     editor.spatialIndex.markDirty()
     clearHover()
     clearSnap()
+    clearPolarGuides()
     clearSelectionRectangle()
+    editor.lastClick = null  // reset so next command has no stale base point
     editor.isDrawing = false
     editor.isSelecting = false
   })
@@ -100,9 +102,10 @@ function Viewport(editor) {
   })
 
   document.addEventListener('contextmenu', handleRightClick)
-  // Create groups for grid and axis within overlays
+  // Create groups for grid, axis, and polar guides within overlays
   const gridGroup = editor.overlays.group().addClass('grid')
   const axisGroup = editor.overlays.group().addClass('axis-group')
+  const polarGroup = editor.overlays.group().addClass('polar-guides')
 
   function attachCanvasListeners(svgInstance) {
     if (svgInstance.node.dataset.viewportListenersAttached) return
@@ -430,6 +433,24 @@ function Viewport(editor) {
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (!activeSvg) return
     coordinates = activeSvg.point(e.pageX, e.pageY)
+
+    // Polar tracking: project cursor onto the nearest polar angle ray
+    if (editor.polarTracking && !editor.ortho &&
+      (editor.isDrawing || editor.isInteracting || editor.isEditingVertex)) {
+      // Determine the best available base point
+      const polarBase = basePoint || centerPoint || editor.lastClick || null
+      if (polarBase) {
+        const snapped = updatePolarGuides(coordinates, activeSvg)
+        // Only override snap if object snap didn't already lock onto something
+        if (snapped && !editor.snapPoint) {
+          editor.snapPoint = snapped
+        }
+      } else {
+        clearPolarGuides()
+      }
+    } else {
+      clearPolarGuides()
+    }
     if (ghostElements.length > 0) {
       if (isGhostingMove) {
         let dx = coordinates.x - basePoint.x
@@ -701,59 +722,59 @@ function Viewport(editor) {
         } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
           // Live render during move
           try {
-              const dimData = JSON.parse(element.attr('data-dim-data'))
+            const dimData = JSON.parse(element.attr('data-dim-data'))
 
-              if (vertexIndex === 0) dimData.p1 = { x: point.x, y: point.y }
-              else if (vertexIndex === 1) dimData.p2 = { x: point.x, y: point.y }
-              else if (vertexIndex === 2) dimData.p3 = { x: point.x, y: point.y }
-              else if (vertexIndex === 3) {
-                  // Dragging the text moves its offset relative to default center
-                  const base = JSON.parse(element.attr('data-dim-text-base'))
-                  dimData.textPosition = {
-                      x: point.x - base.x,
-                      y: point.y - base.y
-                  }
+            if (vertexIndex === 0) dimData.p1 = { x: point.x, y: point.y }
+            else if (vertexIndex === 1) dimData.p2 = { x: point.x, y: point.y }
+            else if (vertexIndex === 2) dimData.p3 = { x: point.x, y: point.y }
+            else if (vertexIndex === 3) {
+              // Dragging the text moves its offset relative to default center
+              const base = JSON.parse(element.attr('data-dim-text-base'))
+              dimData.textPosition = {
+                x: point.x - base.x,
+                y: point.y - base.y
               }
+            }
 
-              // Update the source of truth attribute so handlers can see new positions live
-              element.attr('data-dim-data', JSON.stringify(dimData))
+            // Update the source of truth attribute so handlers can see new positions live
+            element.attr('data-dim-data', JSON.stringify(dimData))
 
-              const styleId = dimData.styleId || 'Standard'
-              const style = editor.dimensionManager.getStyle(styleId)
-              
-              // We need to inject textPosition into the style data dynamically
-              // or handle it in linearDimensionCommand.
-              // Actually, textPosition is unique per dimension instance!
-              // Let's modify linearDimensionCommand to accept dimData directly if passed into style
-              const tempStyle = JSON.parse(JSON.stringify(style))
-              if (dimData.textPosition) {
-                  tempStyle.textPosition = dimData.textPosition
-              }
-              
-              if (window.LinearDimensionCommand) {
-                  window.LinearDimensionCommand.renderDimensionGraphics(
-                      element,
-                      dimData.p1, dimData.p2, dimData.p3,
-                      tempStyle,
-                      1,
-                      false,
-                      dimData.dimType || 'linear'
-                  )
-              } else {
-                 import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
-                   window.LinearDimensionCommand = LinearDimensionCommand
-                   LinearDimensionCommand.renderDimensionGraphics(
-                      element,
-                      dimData.p1, dimData.p2, dimData.p3,
-                      tempStyle,
-                      1,
-                      false,
-                      dimData.dimType || 'linear'
-                  )
-                 })
-              }
+            const styleId = dimData.styleId || 'Standard'
+            const style = editor.dimensionManager.getStyle(styleId)
 
-          } catch(e) {}
+            // We need to inject textPosition into the style data dynamically
+            // or handle it in linearDimensionCommand.
+            // Actually, textPosition is unique per dimension instance!
+            // Let's modify linearDimensionCommand to accept dimData directly if passed into style
+            const tempStyle = JSON.parse(JSON.stringify(style))
+            if (dimData.textPosition) {
+              tempStyle.textPosition = dimData.textPosition
+            }
+
+            if (window.LinearDimensionCommand) {
+              window.LinearDimensionCommand.renderDimensionGraphics(
+                element,
+                dimData.p1, dimData.p2, dimData.p3,
+                tempStyle,
+                1,
+                false,
+                dimData.dimType || 'linear'
+              )
+            } else {
+              import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
+                window.LinearDimensionCommand = LinearDimensionCommand
+                LinearDimensionCommand.renderDimensionGraphics(
+                  element,
+                  dimData.p1, dimData.p2, dimData.p3,
+                  tempStyle,
+                  1,
+                  false,
+                  dimData.dimType || 'linear'
+                )
+              })
+            }
+
+          } catch (e) { }
         }
       })
 
@@ -1011,7 +1032,17 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
-    if (editor.isDrawing) return
+    if (editor.isDrawing) {
+      // Track left-clicked point as base for polar tracking (the draw plugin handles the rest)
+      // We must check e.button === 0 to avoid capturing middle-click (panning) or right-click
+      if (e.button === 0) {
+        const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+        if (activeSvg && !editor.isSelecting) {
+          editor.lastClick = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+        }
+      }
+      return
+    }
 
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
@@ -1098,10 +1129,10 @@ function Viewport(editor) {
           })
         } else if (v.element.type === 'g' && v.element.attr('data-element-type') === 'dimension') {
           try {
-              const oldData = v.originalPosition
-              const newData = JSON.parse(v.element.attr('data-dim-data'))
-              dimensionUpdates.push({ element: v.element, oldData, newData })
-          } catch(e) {}
+            const oldData = v.originalPosition
+            const newData = JSON.parse(v.element.attr('data-dim-data'))
+            dimensionUpdates.push({ element: v.element, oldData, newData })
+          } catch (e) { }
         }
       })
 
@@ -1199,37 +1230,37 @@ function Viewport(editor) {
     e.preventDefault()
     e.stopImmediatePropagation()
     if (!editor.isDrawing) {
-    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
-    if (activeSvg && !editor.isSelecting) {
-      const startX = coordinates.x
-      editor.isDrawing = true
-      editor.isSelecting = true
-      activeSvg.rect()
-        .addClass('selectionRectangle')
-        .draw()
-        .on('drawupdate', (e) => {
-          const rect = {}
-          rect.x = e.target.x.baseVal.value
-          rect.y = e.target.y.baseVal.value
-          rect.width = e.target.width.baseVal.value
-          rect.height = e.target.height.baseVal.value
-          if (coordinates.x < startX) {
-            e.srcElement.classList.add('selectionRectangleRight')
-            findElements(rect, 'inside')
-          } else {
-            e.target.classList.remove('selectionRectangleRight')
-            findElements(rect, 'intersect')
-          }
-        })
-        .on('drawstop', (e) => {
-          e.target.remove()
-          editor.isDrawing = false
-          editor.isSelecting = false
-          selectHovered()
-        })
+      const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+      if (activeSvg && !editor.isSelecting) {
+        const startX = coordinates.x
+        editor.isDrawing = true
+        editor.isSelecting = true
+        activeSvg.rect()
+          .addClass('selectionRectangle')
+          .draw()
+          .on('drawupdate', (e) => {
+            const rect = {}
+            rect.x = e.target.x.baseVal.value
+            rect.y = e.target.y.baseVal.value
+            rect.width = e.target.width.baseVal.value
+            rect.height = e.target.height.baseVal.value
+            if (coordinates.x < startX) {
+              e.srcElement.classList.add('selectionRectangleRight')
+              findElements(rect, 'inside')
+            } else {
+              e.target.classList.remove('selectionRectangleRight')
+              findElements(rect, 'intersect')
+            }
+          })
+          .on('drawstop', (e) => {
+            e.target.remove()
+            editor.isDrawing = false
+            editor.isSelecting = false
+            selectHovered()
+          })
+      }
     }
   }
-}
 
   function findElements(rect, selectionMode) {
     // ---- R-TREE SPATIAL QUERY for rectangle selection ----
@@ -1571,6 +1602,94 @@ function Viewport(editor) {
       }
     }
   }
+
+  // --- Polar tracking guide helpers ---
+
+  /**
+   * Draws dashed guide lines for active polar angles and returns the snapped point.
+   * @param {object} cursorPoint - Current cursor in world coords { x, y }
+   * @param {SVG.Svg} activeSvg  - Active SVG canvas
+   * @returns {{ x, y } | null}  - Snapped world point, or null if no angle matches
+   */
+  function updatePolarGuides(cursorPoint, activeSvg) {
+    polarGroup.clear()
+
+    // Pick base point: prefer ghosting base, then rotation center, then last click
+    const base = basePoint || centerPoint || editor.lastClick
+    if (!base) return null
+
+    const dx = cursorPoint.x - base.x
+    const dy = cursorPoint.y - base.y
+    const dist = Math.hypot(dx, dy)
+    if (dist < 1e-6) return null
+
+    // SVG Y is inverted vs math convention → negate dy to measure angles Y-up
+    const cursorAngleDeg = Math.atan2(-dy, dx) * (180 / Math.PI)
+    const normalizedCursor = ((cursorAngleDeg % 360) + 360) % 360
+
+    const angleTolerance = 5 // degrees
+    let bestAngle = null
+    let bestDiff = Infinity
+
+    for (const angle of editor.polarAngles) {
+      let diff = Math.abs(normalizedCursor - angle)
+      if (diff > 180) diff = 360 - diff
+      if (diff < angleTolerance && diff < bestDiff) {
+        bestDiff = diff
+        bestAngle = angle
+      }
+    }
+
+    if (bestAngle === null) return null
+
+    // Compute pixel→world ratio from viewbox (same approach as checkSnap)
+    const vb = activeSvg.viewbox()
+    const svgWidth = activeSvg.node.clientWidth || activeSvg.node.getBoundingClientRect().width || 1
+    const worldPerPixel = vb.width / svgWidth
+
+    const extent = Math.max(vb.width, vb.height) * 2
+    const strokeW = 1.5 * worldPerPixel
+    const dashOn = 6 * worldPerPixel
+    const dashOff = 4 * worldPerPixel
+
+    const rad = bestAngle * (Math.PI / 180)
+    const cosA = Math.cos(rad)
+    const sinA = Math.sin(rad)   // Y-up convention: +sin goes UP (negative SVG y)
+
+    // Guide line: extend in both directions along the polar angle
+    polarGroup
+      .line(
+        base.x - cosA * extent, base.y + sinA * extent,
+        base.x + cosA * extent, base.y - sinA * extent
+      )
+      .stroke({ color: 'orange', width: strokeW, dasharray: `${dashOn} ${dashOff}` })
+      .css('pointer-events', 'none')
+
+    // Angle label — placed closely to the cursor
+    const offsetX = 20 * worldPerPixel
+    const offsetY = 20 * worldPerPixel
+    const fontSize = 20 * worldPerPixel
+    polarGroup
+      .plain(`${bestAngle}\u00b0`)
+      .attr({
+        x: cursorPoint.x + offsetX,
+        y: cursorPoint.y + offsetY,
+        'dominant-baseline': 'hanging'
+      })
+      .font({ size: fontSize, fill: 'orange' })
+      .css('pointer-events', 'none')
+
+    // Project cursor onto the ray: snapped = base + dot(cursor-base, unit) * unit
+    const dot = dx * cosA + (-dy) * sinA  // in Y-up math coords
+    return {
+      x: base.x + cosA * dot,
+      y: base.y - sinA * dot              // convert back to SVG coords
+    }
+  }
+
+  function clearPolarGuides() {
+    polarGroup.clear()
+  }
 }
 
 function drawSnap(point, zoom, svgInstance) {
@@ -1581,12 +1700,12 @@ function drawSnap(point, zoom, svgInstance) {
   if (!snapGroup) {
     snapGroup = svgInstance.group().attr('id', 'Snap').addClass('snap-group')
   }
-  
+
   const snapSquareScreenSize = 15
   const currentZoom = zoom && zoom ? zoom : 1
   const snapSquareWorldSize = snapSquareScreenSize / currentZoom
   const strokeWorldUnits = 3 / currentZoom
-  
+
   snapGroup.clear()
   snapGroup
     .rect(snapSquareWorldSize, snapSquareWorldSize)
@@ -1673,6 +1792,19 @@ function handleToogleSnap() {
   }
 }
 
+function handleTogglePolarTracking() {
+  const btn = document.getElementsByClassName('icon-polartrack')[0]
+  if (btn.classList.contains('is-active')) {
+    btn.classList.remove('is-active')
+    editor.polarTracking = false
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Polar Tracking OFF' })
+  } else {
+    btn.classList.add('is-active')
+    editor.polarTracking = true
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Polar Tracking ON' })
+  }
+}
+
 /**
  * Converts a point from SVG world coordinates to screen coordinates using svg.js helpers.
  * @param {object} worldPoint - The point in world space { x, y }.
@@ -1703,6 +1835,7 @@ function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
 window.handleToogleOverlay = handleToogleOverlay
 window.handleToogleOrtho = handleToogleOrtho
 window.handleToogleSnap = handleToogleSnap
+window.handleTogglePolarTracking = handleTogglePolarTracking
 window.menuOverlay = menuOverlay
 
 function handleToggleNonScalingStroke(enabled) {

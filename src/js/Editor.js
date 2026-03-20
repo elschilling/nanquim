@@ -61,6 +61,9 @@ function Editor() {
   this.selected = []
   this.loader = new DXFLoader(this)
   this.orthomode = true
+  this.polarTracking = false
+  // All angles (degrees) generated from 30° and 45° increments across all quadrants
+  this.polarAngles = [0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330]
   this.length = null
   this.distance = null
   this.offsetDX = null
@@ -108,6 +111,9 @@ function Editor() {
 
 Editor.prototype = {
   setIsDrawing: function (value) {
+    if (value && !this.isDrawing) {
+      this.lastClick = null // Clear base point from previous commands
+    }
     this.isDrawing = value
   },
 
