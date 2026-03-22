@@ -73,6 +73,7 @@ function Editor() {
   this.lastClick = null
   this.isEditingVertex = false
   this.editingVertices = [] // Array of { element, vertexIndex, originalPosition }
+  this.suppressPolarTracking = false
   this.cmdParams = {
     filletRadius: 0,
   }

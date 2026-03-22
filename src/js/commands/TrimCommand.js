@@ -52,6 +52,7 @@ class TrimCommand extends Command {
         })
 
         this.editor.isInteracting = true
+        this.editor.suppressPolarTracking = true
         this.editor.selectSingleElement = true
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
     }
@@ -115,6 +116,7 @@ class TrimCommand extends Command {
     startTrimmingLines() {
         this.isTrimming = true
         this.editor.isInteracting = true
+        this.editor.suppressPolarTracking = true
         this.editor.selectSingleElement = false
 
         this.initGhosts()
@@ -757,6 +759,7 @@ class TrimCommand extends Command {
         this.isTrimming = false
         this.autoTrimMode = false
         this.editor.isInteracting = false
+        this.editor.suppressPolarTracking = false
         setTimeout(() => {
             this.editor.selectSingleElement = false
         }, 10)

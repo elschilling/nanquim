@@ -435,7 +435,7 @@ function Viewport(editor) {
     coordinates = activeSvg.point(e.pageX, e.pageY)
 
     // Polar tracking: project cursor onto the nearest polar angle ray
-    if (editor.polarTracking && !editor.ortho &&
+    if (editor.polarTracking && !editor.ortho && !editor.suppressPolarTracking &&
       (editor.isDrawing || editor.isInteracting || editor.isEditingVertex)) {
       // Determine the best available base point
       const polarBase = basePoint || centerPoint || editor.lastClick || null
@@ -1032,7 +1032,7 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
-    if (editor.isDrawing) {
+    if (editor.isDrawing || editor.isInteracting) {
       // Track left-clicked point as base for polar tracking (the draw plugin handles the rest)
       // We must check e.button === 0 to avoid capturing middle-click (panning) or right-click
       if (e.button === 0) {
@@ -1041,7 +1041,7 @@ function Viewport(editor) {
           editor.lastClick = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
         }
       }
-      return
+      if (editor.isDrawing) return
     }
 
     // Handle vertex editing commit

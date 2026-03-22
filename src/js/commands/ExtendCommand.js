@@ -46,6 +46,7 @@ class ExtendCommand extends Command {
         })
 
         this.editor.isInteracting = true
+        this.editor.suppressPolarTracking = true
         this.editor.selectSingleElement = true
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
     }
@@ -95,6 +96,7 @@ class ExtendCommand extends Command {
     startExtendingLines() {
         this.isExtending = true
         this.editor.isInteracting = true
+        this.editor.suppressPolarTracking = true
         this.editor.selectSingleElement = false
 
         // Re-attach event handlers in case they were detached
@@ -643,6 +645,7 @@ class ExtendCommand extends Command {
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.isInteracting = false
+        this.editor.suppressPolarTracking = false
         setTimeout(() => {
             this.editor.selectSingleElement = false
         }, 10)
