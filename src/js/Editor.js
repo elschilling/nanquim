@@ -57,6 +57,17 @@ function Editor() {
   this.selectSingleElement = false
   this.isSelecting = false
   this.isSnapping = false
+  this.snapTypes = {
+    endpoint: true,
+    midpoint: true,
+    center: true,
+    quadrant: true,
+    intersection: false,
+    extension: false,
+    perpendicular: false,
+    tangent: false,
+    nearest: false,
+  }
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)

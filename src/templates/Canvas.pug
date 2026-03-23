@@ -17,8 +17,36 @@
           .icon.icon-orthomode(onclick='handleToogleOrtho()')
           .icon.icon-snap-off(onclick='handleToogleSnap()')
         .wgt.wgt-menu
-          .icon.icon-snap-options
-          .icon.icon-dropdown
+          .icon.icon-snap-options(onclick='toggleSnapMenu(event)')
+          .icon.icon-dropdown(onclick='toggleSnapMenu(event)')
+          .snap-options-menu#snap-options-menu
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='endpoint' checked onchange='handleSnapTypeChange(this)')
+              | Endpoint
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='midpoint' checked onchange='handleSnapTypeChange(this)')
+              | Midpoint
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='center' checked onchange='handleSnapTypeChange(this)')
+              | Center
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='quadrant' checked onchange='handleSnapTypeChange(this)')
+              | Quadrant
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='intersection' onchange='handleSnapTypeChange(this)')
+              | Intersection
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='extension' onchange='handleSnapTypeChange(this)')
+              | Extension
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='perpendicular' onchange='handleSnapTypeChange(this)')
+              | Perpendicular
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='tangent' onchange='handleSnapTypeChange(this)')
+              | Tangent
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' data-snap='nearest' onchange='handleSnapTypeChange(this)')
+              | Nearest
         .wgt.wgt-menu 
           .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
       .wgt.wgt-menu.align-buttons-right

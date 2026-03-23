@@ -1487,81 +1487,151 @@ function Viewport(editor) {
       snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
     }
 
+    const st = editor.snapTypes || {}
+    // targets is now [{screenPoint, snapType}]
+    const taggedTargets = []
+
     snapCandidates.forEach((el) => {
       if (el.type === 'line') {
-        el.array().forEach((pointArr) => {
-          let worldPoint = { x: pointArr[0], y: pointArr[1] }
-          let screenPoint = worldToScreen(worldPoint, activeSvg)
-          targets.push(screenPoint)
-        })
+        const pts = el.array()
+        // Endpoints
+        if (st.endpoint) {
+          pts.forEach((pointArr) => {
+            taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg), snapType: 'endpoint' })
+          })
+        }
+        // Midpoint
+        if (st.midpoint && pts.length >= 2) {
+          const mx = (pts[0][0] + pts[1][0]) / 2
+          const my = (pts[0][1] + pts[1][1]) / 2
+          taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg), snapType: 'midpoint' })
+        }
+        // Nearest — perpendicular projection onto line
+        if (st.nearest && pts.length >= 2) {
+          const p1 = { x: pts[0][0], y: pts[0][1] }
+          const p2 = { x: pts[1][0], y: pts[1][1] }
+          const dx = p2.x - p1.x, dy = p2.y - p1.y
+          const len2 = dx * dx + dy * dy
+          if (len2 > 0) {
+            let t = ((cursorWorld.x - p1.x) * dx + (cursorWorld.y - p1.y) * dy) / len2
+            t = Math.max(0, Math.min(1, t))
+            taggedTargets.push({ screenPoint: worldToScreen({ x: p1.x + t * dx, y: p1.y + t * dy }, activeSvg), snapType: 'nearest' })
+          }
+        }
       } else if (el.type === 'circle') {
         const cx = el.node.cx.baseVal.value
         const cy = el.node.cy.baseVal.value
         const r = el.node.r.baseVal.value
-
-        const points = [
-          { x: cx, y: cy },
-          { x: cx, y: cy - r },
-          { x: cx + r, y: cy },
-          { x: cx, y: cy + r },
-          { x: cx - r, y: cy }
-        ]
-
-        points.forEach(p => {
-          targets.push(worldToScreen(p, activeSvg))
-        })
+        // Center
+        if (st.center) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg), snapType: 'center' })
+        }
+        // Quadrant points
+        if (st.quadrant) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy - r }, activeSvg), snapType: 'quadrant' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx + r, y: cy }, activeSvg), snapType: 'quadrant' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy + r }, activeSvg), snapType: 'quadrant' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx - r, y: cy }, activeSvg), snapType: 'quadrant' })
+        }
+        // Nearest point on circle
+        if (st.nearest) {
+          const dx = cursorWorld.x - cx, dy = cursorWorld.y - cy
+          const dist = Math.hypot(dx, dy)
+          if (dist > 0) {
+            taggedTargets.push({ screenPoint: worldToScreen({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r }, activeSvg), snapType: 'nearest' })
+          }
+        }
       } else if (el.type === 'rect') {
         const rx = el.node.x.baseVal.value
         const ry = el.node.y.baseVal.value
         const rw = el.node.width.baseVal.value
         const rh = el.node.height.baseVal.value
-
-        const points = [
-          { x: rx, y: ry },
-          { x: rx + rw, y: ry },
-          { x: rx + rw, y: ry + rh },
-          { x: rx, y: ry + rh },
-          { x: rx + rw / 2, y: ry },
-          { x: rx + rw, y: ry + rh / 2 },
-          { x: rx + rw / 2, y: ry + rh },
-          { x: rx, y: ry + rh / 2 }
-        ]
-
-        points.forEach(p => {
-          targets.push(worldToScreen(p, activeSvg))
-        })
+        // Endpoints (corners)
+        if (st.endpoint) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh }, activeSvg), snapType: 'endpoint' })
+        }
+        // Midpoints of edges
+        if (st.midpoint) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry }, activeSvg), snapType: 'midpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh / 2 }, activeSvg), snapType: 'midpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry + rh }, activeSvg), snapType: 'midpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh / 2 }, activeSvg), snapType: 'midpoint' })
+        }
       } else if (el.type === 'path' && el.data('arcData')) {
         const arcData = el.data('arcData')
-        const points = [
-          { x: arcData.p1.x, y: arcData.p1.y },
-          { x: arcData.p2.x, y: arcData.p2.y },
-          { x: arcData.p3.x, y: arcData.p3.y }
-        ]
-
-        points.forEach(p => {
-          targets.push(worldToScreen(p, activeSvg))
-        })
+        if (st.endpoint) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p1.x, y: arcData.p1.y }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p3.x, y: arcData.p3.y }, activeSvg), snapType: 'endpoint' })
+        }
+        if (st.midpoint) {
+          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p2.x, y: arcData.p2.y }, activeSvg), snapType: 'midpoint' })
+        }
+        if (st.center) {
+          if (arcData.cx !== undefined) {
+            taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.cx, y: arcData.cy }, activeSvg), snapType: 'center' })
+          } else {
+            const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+            if (geo) taggedTargets.push({ screenPoint: worldToScreen({ x: geo.cx, y: geo.cy }, activeSvg), snapType: 'center' })
+          }
+        }
       } else if (el.type === 'polygon' || el.type === 'polyline') {
-        el.array().forEach((pointArr) => {
-          let worldPoint = { x: pointArr[0], y: pointArr[1] }
-          let screenPoint = worldToScreen(worldPoint, activeSvg)
-          targets.push(screenPoint)
-        })
+        const pts = el.array()
+        if (st.endpoint) {
+          pts.forEach((pointArr) => {
+            taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg), snapType: 'endpoint' })
+          })
+        }
+        if (st.midpoint) {
+          for (let i = 0; i < pts.length - 1; i++) {
+            const mx = (pts[i][0] + pts[i + 1][0]) / 2
+            const my = (pts[i][1] + pts[i + 1][1]) / 2
+            taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg), snapType: 'midpoint' })
+          }
+        }
       }
     })
-    let closest
+
+    // ---- INTERSECTION SNAP ----
+    if (st.intersection && snapCandidates.length > 1) {
+      for (let i = 0; i < snapCandidates.length; i++) {
+        for (let j = i + 1; j < snapCandidates.length; j++) {
+          const elA = snapCandidates[i], elB = snapCandidates[j]
+          const segsA = getSnapSegments(elA), segsB = getSnapSegments(elB)
+          const cirsA = getSnapCircles(elA), cirsB = getSnapCircles(elB)
+
+          const pushPt = pt => {
+            if (pt) taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg), snapType: 'intersection' })
+          }
+
+          // line-line
+          segsA.forEach(sa => segsB.forEach(sb => pushPt(lineLineIntersectPt(sa.p1, sa.p2, sb.p1, sb.p2))))
+
+          // line-circle / line-arc  (A lines vs B circles, B lines vs A circles)
+          segsA.forEach(sa => cirsB.forEach(cb => lineCircleIntersectPts(sa.p1, sa.p2, cb.cx, cb.cy, cb.r).forEach(pushPt)))
+          segsB.forEach(sb => cirsA.forEach(ca => lineCircleIntersectPts(sb.p1, sb.p2, ca.cx, ca.cy, ca.r).forEach(pushPt)))
+
+          // circle-circle / circle-arc / arc-arc
+          cirsA.forEach(ca => cirsB.forEach(cb => circleCircleIntersectPts(ca, cb).forEach(pushPt)))
+        }
+      }
+    }
+
+    let closestTagged
     let minDistance = Infinity
-    for (let target of targets) {
-      const distance = calculateDistance(coordinates, target)
+    for (let item of taggedTargets) {
+      const distance = calculateDistance(coordinates, item.screenPoint)
       if (distance < snapTolerance && distance < minDistance) {
         minDistance = distance
-        closest = target
+        closestTagged = item
       }
     }
     const currentZoom = activeSvg.zoom()
-    if (closest) {
-      let closestWorld = activeSvg.point(closest.x, closest.y)
-      drawSnap(closestWorld, currentZoom, activeSvg) // Pass the SVG instance to drawSnap
+    if (closestTagged) {
+      let closestWorld = activeSvg.point(closestTagged.screenPoint.x, closestTagged.screenPoint.y)
+      drawSnap(closestWorld, currentZoom, activeSvg, closestTagged.snapType)
       editor.snapPoint = closestWorld
     } else {
       editor.snapPoint = null
@@ -1705,26 +1775,148 @@ function Viewport(editor) {
   }
 }
 
-function drawSnap(point, zoom, svgInstance) {
-  // Use a group for snap if provided, or the svg instance itself
-  const target = svgInstance.group ? svgInstance : svgInstance
-  // Ensure we have a snap group on the instance
+// ---- Intersection snap geometry helpers -------------------------------------------
+
+/** Extract line segments from an element (line, rect, polygon, polyline) */
+function getSnapSegments(el) {
+  if (el.type === 'line') {
+    const pts = el.array()
+    if (pts.length < 2) return []
+    return [{ p1: { x: pts[0][0], y: pts[0][1] }, p2: { x: pts[1][0], y: pts[1][1] } }]
+  }
+  if (el.type === 'rect') {
+    const rx = el.node.x.baseVal.value, ry = el.node.y.baseVal.value
+    const rw = el.node.width.baseVal.value, rh = el.node.height.baseVal.value
+    const c = (x, y) => ({ x, y })
+    return [
+      { p1: c(rx, ry),        p2: c(rx + rw, ry) },
+      { p1: c(rx + rw, ry),   p2: c(rx + rw, ry + rh) },
+      { p1: c(rx + rw, ry + rh), p2: c(rx, ry + rh) },
+      { p1: c(rx, ry + rh),  p2: c(rx, ry) },
+    ]
+  }
+  if (el.type === 'polygon' || el.type === 'polyline') {
+    const pts = el.array()
+    const segs = []
+    for (let i = 0; i < pts.length - 1; i++) {
+      segs.push({ p1: { x: pts[i][0], y: pts[i][1] }, p2: { x: pts[i + 1][0], y: pts[i + 1][1] } })
+    }
+    if (el.type === 'polygon' && pts.length > 2) {
+      segs.push({ p1: { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1] }, p2: { x: pts[0][0], y: pts[0][1] } })
+    }
+    return segs
+  }
+  return []
+}
+
+/** Extract circles (center + radius) from an element (circle, arc path) */
+function getSnapCircles(el) {
+  if (el.type === 'circle') {
+    return [{ cx: el.node.cx.baseVal.value, cy: el.node.cy.baseVal.value, r: el.node.r.baseVal.value }]
+  }
+  if (el.type === 'path' && el.data('arcData')) {
+    const ad = el.data('arcData')
+    if (ad.cx !== undefined && ad.r !== undefined) {
+      return [{ cx: ad.cx, cy: ad.cy, r: ad.r }]
+    }
+    const geo = getArcGeometry(ad.p1, ad.p2, ad.p3)
+    if (geo) return [{ cx: geo.cx, cy: geo.cy, r: geo.radius }]
+  }
+  return []
+}
+
+/** Line-line intersection (infinite lines). Returns null if parallel. */
+function lineLineIntersectPt(p1, p2, p3, p4) {
+  const d1x = p2.x - p1.x, d1y = p2.y - p1.y
+  const d2x = p4.x - p3.x, d2y = p4.y - p3.y
+  const denom = d1x * d2y - d1y * d2x
+  if (Math.abs(denom) < 1e-10) return null
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y }
+}
+
+/** Line-circle intersections (infinite line). Returns 0, 1, or 2 points. */
+function lineCircleIntersectPts(p1, p2, cx, cy, r) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y
+  const fx = p1.x - cx, fy = p1.y - cy
+  const a = dx * dx + dy * dy
+  if (a < 1e-10) return []
+  const b = 2 * (fx * dx + fy * dy)
+  const c = fx * fx + fy * fy - r * r
+  const disc = b * b - 4 * a * c
+  if (disc < 0) return []
+  const sqrtD = Math.sqrt(disc)
+  const t1 = (-b - sqrtD) / (2 * a)
+  const t2 = (-b + sqrtD) / (2 * a)
+  const pts = [{ x: p1.x + t1 * dx, y: p1.y + t1 * dy }]
+  if (sqrtD > 1e-10) pts.push({ x: p1.x + t2 * dx, y: p1.y + t2 * dy })
+  return pts
+}
+
+/** Circle-circle intersections. Returns 0, 1, or 2 points. */
+function circleCircleIntersectPts(ca, cb) {
+  const dx = cb.cx - ca.cx, dy = cb.cy - ca.cy
+  const d = Math.hypot(dx, dy)
+  if (d < 1e-10 || d > ca.r + cb.r + 1e-10 || d < Math.abs(ca.r - cb.r) - 1e-10) return []
+  const a = (ca.r * ca.r - cb.r * cb.r + d * d) / (2 * d)
+  const h2 = ca.r * ca.r - a * a
+  if (h2 < 0) return []
+  const h = Math.sqrt(h2)
+  const mx = ca.cx + a * dx / d, my = ca.cy + a * dy / d
+  if (h < 1e-10) return [{ x: mx, y: my }]
+  return [
+    { x: mx + h * dy / d, y: my - h * dx / d },
+    { x: mx - h * dy / d, y: my + h * dx / d },
+  ]
+}
+
+function drawSnap(point, zoom, svgInstance, snapType) {
   let snapGroup = svgInstance.findOne('#Snap') || svgInstance.findOne('.snap-group')
   if (!snapGroup) {
     snapGroup = svgInstance.group().attr('id', 'Snap').addClass('snap-group')
   }
 
-  const snapSquareScreenSize = 15
-  const currentZoom = zoom && zoom ? zoom : 1
-  const snapSquareWorldSize = snapSquareScreenSize / currentZoom
-  const strokeWorldUnits = 3 / currentZoom
+  const prefs = getPreferences()
+  const screenSize = prefs.snapIconSize || 15
+  const currentZoom = zoom || 1
+  const s = screenSize / currentZoom          // half-size in world units
+  const h = s / 2
+  const sw = 3 / currentZoom                  // stroke width
+  const color = 'hsl(217, 47%, 55%)'
+  const cx = point.x, cy = point.y
 
   snapGroup.clear()
-  snapGroup
-    .rect(snapSquareWorldSize, snapSquareWorldSize)
-    .center(point.x, point.y)
-    .fill('none')
-    .stroke({ color: 'hsl(217, 47%, 55%)', width: strokeWorldUnits })
+
+  if (snapType === 'midpoint') {
+    // Triangle pointing up
+    const pts = `${cx},${cy - s} ${cx + s},${cy + h} ${cx - s},${cy + h}`
+    snapGroup.polygon(pts).fill('none').stroke({ color, width: sw })
+
+  } else if (snapType === 'center') {
+    // Circle
+    snapGroup.circle(s * 2).center(cx, cy).fill('none').stroke({ color, width: sw })
+
+  } else if (snapType === 'quadrant') {
+    // Square rotated 45° (diamond)
+    const pts = `${cx},${cy - s} ${cx + s},${cy} ${cx},${cy + s} ${cx - s},${cy}`
+    snapGroup.polygon(pts).fill('none').stroke({ color, width: sw })
+
+  } else if (snapType === 'intersection') {
+    // X shape — full size
+    snapGroup.line(cx - s, cy - s, cx + s, cy + s).stroke({ color, width: sw })
+    snapGroup.line(cx + s, cy - s, cx - s, cy + s).stroke({ color, width: sw })
+
+  } else if (snapType === 'nearest') {
+    // X with horizontal bars on top and bottom — full size
+    snapGroup.line(cx - s, cy - s, cx + s, cy + s).stroke({ color, width: sw })
+    snapGroup.line(cx + s, cy - s, cx - s, cy + s).stroke({ color, width: sw })
+    snapGroup.line(cx - s, cy - s, cx + s, cy - s).stroke({ color, width: sw })
+    snapGroup.line(cx - s, cy + s, cx + s, cy + s).stroke({ color, width: sw })
+
+  } else {
+    // Default: endpoint — square
+    snapGroup.rect(s * 2, s * 2).center(cx, cy).fill('none').stroke({ color, width: sw })
+  }
 }
 
 function clearSnap() {
@@ -1860,5 +2052,39 @@ function handleToggleNonScalingStroke(enabled) {
   }
 }
 window.handleToggleNonScalingStroke = handleToggleNonScalingStroke
+
+function toggleSnapMenu(event) {
+  event.stopPropagation()
+  const menu = document.getElementById('snap-options-menu')
+  if (!menu) return
+  const isOpen = menu.classList.contains('show-menu')
+  if (isOpen) {
+    menu.classList.remove('show-menu')
+    window.removeEventListener('mousedown', snapMenuOutsideClick)
+  } else {
+    menu.classList.add('show-menu')
+    setTimeout(() => {
+      window.addEventListener('mousedown', snapMenuOutsideClick)
+    }, 0)
+  }
+}
+
+function snapMenuOutsideClick(event) {
+  const menu = document.getElementById('snap-options-menu')
+  if (menu && !menu.contains(event.target)) {
+    menu.classList.remove('show-menu')
+    window.removeEventListener('mousedown', snapMenuOutsideClick)
+  }
+}
+
+function handleSnapTypeChange(checkbox) {
+  const snapType = checkbox.dataset.snap
+  if (snapType && editor.snapTypes !== undefined) {
+    editor.snapTypes[snapType] = checkbox.checked
+  }
+}
+
+window.toggleSnapMenu = toggleSnapMenu
+window.handleSnapTypeChange = handleSnapTypeChange
 
 export { Viewport }

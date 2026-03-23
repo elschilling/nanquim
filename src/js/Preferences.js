@@ -6,6 +6,7 @@ const DEFAULTS = {
     defaultStrokeWidth: 0.1,
     hoverStrokeWidth: 0.4,
     hoverThreshold: 10,
+    snapIconSize: 15,
 }
 
 function getPreferences() {
