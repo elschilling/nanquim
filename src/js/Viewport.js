@@ -118,6 +118,19 @@ function Viewport(editor) {
       .on('zoom', updateGrid)
       .on('pan', updateGrid)
 
+    svgInstance.on('dblclick', (e) => {
+      if (e.button === 0 && !editor.isInteracting && !editor.isDrawing) {
+        if (hoveredElements.length > 0 && hoveredElements[0].type === 'text') {
+          e.preventDefault()
+          e.stopPropagation()
+          import('./commands/EditTextCommand.js').then(({ editTextCommand }) => {
+            editTextCommand(editor, hoveredElements[0])
+          })
+          return
+        }
+      }
+    })
+
     // Handle middle-click double click on this specific instance
     svgInstance.on('mousedown', (e) => {
       if (e.button === 1 && e.detail >= 2) {
@@ -820,7 +833,7 @@ function Viewport(editor) {
   }
 
   function checkHover() {
-    if (editor.isDrawing) {
+    if (editor.isDrawing || editor.isTypingText) {
       clearHover()
       return
     }

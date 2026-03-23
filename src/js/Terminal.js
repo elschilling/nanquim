@@ -137,8 +137,8 @@ function Terminal(editor) {
     }
 
     // ── Input Handling (on keydown to intercept Space/Enter correctly) ──
-    const isConfirmKey = (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')
-    const inputVal = terminalText.value.trim()
+    const isConfirmKey = (e.code === 'Enter' || e.code === 'NumpadEnter') || (e.code === 'Space' && !editor.isTypingText)
+    const inputVal = editor.isTypingText ? terminalText.value : terminalText.value.trim()
 
     if (editor.isInteracting || editor.isDrawing) {
       if (isConfirmKey) {
@@ -146,7 +146,9 @@ function Terminal(editor) {
         
         // Interaction (Commands using promises/signals) takes priority
         if (editor.isInteracting) {
-          if (isNumericString(inputVal)) {
+          if (editor.isTypingText) {
+            editor.signals.inputValue.dispatch(inputVal)
+          } else if (isNumericString(inputVal)) {
             editor.signals.inputValue.dispatch(inputVal)
           } else if (inputVal.startsWith('@') || inputVal.includes(',')) {
             const raw = inputVal.startsWith('@') ? inputVal.substring(1) : inputVal
@@ -241,6 +243,7 @@ function Terminal(editor) {
       editor.isDrawing = false
       editor.isSelecting = false
       editor.isInteracting = false
+      editor.isTypingText = false
       editor.selectSingleElement = false
       editor.svg.fire('cancelDrawing', e)
       signals.commandCancelled.dispatch()

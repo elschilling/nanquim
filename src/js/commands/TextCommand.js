@@ -23,6 +23,7 @@ class TextCommand extends Command {
         })
 
         this.editor.isInteracting = true
+        this.editor.isTypingText = true
         this.editor.selectSingleElement = true
         this.editor.signals.pointCaptured.addOnce(this.onInsertionPoint, this)
 
@@ -45,27 +46,9 @@ class TextCommand extends Command {
             msg: `Insertion point: ${point.x.toFixed(2)}, ${point.y.toFixed(2)}. Enter text:`,
         })
 
-        this.boundOnTextInput = () => {
-            this.editor.signals.inputValue.remove(this.boundOnTextInput, this)
-            this.onTextInput(this.editor.distance || this.editor.lastInputString) // Editor distance is used for numeric strings, let's just listen to inputValue
-        }
-
-        // Create a special listener just for the text input
-        this.boundTextListener = (val) => {
-            this.editor.signals.inputValue.remove(this.boundTextListener, this)
-            this.onTextInput(val)
-        }
-        this.editor.signals.inputValue.addOnce(this.boundTextListener, this)
-    }
-
-    onTextInput(textValue) {
-        if (!textValue || textValue.trim() === '') {
-            this.editor.signals.terminalLogged.dispatch({ msg: 'Empty text. Command cancelled.' })
-            this.cleanup()
-            return
-        }
-
-        let textElement = this.drawing.text(textValue)
+        // Create live feedback text element
+        let textElement = this.drawing.text('')
+        this.textElement = textElement
         textElement.font({ size: 0.5, family: 'monospace' }) // setup default font size BEFORE move to fix bbox calcs
 
         // Position text
@@ -82,13 +65,65 @@ class TextCommand extends Command {
             stroke: 'none'
         })
         setElementOverrides(textElement, { fill: true, stroke: true })
+        
+        this.boundOnInput = () => {
+            if (!terminalInput) return
+            let textElement = this.textElement
+            textElement.text(terminalInput.value || '')
+        }
 
-        textElement.attr('id', this.editor.elementIndex++)
-        textElement.attr('name', 'Text')
+        if (terminalInput) {
+            terminalInput.addEventListener('input', this.boundOnInput)
+        }
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, textElement))
+        this.boundOnTextInput = () => {
+            this.editor.signals.inputValue.remove(this.boundOnTextInput, this)
+            this.onTextInput(this.editor.distance || this.editor.lastInputString) // Editor distance is used for numeric strings, let's just listen to inputValue
+        }
+
+        // Create a special listener just for the text input
+        this.boundTextListener = (val) => {
+            this.editor.signals.inputValue.remove(this.boundTextListener, this)
+            this.onTextInput(val)
+        }
+        this.editor.signals.inputValue.addOnce(this.boundTextListener, this)
+        
+        // Add pointCaptured to finish editing when clicking outside
+        setTimeout(() => {
+            this.boundOnPointCaptured = (point) => {
+                if (terminalInput) {
+                    this.onTextInput(terminalInput.value)
+                }
+            }
+            this.editor.signals.pointCaptured.addOnce(this.boundOnPointCaptured, this)
+        }, 100)
+
+        this.boundCancelCommand = () => {
+            if (this.textElement) this.textElement.remove()
+            this.cleanup()
+        }
+        this.editor.signals.commandCancelled.addOnce(this.boundCancelCommand, this)
+    }
+
+    onTextInput(textValue) {
+        this.editor.signals.commandCancelled.remove(this.boundCancelCommand, this)
+
+        if (!textValue || textValue.trim() === '') {
+            this.editor.signals.terminalLogged.dispatch({ msg: 'Empty text. Command cancelled.' })
+            if (this.textElement) this.textElement.remove()
+            this.cleanup()
+            return
+        }
+
+        this.textElement.text(textValue)
+        this.textElement.attr('id', this.editor.elementIndex++)
+        this.textElement.attr('name', 'Text')
+
+        this.editor.history.undos.push(new AddElementCommand(this.editor, this.textElement))
         this.editor.lastCommand = this
-        this.updatedOutliner()
+        if (this.editor.signals.updatedOutliner) {
+            this.editor.signals.updatedOutliner.dispatch()
+        }
 
         this.editor.signals.terminalLogged.dispatch({ msg: `Text inserted.` })
 
@@ -98,13 +133,24 @@ class TextCommand extends Command {
     }
 
     cleanup() {
+        if (this.boundOnPointCaptured) {
+            this.editor.signals.pointCaptured.remove(this.boundOnPointCaptured, this)
+        }
+        const terminalInput = document.getElementById('terminalInput')
+        if (terminalInput && this.boundOnInput) {
+            terminalInput.removeEventListener('input', this.boundOnInput)
+            terminalInput.value = ''
+        }
+
         if (this.boundOnCoordinateInput) {
             this.editor.signals.coordinateInput.remove(this.boundOnCoordinateInput, this)
         }
         if (this.boundTextListener) {
             this.editor.signals.inputValue.remove(this.boundTextListener, this)
         }
+        this.editor.signals.commandCancelled.remove(this.boundCancelCommand, this)
         this.editor.isInteracting = false
+        this.editor.isTypingText = false
         setTimeout(() => {
             this.editor.selectSingleElement = false
         }, 10)

@@ -148,6 +148,11 @@ export function bakeTransforms(element, parentMatrix = null) {
         element.transform({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 })
         element.node.removeAttribute('transform')
     } else {
+        if (element.type === 'text' || element.type === 'image') {
+            element.transform(accumulatedMatrix)
+            return element
+        }
+
         // Apply the accumulated matrix to the leaf element's geometry
         const result = applyMatrixToElement(element, accumulatedMatrix)
 

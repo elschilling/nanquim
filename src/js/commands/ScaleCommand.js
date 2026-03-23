@@ -178,11 +178,13 @@ class ScaleCommand extends Command {
       pos.width = element.width()
       pos.height = element.height()
       pos.attrs = { ...element.attr() }
+    } else if (element.type === 'text' || element.type === 'g') {
+      pos.transform = element.transform()
     } else {
       // fallback
-      pos.x = element.x ? element.x() : 0
-      pos.y = element.y ? element.y() : 0
-      pos.transform = element.transform ? element.transform() : null
+      if (element.x) pos.x = element.x()
+      if (element.y) pos.y = element.y()
+      if (element.transform) pos.transform = element.transform()
     }
     return pos
   }
@@ -269,9 +271,13 @@ class ScaleCommand extends Command {
       } else if (originalPos.type === 'image') {
         element.move(originalPos.x, originalPos.y)
         element.size(originalPos.width, originalPos.height)
+      } else if (originalPos.type === 'text' || originalPos.type === 'g') {
+        element.transform(originalPos.transform)
       } else {
         // fallback
-        element.move(originalPos.x, originalPos.y)
+        if (originalPos.x !== undefined && originalPos.y !== undefined) {
+            element.move(originalPos.x, originalPos.y)
+        }
         if (originalPos.transform) {
           element.transform(originalPos.transform)
         } else if (originalPos.matrix) {
