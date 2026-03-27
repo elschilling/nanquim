@@ -193,100 +193,14 @@ function Terminal(editor) {
       return
     }
     signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] pasting ${data.elements.length} element(s) from ${text.length}-byte clipboard` })
-    const pasted = []
-    const parent = editor.activeCollection || editor.drawing
-
-
-    try {
-      data.elements.forEach(item => {
-        // Wrap in a minimal SVG document so DOMParser handles namespaces correctly.
-        // XMLSerializer output already has xmlns="..." on the element, but wrapping
-        // ensures namespace context is always valid regardless of element type.
-        let svgStr = item.svg.trim()
-        if (!svgStr.startsWith('<svg')) {
-          svgStr = `<svg xmlns="http://www.w3.org/2000/svg">${svgStr}</svg>`
-        }
-        const parser = new DOMParser()
-        const doc = parser.parseFromString(svgStr, 'image/svg+xml')
-
-        // Check for parse errors
-        if (doc.documentElement.nodeName === 'parsererror') return
-        const sourceRoot = svgStr.startsWith('<svg xmlns') && !item.svg.trim().startsWith('<svg')
-          ? doc.documentElement  // our wrapper — children are what we want
-          : doc.documentElement  // serialized element is the root
-
-        // Get the actual element(s) to paste
-        const candidates = svgStr.startsWith('<svg xmlns="http://www.w3.org/2000/svg">') && !item.svg.trim().startsWith('<svg')
-          ? Array.from(sourceRoot.childNodes).filter(n => n.nodeType === 1)
-          : [doc.documentElement]
-
-        candidates.forEach(rawNode => {
-          const node = document.adoptNode(rawNode)
-
-          // CRITICAL: Strip any existing IDs from the parsed node (and its children)
-          // BEFORE appending and calling SVG.adopt. Otherwise, SVG.js will see the copied ID,
-          // look in its cache, and return the WRAPPER FOR THE ORIGINAL ELEMENT instead of
-          // wrapping the new node, leading to hijacked selections, orphaned nodes, and 
-          // outliner/DOM sync failure.
-          const stripIds = n => {
-            if (n.removeAttribute) n.removeAttribute('id')
-            if (n.children) Array.from(n.children).forEach(stripIds)
-          }
-          stripIds(node)
-
-          parent.node.appendChild(node)
-          const el = SVG(node)
-
-
-          const newId = editor.elementIndex++
-          el.attr('id', newId)
-          const typeName = el.node.nodeName.charAt(0).toUpperCase() + el.node.nodeName.slice(1)
-          el.attr('name', typeName + ' ' + newId)
-
-          Array.from(node.attributes).forEach(attr => {
-            if (attr.name.startsWith('data-')) {
-              const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-              try { el.data(key, JSON.parse(attr.value)) } catch { el.data(key, attr.value) }
-            }
-          })
-
-          const hydrateChildren = (parentEl) => {
-            if (!parentEl.children) return
-            parentEl.children().each(child => {
-              const childId = editor.elementIndex++
-              child.attr('id', childId)
-              if (!child.attr('name')) {
-                const cn = child.node.nodeName.charAt(0).toUpperCase() + child.node.nodeName.slice(1)
-                child.attr('name', cn + ' ' + childId)
-              }
-              Array.from(child.node.attributes).forEach(attr => {
-                if (attr.name.startsWith('data-')) {
-                  const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-                  try { child.data(key, JSON.parse(attr.value)) } catch { child.data(key, attr.value) }
-                }
-              })
-              if (child.type === 'g') hydrateChildren(child)
-            })
-          }
-          if (el.type === 'g') hydrateChildren(el)
-
-          pasted.push(el)
-        })
-      })
-
-      if (pasted.length > 0) {
-        editor.spatialIndex.markDirty()
-        signals.clearSelection.dispatch()
-        editor.selected = pasted
-        signals.updatedSelection.dispatch()
-        signals.updatedOutliner.dispatch()
-        signals.terminalLogged.dispatch({ type: 'span', msg: `Pasted ${pasted.length} element(s).` })
+    import('./commands/PasteCommand.js').then(({ PasteCommand }) => {
+      try {
+        editor.execute(new PasteCommand(editor, data))
+      } catch (e) {
+        signals.terminalLogged.dispatch({ type: 'span', msg: `[Error] Paste failed: ${e.message}` })
+        console.error(e)
       }
-    } catch (e) {
-      signals.terminalLogged.dispatch({ type: 'span', msg: `[Error] Paste failed: ${e.message}` })
-      console.error(e)
-    }
-
+    })
   }
 
   function handleKeyUp(e) {

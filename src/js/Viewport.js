@@ -1117,27 +1117,30 @@ function Viewport(editor) {
     }
 
     if (editor.isInteracting) {
-      const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
-      if (!activeSvg) return
-      const point = activeSvg.point(e.pageX, e.pageY)
+      if (e.button === 0) {
+        const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+        if (!activeSvg) return
+        const point = activeSvg.point(e.pageX, e.pageY)
 
-      // Only capture points for single-click operations here. 
-      // Rectangle selection captures its own points via draw plugin.
-      if (!editor.isSelecting) {
-        if (editor.snapPoint) {
-          signals.pointCaptured.dispatch(editor.snapPoint)
-        } else {
-          signals.pointCaptured.dispatch(point)
+        // Only capture points for single-click operations here.
+        // Rectangle selection captures its own points via draw plugin.
+        if (!editor.isSelecting) {
+          if (editor.snapPoint) {
+            signals.pointCaptured.dispatch(editor.snapPoint)
+          } else {
+            signals.pointCaptured.dispatch(point)
+          }
         }
-      }
 
-      if (hoveredElements.length > 0) {
-        editor.lastClick = point
-        signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
-      } else if (!editor.selectSingleElement) {
-        handleRectSelection(e)
+        if (hoveredElements.length > 0) {
+          editor.lastClick = point
+          signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
+        } else if (!editor.selectSingleElement) {
+          handleRectSelection(e)
+        }
+        return
       }
-      return
+      // Non-left-clicks (middle/right) fall through so panning/zoom can still work
     }
 
     if (e.button === 1) {

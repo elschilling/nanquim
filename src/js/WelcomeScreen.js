@@ -16,6 +16,7 @@ function WelcomeScreen(editor) {
   // Listen to the loader so we can track freshly-opened files
   const origLoadFile = editor.loader.loadFile.bind(editor.loader)
   editor.loader.loadFile = (file) => {
+    editor.currentFileName = file.name
     _trackFile(file)
     origLoadFile(file)
   }
@@ -94,7 +95,19 @@ export function addRecentFile(name, dataURL) {
   let list = getRecentFiles().filter(f => f.name !== name)
   list.unshift({ name, dataURL, timestamp: Date.now() })
   if (list.length > RECENT_LIMIT) list = list.slice(0, RECENT_LIMIT)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+  // Retry with progressively fewer entries if storage quota is exceeded
+  while (list.length > 0) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
+      return
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        list.pop() // drop the oldest entry and try again
+      } else {
+        throw e
+      }
+    }
+  }
 }
 
 function _trackFile(file) {

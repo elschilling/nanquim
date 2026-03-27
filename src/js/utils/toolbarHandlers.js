@@ -96,12 +96,7 @@ export function initToolbarHandlers(editor) {
   }
 
   function handleToggleNonScalingStroke(enabled) {
-    const svgEl = document.getElementById('canvas').querySelector('svg')
-    if (enabled) {
-      svgEl.classList.add('non-scaling-stroke')
-    } else {
-      svgEl.classList.remove('non-scaling-stroke')
-    }
+    editor.svg.node.classList.toggle('non-scaling-stroke', enabled)
   }
 
   function toggleSnapMenu(event) {

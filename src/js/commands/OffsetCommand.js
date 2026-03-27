@@ -26,13 +26,13 @@ class OffsetCommand extends Command {
     document.addEventListener('keydown', this.boundOnKeyDown)
   }
 
-  onDistanceInput() {
+  onDistanceInput(inputVal) {
     let d
     // If user input is empty, use the last distance.
-    if (this.editor.distance === null || String(this.editor.distance).trim() === '') {
+    if (inputVal === null || inputVal === undefined || String(inputVal).trim() === '') {
       d = this.editor.lastOffsetDistance || 10
     } else {
-      d = parseFloat(this.editor.distance)
+      d = parseFloat(inputVal)
     }
 
     if (isNaN(d) || d <= 0) {

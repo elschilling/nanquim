@@ -1,3 +1,5 @@
+import { addRecentFile } from './WelcomeScreen.js'
+
 function Navbar(editor) {
   const form = document.createElement('form')
   form.style.display = 'none'
@@ -118,6 +120,11 @@ function Navbar(editor) {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+
+    // Update the recent files entry with the current saved content
+    const recentName = editor.currentFileName || filename
+    const dataURL = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString)
+    addRecentFile(recentName, dataURL)
 
     editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Drawing successfully saved.` })
   }

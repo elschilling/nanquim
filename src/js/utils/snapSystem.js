@@ -13,7 +13,7 @@ export function worldToScreen(worldPoint, svgCanvas) {
 
 // ---- Geometry extraction helpers ------------------------------------------------
 
-/** Extract line segments from an element (line, rect, polygon, polyline) */
+/** Extract line segments from an element (line, rect, polygon, polyline, path) */
 export function getSnapSegments(el) {
   if (el.type === 'line') {
     const pts = el.array()
@@ -39,6 +39,23 @@ export function getSnapSegments(el) {
     }
     if (el.type === 'polygon' && pts.length > 2) {
       segs.push({ p1: { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1] }, p2: { x: pts[0][0], y: pts[0][1] } })
+    }
+    return segs
+  }
+  if (el.type === 'path' && !el.data('arcData')) {
+    // Extract only explicit linear segments (L, H, V, Z) for intersection detection
+    const segs = []
+    let cx = 0, cy = 0, subX = 0, subY = 0
+    for (const seg of el.array()) {
+      const cmd = seg[0]
+      if (cmd === 'M') { cx = seg[1]; cy = seg[2]; subX = cx; subY = cy }
+      else if (cmd === 'L') { segs.push({ p1: { x: cx, y: cy }, p2: { x: seg[1], y: seg[2] } }); cx = seg[1]; cy = seg[2] }
+      else if (cmd === 'H') { segs.push({ p1: { x: cx, y: cy }, p2: { x: seg[1], y: cy } }); cx = seg[1] }
+      else if (cmd === 'V') { segs.push({ p1: { x: cx, y: cy }, p2: { x: cx, y: seg[1] } }); cy = seg[1] }
+      else if (cmd === 'C') { cx = seg[5]; cy = seg[6] }
+      else if (cmd === 'Q') { cx = seg[3]; cy = seg[4] }
+      else if (cmd === 'A') { cx = seg[6]; cy = seg[7] }
+      else if (cmd === 'Z') { segs.push({ p1: { x: cx, y: cy }, p2: { x: subX, y: subY } }); cx = subX; cy = subY }
     }
     return segs
   }
@@ -235,6 +252,45 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           const mx = (pts[i][0] + pts[i + 1][0]) / 2
           const my = (pts[i][1] + pts[i + 1][1]) / 2
           taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg), snapType: 'midpoint' })
+        }
+      }
+    } else if (el.type === 'path' && !el.data('arcData')) {
+      const node = el.node
+      if (!node.getTotalLength) return
+      const totalLength = node.getTotalLength()
+      if (totalLength <= 0) return
+      const ptAt = len => { const p = node.getPointAtLength(len); return { x: p.x, y: p.y } }
+      const splineData = el.data('splineData')
+
+      if (st.endpoint) {
+        if (splineData) {
+          splineData.points.forEach(sp => {
+            taggedTargets.push({ screenPoint: worldToScreen(sp, activeSvg), snapType: 'endpoint' })
+          })
+        } else {
+          taggedTargets.push({ screenPoint: worldToScreen(ptAt(0), activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength), activeSvg), snapType: 'endpoint' })
+        }
+      }
+
+      if (st.midpoint) {
+        taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength / 2), activeSvg), snapType: 'midpoint' })
+      }
+
+      if (st.nearest) {
+        const samples = Math.max(32, Math.ceil(totalLength / 5))
+        let minDist = Infinity
+        let nearestPt = null
+        for (let i = 0; i <= samples; i++) {
+          const pt = ptAt((i / samples) * totalLength)
+          const d = Math.hypot(pt.x - cursorWorld.x, pt.y - cursorWorld.y)
+          if (d < snapWorldRadius && d < minDist) {
+            minDist = d
+            nearestPt = pt
+          }
+        }
+        if (nearestPt) {
+          taggedTargets.push({ screenPoint: worldToScreen(nearestPt, activeSvg), snapType: 'nearest' })
         }
       }
     }
