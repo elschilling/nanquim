@@ -5,19 +5,27 @@
 
 export function initToolbarHandlers(editor) {
 
-  function menuOverlay() {
-    let overlayMenu = document.getElementsByClassName('overlay-menu')[0]
-    overlayMenu.classList.toggle('show-menu')
-    setTimeout(() => checkMouseOverMenu(), 1000)
-    function checkMouseOverMenu() {
-      window.addEventListener('mousemove', mouseMoveListener)
+  function toggleOverlayMenu(event) {
+    event.stopPropagation()
+    const menu = document.getElementById('overlay-menu')
+    if (!menu) return
+    const isOpen = menu.classList.contains('show-menu')
+    if (isOpen) {
+      menu.classList.remove('show-menu')
+      window.removeEventListener('mousedown', overlayMenuOutsideClick)
+    } else {
+      menu.classList.add('show-menu')
+      setTimeout(() => {
+        window.addEventListener('mousedown', overlayMenuOutsideClick)
+      }, 0)
     }
+  }
 
-    function mouseMoveListener(event) {
-      if (event.target != overlayMenu) {
-        overlayMenu.classList.remove('show-menu')
-        window.removeEventListener('mousemove', mouseMoveListener)
-      }
+  function overlayMenuOutsideClick(event) {
+    const menu = document.getElementById('overlay-menu')
+    if (menu && !menu.contains(event.target)) {
+      menu.classList.remove('show-menu')
+      window.removeEventListener('mousedown', overlayMenuOutsideClick)
     }
   }
 
@@ -26,9 +34,11 @@ export function initToolbarHandlers(editor) {
     if (overlayButton.classList.contains('is-active')) {
       overlayButton.classList.remove('is-active')
       editor.overlays.hide()
+      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Overlays OFF' })
     } else {
       overlayButton.classList.add('is-active')
       editor.overlays.show()
+      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Overlays ON' })
     }
   }
 
@@ -71,6 +81,18 @@ export function initToolbarHandlers(editor) {
       editor.polarTracking = true
       editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Polar Tracking ON' })
     }
+  }
+
+  function handleToggleGrid(enabled) {
+    const grid = editor.overlays.find('.grid')
+    if (enabled) grid.show()
+    else grid.hide()
+  }
+
+  function handleToggleAxis(enabled) {
+    const axis = editor.overlays.find('.axis-group')
+    if (enabled) axis.show()
+    else axis.hide()
   }
 
   function handleToggleNonScalingStroke(enabled) {
@@ -135,10 +157,12 @@ export function initToolbarHandlers(editor) {
   window.handleToogleOrtho = handleToogleOrtho
   window.handleToogleSnap = handleToogleSnap
   window.handleTogglePolarTracking = handleTogglePolarTracking
-  window.menuOverlay = menuOverlay
+  window.toggleOverlayMenu = toggleOverlayMenu
   window.handleToggleNonScalingStroke = handleToggleNonScalingStroke
   window.toggleSnapMenu = toggleSnapMenu
   window.handleSnapTypeChange = handleSnapTypeChange
+  window.handleToggleGrid = handleToggleGrid
+  window.handleToggleAxis = handleToggleAxis
 
   return {
     handleRightClick,

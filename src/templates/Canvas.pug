@@ -51,12 +51,16 @@
           .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
       .wgt.wgt-menu.align-buttons-right
         .icon.icon-overlay.is-active(onclick='handleToogleOverlay()')
-        .icon.icon-dropdown(onclick='menuOverlay()')
-        .overlay-menu
-          | Grid
-          | Axis
-          label.overlay-menu-item(style='display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 0')
-            input(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
+        .icon.icon-dropdown(onclick='toggleOverlayMenu(event)')
+        .overlay-menu#overlay-menu
+          label.overlay-menu-item
+            input.overlay-checkbox(type='checkbox' checked onchange='handleToggleGrid(this.checked)')
+            | Grid
+          label.overlay-menu-item
+            input.overlay-checkbox(type='checkbox' checked onchange='handleToggleAxis(this.checked)')
+            | Axis
+          label.overlay-menu-item
+            input.overlay-checkbox(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
             | Non-scaling stroke
 
   .layout-editor#canvas

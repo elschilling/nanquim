@@ -29,7 +29,7 @@ function Terminal(editor) {
   document.addEventListener('keyup', handleKeyUp)
 
   function handleInput(e) {
-    if (e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
+    if (e.code === 'F3' || e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault()
     }
 
@@ -250,6 +250,8 @@ function Terminal(editor) {
       signals.clearSelection.dispatch()
       editor.selected = []
       signals.updatedProperties.dispatch()
+    } else if (e.code === 'F3') {
+      handleToogleOverlay()
     } else if (e.code === 'F8') {
       handleToogleOrtho()
     } else if (e.code === 'F9') {
