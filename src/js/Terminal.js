@@ -1,5 +1,7 @@
 import commands from './commands/_commands'
 import { RemoveElementCommand } from './commands/RemoveElementCommand'
+import { SVG } from '@svgdotjs/svg.js'
+
 
 function isNumericString(str) {
   return /^-?(\d+(\.\d*)?|\.\d+)$/.test(str)
@@ -28,6 +30,24 @@ function Terminal(editor) {
   document.addEventListener('keydown', handleInput)
   document.addEventListener('keyup', handleKeyUp)
 
+  // Native paste event — fires reliably cross-tab/cross-instance
+  // A guard prevents double-paste when both this event and the Ctrl+V
+  // Clipboard API path below fire for the same keypress.
+  let pasteHandledByNativeEvent = false
+  document.addEventListener('paste', (e) => {
+    const activeElement = document.activeElement
+    if (activeElement && (activeElement.classList.contains('property-input') || activeElement.classList.contains('prefs-input'))) return
+    const text = e.clipboardData && e.clipboardData.getData('text')
+    if (text) {
+      e.preventDefault()
+      pasteHandledByNativeEvent = true
+      processPastedText(text)
+      // Reset the guard after the synchronous event loop so the Clipboard API
+      // promise (which resolves asynchronously) can check it.
+      setTimeout(() => { pasteHandledByNativeEvent = false }, 0)
+    }
+  })
+
   function handleInput(e) {
     if (e.code === 'F3' || e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault()
@@ -49,11 +69,13 @@ function Terminal(editor) {
     if (e.ctrlKey && e.key === 'c' && !e.shiftKey) {
       if (editor.selected.length === 0) return
       e.preventDefault()
+      const serializer = new XMLSerializer()
       const elements = editor.selected.map(el => {
-        const svg = el.node.outerHTML
+        const svg = serializer.serializeToString(el.node)
         return { svg }
       })
       const payload = JSON.stringify({ nanquimClipboard: true, elements })
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] selected: ${editor.selected.length}, payload: ${payload.length} bytes` })
       navigator.clipboard.writeText(payload).then(() => {
         signals.terminalLogged.dispatch({ type: 'span', msg: `Copied ${elements.length} element(s) to clipboard.` })
       }).catch(() => {
@@ -62,76 +84,17 @@ function Terminal(editor) {
       return
     }
     // Ctrl+V — Paste elements from clipboard
+    // The native 'paste' event fires first and handles cross-tab cases.
+    // This Clipboard API path handles same-tab Ctrl+V in browsers where
+    // the paste event does not carry text (e.g. programmatic invocation).
     if (e.ctrlKey && e.key === 'v' && !e.shiftKey) {
       e.preventDefault()
       navigator.clipboard.readText().then(text => {
-        let data
-        try { data = JSON.parse(text) } catch { return }
-        if (!data || !data.nanquimClipboard || !Array.isArray(data.elements)) return
-
-        const pasted = []
-        const SVG = editor.svg.constructor
-        const parent = editor.activeCollection || editor.drawing
-
-        data.elements.forEach(item => {
-          // Parse the SVG fragment
-          const temp = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-          temp.innerHTML = item.svg
-          const node = temp.firstElementChild
-          if (!node) return
-
-          // Add to parent and adopt into svg.js
-          parent.node.appendChild(node)
-          const el = SVG.adopt(node)
-
-          // Assign new unique ID and name
-          const newId = editor.elementIndex++
-          el.attr('id', newId)
-          const typeName = el.node.nodeName.charAt(0).toUpperCase() + el.node.nodeName.slice(1)
-          el.attr('name', typeName + ' ' + newId)
-
-          // Hydrate data- attributes into svg.js data store
-          Array.from(node.attributes).forEach(attr => {
-            if (attr.name.startsWith('data-')) {
-              const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-              try { el.data(key, JSON.parse(attr.value)) } catch { el.data(key, attr.value) }
-            }
-          })
-
-          // For groups, hydrate children recursively
-          const hydrateChildren = (parentEl) => {
-            if (!parentEl.children) return
-            parentEl.children().each(child => {
-              const childId = editor.elementIndex++
-              child.attr('id', childId)
-              if (!child.attr('name')) {
-                const cn = child.node.nodeName.charAt(0).toUpperCase() + child.node.nodeName.slice(1)
-                child.attr('name', cn + ' ' + childId)
-              }
-              Array.from(child.node.attributes).forEach(attr => {
-                if (attr.name.startsWith('data-')) {
-                  const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-                  try { child.data(key, JSON.parse(attr.value)) } catch { child.data(key, attr.value) }
-                }
-              })
-              if (child.type === 'g') hydrateChildren(child)
-            })
-          }
-          if (el.type === 'g') hydrateChildren(el)
-
-          pasted.push(el)
-        })
-
-        if (pasted.length > 0) {
-          editor.spatialIndex.markDirty()
-          signals.clearSelection.dispatch()
-          editor.selected = pasted
-          signals.updatedSelection.dispatch()
-          signals.updatedOutliner.dispatch()
-          signals.terminalLogged.dispatch({ type: 'span', msg: `Pasted ${pasted.length} element(s).` })
-        }
+        if (pasteHandledByNativeEvent) return // already handled by the paste event
+        processPastedText(text)
       }).catch(() => {
-        signals.terminalLogged.dispatch({ type: 'span', msg: 'Failed to read clipboard.' })
+        // Silently ignore: the native paste event above already handled it
+        // (or the user hasn't granted clipboard-read permission).
       })
       return
     }
@@ -217,6 +180,113 @@ function Terminal(editor) {
       return
     }
     terminalText.focus()
+  }
+
+  function processPastedText(text) {
+    let data
+    try { data = JSON.parse(text) } catch (err) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] paste JSON parse failed: ${err.message} (text length: ${text.length})` })
+      return
+    }
+    if (!data || !data.nanquimClipboard || !Array.isArray(data.elements)) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] paste: not a nanquim clipboard payload` })
+      return
+    }
+    signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] pasting ${data.elements.length} element(s) from ${text.length}-byte clipboard` })
+    const pasted = []
+    const parent = editor.activeCollection || editor.drawing
+
+
+    try {
+      data.elements.forEach(item => {
+        // Wrap in a minimal SVG document so DOMParser handles namespaces correctly.
+        // XMLSerializer output already has xmlns="..." on the element, but wrapping
+        // ensures namespace context is always valid regardless of element type.
+        let svgStr = item.svg.trim()
+        if (!svgStr.startsWith('<svg')) {
+          svgStr = `<svg xmlns="http://www.w3.org/2000/svg">${svgStr}</svg>`
+        }
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(svgStr, 'image/svg+xml')
+
+        // Check for parse errors
+        if (doc.documentElement.nodeName === 'parsererror') return
+        const sourceRoot = svgStr.startsWith('<svg xmlns') && !item.svg.trim().startsWith('<svg')
+          ? doc.documentElement  // our wrapper — children are what we want
+          : doc.documentElement  // serialized element is the root
+
+        // Get the actual element(s) to paste
+        const candidates = svgStr.startsWith('<svg xmlns="http://www.w3.org/2000/svg">') && !item.svg.trim().startsWith('<svg')
+          ? Array.from(sourceRoot.childNodes).filter(n => n.nodeType === 1)
+          : [doc.documentElement]
+
+        candidates.forEach(rawNode => {
+          const node = document.adoptNode(rawNode)
+
+          // CRITICAL: Strip any existing IDs from the parsed node (and its children)
+          // BEFORE appending and calling SVG.adopt. Otherwise, SVG.js will see the copied ID,
+          // look in its cache, and return the WRAPPER FOR THE ORIGINAL ELEMENT instead of
+          // wrapping the new node, leading to hijacked selections, orphaned nodes, and 
+          // outliner/DOM sync failure.
+          const stripIds = n => {
+            if (n.removeAttribute) n.removeAttribute('id')
+            if (n.children) Array.from(n.children).forEach(stripIds)
+          }
+          stripIds(node)
+
+          parent.node.appendChild(node)
+          const el = SVG(node)
+
+
+          const newId = editor.elementIndex++
+          el.attr('id', newId)
+          const typeName = el.node.nodeName.charAt(0).toUpperCase() + el.node.nodeName.slice(1)
+          el.attr('name', typeName + ' ' + newId)
+
+          Array.from(node.attributes).forEach(attr => {
+            if (attr.name.startsWith('data-')) {
+              const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+              try { el.data(key, JSON.parse(attr.value)) } catch { el.data(key, attr.value) }
+            }
+          })
+
+          const hydrateChildren = (parentEl) => {
+            if (!parentEl.children) return
+            parentEl.children().each(child => {
+              const childId = editor.elementIndex++
+              child.attr('id', childId)
+              if (!child.attr('name')) {
+                const cn = child.node.nodeName.charAt(0).toUpperCase() + child.node.nodeName.slice(1)
+                child.attr('name', cn + ' ' + childId)
+              }
+              Array.from(child.node.attributes).forEach(attr => {
+                if (attr.name.startsWith('data-')) {
+                  const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+                  try { child.data(key, JSON.parse(attr.value)) } catch { child.data(key, attr.value) }
+                }
+              })
+              if (child.type === 'g') hydrateChildren(child)
+            })
+          }
+          if (el.type === 'g') hydrateChildren(el)
+
+          pasted.push(el)
+        })
+      })
+
+      if (pasted.length > 0) {
+        editor.spatialIndex.markDirty()
+        signals.clearSelection.dispatch()
+        editor.selected = pasted
+        signals.updatedSelection.dispatch()
+        signals.updatedOutliner.dispatch()
+        signals.terminalLogged.dispatch({ type: 'span', msg: `Pasted ${pasted.length} element(s).` })
+      }
+    } catch (e) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Error] Paste failed: ${e.message}` })
+      console.error(e)
+    }
+
   }
 
   function handleKeyUp(e) {
