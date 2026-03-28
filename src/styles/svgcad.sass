@@ -554,6 +554,39 @@ main
         background-color: #ff5e5e
         color: white
 
+// Element disambiguation menu
+.disambiguation-menu
+    position: fixed
+    z-index: 1001
+    background-color: var(--editor-header-bg)
+    border: 1px solid var(--editor-border-color)
+    border-radius: 4px
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3)
+    padding: 4px 0
+    font-size: 13px
+    color: #e0e0e0
+    min-width: 180px
+    max-height: 300px
+    overflow-y: auto
+
+.disambiguation-menu-item
+    padding: 6px 12px
+    cursor: pointer
+    transition: background-color 0.1s
+    display: flex
+    align-items: center
+    gap: 6px
+
+    &:hover
+        background-color: var(--accent-color)
+        color: white
+
+    .disambiguation-item-collection
+        margin-left: auto
+        font-size: 11px
+        opacity: 0.6
+        white-space: nowrap
+
 // Preferences modal
 .prefs-overlay
     position: fixed

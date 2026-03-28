@@ -31,6 +31,8 @@ function Viewport(editor) {
   let hoverTreshold = prefs.hoverThreshold
   let gridSpacing = prefs.gridSize
   let hoveredElements = []
+  let disambiguationMenu = null
+  let disambiguationCleanup = null
   let zoomFactor = 0.1
   let coordinates = { x: 0, y: 0 }
   let lastMiddleClickTime = 0
@@ -767,6 +769,132 @@ function Viewport(editor) {
     editor.hoveredElements = []
   }
 
+  function getElementDisplayInfo(el) {
+    const elType = el.type || el.node.nodeName.toLowerCase()
+    let iconClass = 'icon-element-default'
+    if (elType === 'line') iconClass = 'icon-element-line'
+    else if (elType === 'circle') iconClass = 'icon-element-circle'
+    else if (elType === 'path') iconClass = 'icon-element-arc'
+    else if (elType === 'rect') iconClass = 'icon-element-rect'
+    else if (elType === 'polygon' || elType === 'polyline') iconClass = 'icon-element-rect'
+    else if (elType === 'ellipse') iconClass = 'icon-element-circle'
+
+    const name = el.attr('name') || elType
+
+    let collectionName = ''
+    let current = el
+    while (current && current.parent) {
+      const parent = current.parent()
+      if (!parent || !parent.node) break
+      if (parent.node.getAttribute && parent.node.getAttribute('data-collection') === 'true') {
+        collectionName = parent.node.getAttribute('name') || 'Collection'
+        break
+      }
+      current = parent
+    }
+
+    return { iconClass, name, collectionName }
+  }
+
+  function closeDisambiguationMenu() {
+    if (disambiguationMenu) {
+      disambiguationMenu.remove()
+      disambiguationMenu = null
+    }
+    if (disambiguationCleanup) {
+      disambiguationCleanup()
+      disambiguationCleanup = null
+    }
+  }
+
+  function showDisambiguationMenu(elements, e, mode) {
+    closeDisambiguationMenu()
+
+    const menu = document.createElement('div')
+    menu.className = 'disambiguation-menu'
+    menu.style.left = e.clientX + 'px'
+    menu.style.top = e.clientY + 'px'
+
+    elements.forEach((el) => {
+      const info = getElementDisplayInfo(el)
+
+      const item = document.createElement('div')
+      item.className = 'disambiguation-menu-item'
+
+      const icon = document.createElement('div')
+      icon.className = 'icon ' + info.iconClass
+      icon.style.flexShrink = '0'
+
+      const label = document.createElement('span')
+      label.textContent = info.name
+
+      item.appendChild(icon)
+      item.appendChild(label)
+
+      if (info.collectionName) {
+        const collLabel = document.createElement('span')
+        collLabel.className = 'disambiguation-item-collection'
+        collLabel.textContent = info.collectionName
+        item.appendChild(collLabel)
+      }
+
+      item.addEventListener('mouseenter', () => {
+        hoveredElements.forEach(h => removeHoverClass(h))
+        addHoverClass(el)
+      })
+
+      item.addEventListener('mouseleave', () => {
+        removeHoverClass(el)
+      })
+
+      item.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        if (mode === 'interacting') {
+          signals.toogledSelect.dispatch(el, 'mousedown-interacting')
+        } else {
+          signals.toogledSelect.dispatch(el)
+        }
+        closeDisambiguationMenu()
+      })
+
+      menu.appendChild(item)
+    })
+
+    document.body.appendChild(menu)
+    disambiguationMenu = menu
+
+    // Adjust position if overflowing viewport
+    const rect = menu.getBoundingClientRect()
+    if (rect.right > window.innerWidth) {
+      menu.style.left = (e.clientX - rect.width) + 'px'
+    }
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = (e.clientY - rect.height) + 'px'
+    }
+
+    // Close handlers
+    const onOutsideClick = (ev) => {
+      if (!menu.contains(ev.target)) {
+        closeDisambiguationMenu()
+      }
+    }
+    const onEscape = (ev) => {
+      if (ev.key === 'Escape') {
+        closeDisambiguationMenu()
+      }
+    }
+
+    setTimeout(() => {
+      document.addEventListener('mousedown', onOutsideClick)
+      document.addEventListener('keydown', onEscape)
+    }, 10)
+
+    disambiguationCleanup = () => {
+      document.removeEventListener('mousedown', onOutsideClick)
+      document.removeEventListener('keydown', onEscape)
+    }
+  }
+
   function checkHover() {
     if (editor.isDrawing || editor.isTypingText) {
       clearHover()
@@ -990,6 +1118,8 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
+    if (e.button === 0) closeDisambiguationMenu()
+
     if (editor.isDrawing || editor.isInteracting) {
       // Track left-clicked point as base for polar tracking (the draw plugin handles the rest)
       // We must check e.button === 0 to avoid capturing middle-click (panning) or right-click
@@ -1207,7 +1337,9 @@ function Viewport(editor) {
           }
         }
 
-        if (hoveredElements.length > 0) {
+        if (hoveredElements.length > 1) {
+          showDisambiguationMenu(hoveredElements, e, 'interacting')
+        } else if (hoveredElements.length === 1) {
           editor.lastClick = point
           signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
         } else if (!editor.selectSingleElement) {
@@ -1221,7 +1353,9 @@ function Viewport(editor) {
     if (e.button === 1) {
       // Middle click is handled by the panzoom plugin and the native dblclick listener at the top
     } else if (!editor.isDrawing) {
-      if (hoveredElements.length > 0) {
+      if (hoveredElements.length > 1) {
+        showDisambiguationMenu(hoveredElements, e, 'normal')
+      } else if (hoveredElements.length === 1) {
         signals.toogledSelect.dispatch(hoveredElements[0])
       } else {
         if (!editor.selectSingleElement) handleRectSelection(e)

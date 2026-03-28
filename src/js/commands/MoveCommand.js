@@ -84,9 +84,13 @@ class MoveCommand extends Command {
     this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
 
     // Listen for typed distance input — move in current mouse direction by the typed amount
-    this.boundOnDistanceInput = () => {
+    this.boundOnDistanceInput = (value) => {
       // Remove the pointCaptured listener since we're using the typed distance
       this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
+      const distance = parseFloat(value)
+      if (!isNaN(distance)) {
+        this.editor.distance = distance
+      }
       // Use the current mouse position on the editor as direction reference
       const dirPoint = this.editor.snapPoint || this.editor.coordinates
       this.onSecondPoint(dirPoint)

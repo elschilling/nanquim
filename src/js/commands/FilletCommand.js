@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { getLineIntersection, getLineEquation } from '../utils/intersection'
+import { applyCollectionStyleToElement } from '../Collection'
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -393,31 +394,11 @@ class FilletCommand extends Command {
     // Attach arcData for editability
     arcPath.data('arcData', { p1: point1, p2: midPt, p3: point2 })
 
-    // Inherit all visual styles from line1 (or line2 if line1 doesn't have them)
-    const inheritedStyles = {
-      fill: 'none', // Always no fill for strokes
-      stroke: line1.attr('stroke') || line2.attr('stroke') || '#000000',
-      'stroke-width': line1.attr('stroke-width') || line2.attr('stroke-width') || '0.1',
-      'stroke-linecap': line1.attr('stroke-linecap') || line2.attr('stroke-linecap') || 'butt',
-      'stroke-linejoin': line1.attr('stroke-linejoin') || line2.attr('stroke-linejoin') || 'miter',
-      'stroke-dasharray': line1.attr('stroke-dasharray') || line2.attr('stroke-dasharray') || 'none',
-      'stroke-dashoffset': line1.attr('stroke-dashoffset') || line2.attr('stroke-dashoffset') || '0',
-      'stroke-opacity': line1.attr('stroke-opacity') || line2.attr('stroke-opacity') || '1',
-      opacity: line1.attr('opacity') || line2.attr('opacity') || '1',
-    }
-
-    // Remove any null/undefined values
-    Object.keys(inheritedStyles).forEach((key) => {
-      if (inheritedStyles[key] === null || inheritedStyles[key] === undefined || inheritedStyles[key] === 'null') {
-        delete inheritedStyles[key]
-      }
-    })
-
     // Set ID and name for identification
     arcPath.attr('id', this.editor.elementIndex++)
     arcPath.attr('name', 'Arc')
-
-    arcPath.attr(inheritedStyles)
+    arcPath.fill('none')
+    applyCollectionStyleToElement(this.editor, arcPath)
     arcPath
     this.editor.signals.updatedOutliner.dispatch()
 
