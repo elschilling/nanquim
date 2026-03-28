@@ -1,4 +1,4 @@
-import { getArcGeometry } from './arcUtils'
+import { getArcGeometry, isPointInArc } from './arcUtils'
 import { calculateDistance } from './calculateDistance'
 import { getPreferences } from '../Preferences'
 import { getAllDrawingElements } from '../Collection'
@@ -375,6 +375,96 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     }
   }
 
+  // ---- PERPENDICULAR SNAP ----
+  // Requires a base point: finds the foot where a line FROM lastClick TO the element is perpendicular.
+  if (st.perpendicular && editor.lastClick) {
+    const from = editor.lastClick
+    const pushPerp = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg), snapType: 'perpendicular' })
+
+    snapCandidates.forEach(el => {
+      if (el.type === 'line') {
+        const pts = el.array()
+        if (pts.length < 2) return
+        const p1 = { x: pts[0][0], y: pts[0][1] }, p2 = { x: pts[1][0], y: pts[1][1] }
+        const dx = p2.x - p1.x, dy = p2.y - p1.y
+        const len2 = dx * dx + dy * dy
+        if (len2 < 1e-10) return
+        const t = ((from.x - p1.x) * dx + (from.y - p1.y) * dy) / len2
+        if (t >= -0.1 && t <= 1.1) {
+          pushPerp({ x: p1.x + t * dx, y: p1.y + t * dy })
+        }
+
+      } else if (el.type === 'circle') {
+        const cx = el.node.cx.baseVal.value, cy = el.node.cy.baseVal.value
+        const r = el.node.r.baseVal.value
+        const dx = from.x - cx, dy = from.y - cy
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1e-10) return
+        // Both intersections of the from→center line with the circle
+        pushPerp({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r })
+        pushPerp({ x: cx - (dx / dist) * r, y: cy - (dy / dist) * r })
+
+      } else if (el.type === 'ellipse') {
+        const cx = el.node.cx.baseVal.value, cy = el.node.cy.baseVal.value
+        const rx = el.node.rx.baseVal.value, ry = el.node.ry.baseVal.value
+        const dx = from.x - cx, dy = from.y - cy
+        if (Math.hypot(dx, dy) > 1e-10) {
+          const len = Math.hypot(dx / rx, dy / ry)
+          if (len > 1e-10) {
+            pushPerp({ x: cx + (dx / rx / len) * rx, y: cy + (dy / ry / len) * ry })
+            pushPerp({ x: cx - (dx / rx / len) * rx, y: cy - (dy / ry / len) * ry })
+          }
+        }
+
+      } else if (el.type === 'path' && el.data('arcData')) {
+        const arcData = el.data('arcData')
+        const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+        if (!geo) return
+        const cx = arcData.cx !== undefined ? arcData.cx : geo.cx
+        const cy = arcData.cx !== undefined ? arcData.cy : geo.cy
+        const dx = from.x - cx, dy = from.y - cy
+        const dist = Math.hypot(dx, dy)
+        if (dist < 1e-10) return
+        for (const sign of [1, -1]) {
+          const foot = { x: cx + sign * (dx / dist) * geo.radius, y: cy + sign * (dy / dist) * geo.radius }
+          if (isPointInArc(foot, cx, cy, geo.theta1, geo.theta3, geo.ccw)) {
+            pushPerp(foot)
+          }
+        }
+
+      } else if (el.type === 'rect') {
+        const rx = el.node.x.baseVal.value, ry = el.node.y.baseVal.value
+        const rw = el.node.width.baseVal.value, rh = el.node.height.baseVal.value
+        const edges = [
+          [{ x: rx,      y: ry      }, { x: rx + rw, y: ry      }],
+          [{ x: rx + rw, y: ry      }, { x: rx + rw, y: ry + rh }],
+          [{ x: rx + rw, y: ry + rh }, { x: rx,      y: ry + rh }],
+          [{ x: rx,      y: ry + rh }, { x: rx,      y: ry      }],
+        ]
+        edges.forEach(([p1, p2]) => {
+          const dx = p2.x - p1.x, dy = p2.y - p1.y
+          const len2 = dx * dx + dy * dy
+          if (len2 < 1e-10) return
+          const t = Math.max(0, Math.min(1, ((from.x - p1.x) * dx + (from.y - p1.y) * dy) / len2))
+          pushPerp({ x: p1.x + t * dx, y: p1.y + t * dy })
+        })
+
+      } else if (el.type === 'polygon' || el.type === 'polyline') {
+        const pts = el.array()
+        const count = el.type === 'polygon' ? pts.length : pts.length - 1
+        for (let i = 0; i < count; i++) {
+          const p1 = { x: pts[i][0], y: pts[i][1] }
+          const p2 = { x: pts[(i + 1) % pts.length][0], y: pts[(i + 1) % pts.length][1] }
+          const dx = p2.x - p1.x, dy = p2.y - p1.y
+          const len2 = dx * dx + dy * dy
+          if (len2 < 1e-10) continue
+          const t = Math.max(0, Math.min(1, ((from.x - p1.x) * dx + (from.y - p1.y) * dy) / len2))
+          pushPerp({ x: p1.x + t * dx, y: p1.y + t * dy })
+        }
+      }
+    })
+  }
+
   // ---- EXTENSION SNAP ----
   if (st.extension) {
     if (!editor.extensionHovers) editor.extensionHovers = []
@@ -482,6 +572,14 @@ export function drawSnap(point, zoom, svgInstance, snapType) {
     snapGroup.line(cx + s, cy - s, cx - s, cy + s).stroke({ color, width: sw })
     snapGroup.line(cx - s, cy - s, cx + s, cy - s).stroke({ color, width: sw })
     snapGroup.line(cx - s, cy + s, cx + s, cy + s).stroke({ color, width: sw })
+
+  } else if (snapType === 'perpendicular') {
+    // L-shape with filled square in the inner corner (right-angle marker)
+    const corner = { x: cx - s * 0.5, y: cy + s * 0.5 }
+    const sq = s * 0.42
+    snapGroup.line(corner.x, corner.y, corner.x + s, corner.y).stroke({ color, width: sw })
+    snapGroup.line(corner.x, corner.y, corner.x, corner.y - s).stroke({ color, width: sw })
+    snapGroup.rect(sq, sq).move(corner.x, corner.y - sq).fill(color).stroke('none')
 
   } else if (snapType === 'extension') {
     // Small cross for extension snap point
