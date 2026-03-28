@@ -117,8 +117,11 @@ function Editor() {
   // Initialize Dimension Manager for styles
   this.dimensionManager = new DimensionManager(this)
 
-  // Spatial index for fast hit-testing (R-tree)
+  // Spatial index for fast hit-testing (R-tree) — selectable elements only
   this.spatialIndex = new SpatialIndex()
+  // Second index covering ALL elements (used for snapping when excludeNonSelectable is off)
+  this.fullSpatialIndex = new SpatialIndex()
+  this.snapExcludeNonSelectable = true
 }
 
 Editor.prototype = {
@@ -134,6 +137,7 @@ Editor.prototype = {
     element.putIn(parent)
     // element[0].remove()
     this.spatialIndex.markDirty()
+    this.fullSpatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
   },
 
@@ -159,6 +163,7 @@ Editor.prototype = {
     element.remove()
     // element[0].remove()
     this.spatialIndex.markDirty()
+    this.fullSpatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
   },
 

@@ -95,12 +95,12 @@ SpatialIndex.prototype = {
      * Full rebuild: clears the tree and bulk-loads all selectable elements.
      * Bboxes are computed in SVG root (viewBox) coordinate space.
      */
-    rebuild: function (editor) {
+    rebuild: function (editor, elementsGetter) {
         this.tree.clear()
         const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
         if (!activeSvg) return
         this._svgNode = activeSvg.node
-        const elements = getSelectableElements(editor)
+        const elements = (elementsGetter || getSelectableElements)(editor)
         const items = []
         for (let i = 0; i < elements.length; i++) {
             const item = getElementBBox(elements[i], this._svgNode)
@@ -112,10 +112,11 @@ SpatialIndex.prototype = {
 
     /**
      * Ensure the index is up-to-date. Call before any search.
+     * @param {Function} [elementsGetter] Optional override for which elements to index.
      */
-    ensureFresh: function (editor) {
+    ensureFresh: function (editor, elementsGetter) {
         if (this._dirty) {
-            this.rebuild(editor)
+            this.rebuild(editor, elementsGetter)
         }
     },
 

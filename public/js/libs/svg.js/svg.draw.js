@@ -267,12 +267,15 @@
         x: this.startPoint.x,
         y: this.startPoint.y,
       }
-      var p = this.transformPoint(e.clientX, e.clientY)
+      var usingSnap = window.editor && window.editor.snapPoint
+      var p = usingSnap
+        ? window.editor.snapPoint
+        : this.transformPoint(e.clientX, e.clientY)
       rect.width = p.x - rect.x
       rect.height = p.y - rect.y
 
-      // Snap the params to the grid we specified
-      this.snapToGrid(rect)
+      // Snap the params to the grid we specified (skip when OSNAP is active — it already provides exact coords)
+      if (!usingSnap) this.snapToGrid(rect)
 
       // When width is less than zero, we have to draw to the left
       // which means we have to move the start-point to the left

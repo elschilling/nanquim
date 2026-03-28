@@ -79,22 +79,9 @@ function DXFLoader(editor) {
       }
       editor.drawing.svg(svgContent)
 
-      // For DXF imports: flatten inline styling groups so leaf elements
-      // sit directly inside collections (but keep transform groups intact)
-      if (file.name.endsWith('.dxf')) {
-        flattenDXFStylingGroups(editor)
-
-        // Run the recursive transform baker to remove all 'transform=' attributes
-        // from DXF block inserts, baking the coordinates straight into the geometry.
-        // This solves all CAD-space distortion when rotating/moving nested blocks.
-        editor.drawing.children().each(collectionGroup => {
-          if (collectionGroup.attr('data-collection') === 'true') {
-            bakeTransforms(collectionGroup)
-          }
-        })
-      }
-
-      // Hydrate data attributes recursively (including inside collection groups)
+      // Hydrate data attributes recursively (including inside collection groups).
+      // Must run BEFORE bakeTransforms so that arcData/splineData/etc. are
+      // in-memory when applyMatrixToElement tries to transform them.
       const hydrateElement = (el) => {
         const node = el.node
         Array.from(node.attributes).forEach((attr) => {
@@ -137,6 +124,23 @@ function DXFLoader(editor) {
       }
 
       editor.drawing.children().each(child => hydrateTree(child))
+
+      // For DXF imports: flatten inline styling groups so leaf elements
+      // sit directly inside collections (but keep transform groups intact)
+      if (file.name.endsWith('.dxf')) {
+        flattenDXFStylingGroups(editor)
+
+        // Run the recursive transform baker to remove all 'transform=' attributes
+        // from DXF block inserts, baking the coordinates straight into the geometry.
+        // This solves all CAD-space distortion when rotating/moving nested blocks.
+        // arcData/splineData are already in-memory (hydrated above) so they get
+        // correctly transformed alongside the path geometry.
+        editor.drawing.children().each(collectionGroup => {
+          if (collectionGroup.attr('data-collection') === 'true') {
+            bakeTransforms(collectionGroup)
+          }
+        })
+      }
 
       // If saved elementIndex exists and is higher, use it
       if (savedElementIndex) {

@@ -99,6 +99,10 @@ function Terminal(editor) {
       return
     }
 
+    // Don't intercept keystrokes while a property/prefs input has focus
+    const activeEl = document.activeElement
+    if (activeEl && (activeEl.classList.contains('property-input') || activeEl.classList.contains('prefs-input'))) return
+
     // ── Input Handling (on keydown to intercept Space/Enter correctly) ──
     const isConfirmKey = (e.code === 'Enter' || e.code === 'NumpadEnter') || (e.code === 'Space' && !editor.isTypingText)
     const inputVal = editor.isTypingText ? terminalText.value : terminalText.value.trim()

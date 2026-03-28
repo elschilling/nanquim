@@ -322,7 +322,7 @@ export function getPathIntersections(el, boundary) {
       height: getAttrValue('height')
     }
   } else if (bType === 'path') {
-    const data = typeof boundary.data === 'function' ? boundary.data : null
+    const data = typeof boundary.data === 'function' ? boundary.data.bind(boundary) : null
     const arcData = data ? data('arcData') : null
     const circleTrimData = data ? data('circleTrimData') : null
 

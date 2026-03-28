@@ -130,6 +130,12 @@ export function initToolbarHandlers(editor) {
     }
   }
 
+  function handleSnapExcludeNonSelectableChange(checkbox) {
+    editor.snapExcludeNonSelectable = checkbox.checked
+    // Full index must be rebuilt whenever this toggles (element set changes)
+    editor.fullSpatialIndex.markDirty()
+  }
+
   function handleRightClick(e) {
     e.preventDefault()
     editor.svg.fire('cancelDrawing', e)
@@ -156,6 +162,7 @@ export function initToolbarHandlers(editor) {
   window.handleToggleNonScalingStroke = handleToggleNonScalingStroke
   window.toggleSnapMenu = toggleSnapMenu
   window.handleSnapTypeChange = handleSnapTypeChange
+  window.handleSnapExcludeNonSelectableChange = handleSnapExcludeNonSelectableChange
   window.handleToggleGrid = handleToggleGrid
   window.handleToggleAxis = handleToggleAxis
 

@@ -320,6 +320,27 @@ function getSelectableElements(editor) {
 }
 
 /**
+ * Return every leaf element in all collections, regardless of lock or visibility.
+ * Used by the snap system when "exclude non-selectable" is disabled.
+ */
+function getAllDrawingElements(editor) {
+    const elements = []
+    const collectLeaves = (parent) => {
+        parent.children().each((child) => {
+            if (child.type === 'g') {
+                collectLeaves(child)
+            } else {
+                elements.push(child)
+            }
+        })
+    }
+    editor.collections.forEach((data) => {
+        collectLeaves(data.group)
+    })
+    return elements
+}
+
+/**
  * Given a leaf element, find its nearest selectable ancestor.
  * If the element is inside a <g data-group="true">, return that group.
  * Otherwise return the element itself.
@@ -457,6 +478,7 @@ export {
     isElementLocked,
     getDrawableElements,
     getSelectableElements,
+    getAllDrawingElements,
     findSelectableAncestor,
     toggleElementVisibility,
     toggleElementLock,

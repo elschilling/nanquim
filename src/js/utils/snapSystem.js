@@ -1,6 +1,7 @@
 import { getArcGeometry } from './arcUtils'
 import { calculateDistance } from './calculateDistance'
 import { getPreferences } from '../Preferences'
+import { getAllDrawingElements } from '../Collection'
 
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
@@ -142,8 +143,10 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
   const snapWorldRadius = snapTolerance * worldPerPixel
   const cursorWorld = activeSvg.point(screenCoords.x, screenCoords.y)
 
-  editor.spatialIndex.ensureFresh(editor)
-  const nearbyCandidates = editor.spatialIndex.search({
+  const useFullIndex = editor.snapExcludeNonSelectable === false
+  const snapIndex = useFullIndex ? editor.fullSpatialIndex : editor.spatialIndex
+  snapIndex.ensureFresh(editor, useFullIndex ? getAllDrawingElements : undefined)
+  const nearbyCandidates = snapIndex.search({
     minX: cursorWorld.x - snapWorldRadius,
     minY: cursorWorld.y - snapWorldRadius,
     maxX: cursorWorld.x + snapWorldRadius,

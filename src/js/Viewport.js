@@ -65,6 +65,7 @@ function Viewport(editor) {
   signals.updatedOutliner.add(() => {
     hoveredElements = []
     editor.spatialIndex.markDirty()
+    editor.fullSpatialIndex.markDirty()
     // Notify paper viewports that model content may have changed
     if (editor.signals.modelContentChanged) {
       editor.signals.modelContentChanged.dispatch()
@@ -86,6 +87,7 @@ function Viewport(editor) {
   })
   signals.commandCancelled.add(() => {
     editor.spatialIndex.markDirty()
+    editor.fullSpatialIndex.markDirty()
     clearHover()
     clearSnap(editor)
     clearPolarGuides()

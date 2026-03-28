@@ -153,7 +153,7 @@ main
   background: rgba(0,0,0,0)
   border: 0
   outline: none
-.non-scaling-stroke *
+.non-scaling-stroke *:not(#Snap):not(#Snap *)
     vector-effect: non-scaling-stroke
     stroke-width: 1px !important
 .elementHover:not(.vp-frame)
@@ -492,6 +492,11 @@ main
     accent-color: var(--accent-color)
     cursor: pointer
     margin: 0
+
+.snap-menu-divider
+    height: 1px
+    background: rgba(255,255,255,0.12)
+    margin: 4px 8px
 
 
 

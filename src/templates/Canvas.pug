@@ -47,6 +47,10 @@
             label.snap-menu-item
               input.snap-checkbox(type='checkbox' data-snap='nearest' onchange='handleSnapTypeChange(this)')
               | Nearest
+            .snap-menu-divider
+            label.snap-menu-item
+              input.snap-checkbox(type='checkbox' checked onchange='handleSnapExcludeNonSelectableChange(this)')
+              | Exclude non-selectable
         .wgt.wgt-menu 
           .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
       .wgt.wgt-menu.align-buttons-right
