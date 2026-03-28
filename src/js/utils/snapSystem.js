@@ -126,6 +126,57 @@ export function circleCircleIntersectPts(ca, cb) {
   ]
 }
 
+// ---- Extension snap helpers -----------------------------------------------------
+
+/** Returns extension directions for each endpoint of a line element. */
+function getLineExtensionDirs(el) {
+  if (el.type !== 'line') return []
+  const pts = el.array()
+  if (pts.length < 2) return []
+  const p1 = { x: pts[0][0], y: pts[0][1] }
+  const p2 = { x: pts[1][0], y: pts[1][1] }
+  const dx = p2.x - p1.x, dy = p2.y - p1.y
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-10) return []
+  return [
+    { point: p1, direction: { x: -dx / len, y: -dy / len } },
+    { point: p2, direction: { x:  dx / len, y:  dy / len } },
+  ]
+}
+
+/** Returns extension tangent directions for each endpoint of an arc element. */
+function getArcExtensionDirs(el) {
+  if (el.type !== 'path' || !el.data('arcData')) return []
+  const arcData = el.data('arcData')
+  const p1 = arcData.p1, p3 = arcData.p3
+  if (!p1 || !p3) return []
+
+  let cx, cy, ccw
+  if (arcData.cx !== undefined) {
+    cx = arcData.cx; cy = arcData.cy
+    const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+    ccw = geo ? geo.ccw : true
+  } else {
+    const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+    if (!geo) return []
+    cx = geo.cx; cy = geo.cy; ccw = geo.ccw
+  }
+
+  const r1x = p1.x - cx, r1y = p1.y - cy
+  const r3x = p3.x - cx, r3y = p3.y - cy
+  const len1 = Math.hypot(r1x, r1y)
+  const len3 = Math.hypot(r3x, r3y)
+  if (len1 < 1e-10 || len3 < 1e-10) return []
+
+  // Tangent extension direction: for CCW arc, rotate radius 90° CW at start,
+  // 90° CCW at end. For CW arc, opposite.
+  const sign = ccw ? 1 : -1
+  return [
+    { point: p1, direction: { x:  sign * r1y / len1, y: -sign * r1x / len1 } },
+    { point: p3, direction: { x: -sign * r3y / len3, y:  sign * r3x / len3 } },
+  ]
+}
+
 // ---- Main snap check function ---------------------------------------------------
 
 /**
@@ -324,6 +375,54 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     }
   }
 
+  // ---- EXTENSION SNAP ----
+  if (st.extension) {
+    if (!editor.extensionHovers) editor.extensionHovers = []
+
+    // Phase A: register new endpoint hovers when cursor is near an endpoint
+    const extEndpointRadius = snapWorldRadius * 1.5
+    snapCandidates.forEach(el => {
+      const dirs = [...getLineExtensionDirs(el), ...getArcExtensionDirs(el)]
+      dirs.forEach(({ point, direction }) => {
+        const d = Math.hypot(point.x - cursorWorld.x, point.y - cursorWorld.y)
+        if (d < extEndpointRadius) {
+          const dup = editor.extensionHovers.some(h =>
+            Math.hypot(h.point.x - point.x, h.point.y - point.y) < 1 &&
+            Math.hypot(h.direction.x - direction.x, h.direction.y - direction.y) < 0.01
+          )
+          if (!dup) {
+            editor.extensionHovers.push({ point: { x: point.x, y: point.y }, direction: { x: direction.x, y: direction.y } })
+          }
+        }
+      })
+    })
+
+    // Phase B: prune hovers where cursor has moved off the extension ray
+    editor.extensionHovers = editor.extensionHovers.filter(hover => {
+      const dx = cursorWorld.x - hover.point.x
+      const dy = cursorWorld.y - hover.point.y
+      const proj = dx * hover.direction.x + dy * hover.direction.y
+      if (proj < 0) return false
+      const perpX = dx - proj * hover.direction.x
+      const perpY = dy - proj * hover.direction.y
+      const perpDistScreen = Math.hypot(perpX, perpY) / worldPerPixel
+      return perpDistScreen < snapTolerance * 2.5
+    })
+
+    // Phase C: generate snap candidates along each active extension ray
+    editor.extensionHovers.forEach(hover => {
+      const dx = cursorWorld.x - hover.point.x
+      const dy = cursorWorld.y - hover.point.y
+      const proj = dx * hover.direction.x + dy * hover.direction.y
+      if (proj <= snapWorldRadius * 0.5) return
+      const snapPt = {
+        x: hover.point.x + proj * hover.direction.x,
+        y: hover.point.y + proj * hover.direction.y,
+      }
+      taggedTargets.push({ screenPoint: worldToScreen(snapPt, activeSvg), snapType: 'extension' })
+    })
+  }
+
   let closestTagged
   let minDistance = Infinity
   for (let item of taggedTargets) {
@@ -384,6 +483,11 @@ export function drawSnap(point, zoom, svgInstance, snapType) {
     snapGroup.line(cx - s, cy - s, cx + s, cy - s).stroke({ color, width: sw })
     snapGroup.line(cx - s, cy + s, cx + s, cy + s).stroke({ color, width: sw })
 
+  } else if (snapType === 'extension') {
+    // Small cross for extension snap point
+    snapGroup.line(cx - s, cy, cx + s, cy).stroke({ color, width: sw })
+    snapGroup.line(cx, cy - s, cx, cy + s).stroke({ color, width: sw })
+
   } else {
     // Default: endpoint — square
     snapGroup.rect(s * 2, s * 2).center(cx, cy).fill('none').stroke({ color, width: sw })
@@ -391,10 +495,45 @@ export function drawSnap(point, zoom, svgInstance, snapType) {
 }
 
 /**
- * Clears the snap indicator from the viewport.
+ * Clears the snap indicator and extension lines from the viewport.
  */
-export function clearSnap(editor) {
+export function clearSnap(editor, activeSvg) {
   if (editor.snap) {
     editor.snap.clear()
   }
+  if (activeSvg) {
+    const snapGroup = activeSvg.findOne('#Snap')
+    if (snapGroup) snapGroup.clear()
+    const extGroup = activeSvg.findOne('#ExtensionLines')
+    if (extGroup) extGroup.clear()
+  }
+}
+
+/**
+ * Draws dashed extension lines from each active hover endpoint toward the cursor.
+ */
+export function drawExtensionLines(hovers, cursorWorld, zoom, activeSvg) {
+  let extGroup = activeSvg.findOne('#ExtensionLines')
+  if (!extGroup) {
+    extGroup = activeSvg.group().attr('id', 'ExtensionLines')
+  }
+  extGroup.clear()
+  if (!hovers || hovers.length === 0) return
+
+  const currentZoom = zoom || 1
+  const sw = 1.5 / currentZoom
+  const color = 'hsl(217, 47%, 55%)'
+  const dash = `${8 / currentZoom},${5 / currentZoom}`
+
+  hovers.forEach(hover => {
+    const dx = cursorWorld.x - hover.point.x
+    const dy = cursorWorld.y - hover.point.y
+    const proj = dx * hover.direction.x + dy * hover.direction.y
+    if (proj <= 0) return
+    const endX = hover.point.x + proj * hover.direction.x
+    const endY = hover.point.y + proj * hover.direction.y
+    extGroup.line(hover.point.x, hover.point.y, endX, endY)
+      .stroke({ color, width: sw, dasharray: dash })
+      .fill('none')
+  })
 }

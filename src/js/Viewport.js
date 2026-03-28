@@ -14,7 +14,7 @@ import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
 import { EditViewportCommand } from './commands/EditViewportCommand'
 import { updateGrid as updateGridDraw } from './utils/gridDraw'
-import { checkSnap as checkSnapSystem, drawSnap, clearSnap } from './utils/snapSystem'
+import { checkSnap as checkSnapSystem, drawSnap, clearSnap, drawExtensionLines } from './utils/snapSystem'
 import { initToolbarHandlers } from './utils/toolbarHandlers'
 
 function Viewport(editor) {
@@ -91,7 +91,9 @@ function Viewport(editor) {
     editor.spatialIndex.markDirty()
     editor.fullSpatialIndex.markDirty()
     clearHover()
-    clearSnap(editor)
+    const activeSvgForClear = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    clearSnap(editor, activeSvgForClear)
+    editor.extensionHovers = []
     clearPolarGuides()
     clearSelectionRectangle()
     editor.lastClick = null  // reset so next command has no stale base point
@@ -349,15 +351,18 @@ function Viewport(editor) {
   }
 
   function handleMove(e) {
-    clearSnap(editor)
+    const activeSvgMove = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    clearSnap(editor, activeSvgMove)
     if (editor.isSnapping) {
       if ((editor.isDrawing && !editor.isSelecting) || editor.isInteracting || editor.isEditingVertex) {
         checkSnap({ x: e.pageX, y: e.pageY })
       } else {
         editor.snapPoint = null
+        editor.extensionHovers = []
       }
     } else {
       editor.snapPoint = null
+      editor.extensionHovers = []
     }
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (!activeSvg) return
@@ -1590,6 +1595,11 @@ function Viewport(editor) {
       editor.snapPoint = result.worldPoint
     } else {
       editor.snapPoint = null
+    }
+
+    if (editor.snapTypes.extension && editor.extensionHovers && editor.extensionHovers.length > 0) {
+      const cursorWorld = activeSvg.point(screenCoords.x, screenCoords.y)
+      drawExtensionLines(editor.extensionHovers, cursorWorld, activeSvg.zoom(), activeSvg)
     }
   }
 

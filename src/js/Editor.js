@@ -68,6 +68,7 @@ function Editor() {
     tangent: false,
     nearest: false,
   }
+  this.extensionHovers = []
   this.elementIndex = 0
   this.selected = []
   this.loader = new DXFLoader(this)
