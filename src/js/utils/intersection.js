@@ -280,6 +280,15 @@ export function getPathSegments(el, samples = 200) {
 
 
 
+export function getPolylineSegments(el) {
+  const pts = el.array()
+  const segments = []
+  for (let i = 0; i < pts.length - 1; i++) {
+    segments.push({ x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1] })
+  }
+  return segments
+}
+
 export function isPointOnSegment(pt, seg) {
   const minX = Math.min(seg.x1, seg.x2) - 1e-3
   const maxX = Math.max(seg.x1, seg.x2) + 1e-3
@@ -288,6 +297,44 @@ export function isPointOnSegment(pt, seg) {
   return pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY
 }
 
+
+export function getLineEllipseIntersections(line, ellipse) {
+  // line: {x1, y1, x2, y2}, ellipse: {cx, cy, rx, ry}
+  // Parametric substitution: x = x1 + t*dx, y = y1 + t*dy into (x-cx)^2/rx^2 + (y-cy)^2/ry^2 = 1
+  const dx = line.x2 - line.x1
+  const dy = line.y2 - line.y1
+  const ox = line.x1 - ellipse.cx
+  const oy = line.y1 - ellipse.cy
+  const rx = ellipse.rx
+  const ry = ellipse.ry
+
+  const A = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+  const B = 2 * ((ox * dx) / (rx * rx) + (oy * dy) / (ry * ry))
+  const C = (ox * ox) / (rx * rx) + (oy * oy) / (ry * ry) - 1
+
+  const det = B * B - 4 * A * C
+  if (A <= 1e-14 || det < 0) return []
+
+  if (det < 1e-10) {
+    const t = -B / (2 * A)
+    return [{ x: line.x1 + t * dx, y: line.y1 + t * dy }]
+  }
+
+  const sqrtDet = Math.sqrt(det)
+  const t1 = (-B + sqrtDet) / (2 * A)
+  const t2 = (-B - sqrtDet) / (2 * A)
+  return [
+    { x: line.x1 + t1 * dx, y: line.y1 + t1 * dy },
+    { x: line.x1 + t2 * dx, y: line.y1 + t2 * dy },
+  ]
+}
+
+export function getEllipseAngle(pt, ellipse) {
+  // Returns angle in [0, 2π) using parametric angle on ellipse
+  let angle = Math.atan2((pt.y - ellipse.cy) / ellipse.ry, (pt.x - ellipse.cx) / ellipse.rx)
+  if (angle < 0) angle += 2 * Math.PI
+  return angle
+}
 
 export function getPathIntersections(el, boundary) {
   const segments = getPathSegments(el)

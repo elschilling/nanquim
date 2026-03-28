@@ -5,7 +5,9 @@ import { TrimRectCommand } from './TrimRectCommand'
 import { TrimCircleCommand } from './TrimCircleCommand'
 import { TrimArcCommand } from './TrimArcCommand'
 import { TrimSplineCommand } from './TrimSplineCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments } from '../utils/intersection'
+import { TrimPolylineCommand } from './TrimPolylineCommand'
+import { TrimEllipseCommand } from './TrimEllipseCommand'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments, getPolylineSegments, getLineEllipseIntersections, getEllipseAngle } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
 import { getPreferences } from '../Preferences'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
@@ -192,14 +194,31 @@ class TrimCommand extends Command {
                         checkAndAddIntersection(intersect)
                     }
                 }
-            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
-                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
-                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'circle') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getLineCircleIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const rx = parseFloat(boundary.attr('rx')), ry = parseFloat(boundary.attr('ry'))
+                getLineEllipseIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, rectBounds).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'path') {
                 getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    const intersect = getLineIntersection({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, seg)
+                    if (intersect) {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) {
+                            checkAndAddIntersection(intersect)
+                        }
+                    }
+                })
             }
 
         }
@@ -385,9 +404,40 @@ class TrimCommand extends Command {
                 })
             } else if (boundary.type === 'path' && boundary.data('splineData')) {
                 getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
-                const bcx = boundary.cx(), bcy = boundary.cy(), br = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
-                getCircleCircleIntersections({ cx: bcx, cy: bcy, r: parseFloat(br) }, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
+                })
+            } else if (boundary.type === 'circle') {
+                const bcx = boundary.cx(), bcy = boundary.cy(), br = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getCircleCircleIntersections({ cx: bcx, cy: bcy, r: br }, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'ellipse') {
+                const ecx = boundary.cx(), ecy = boundary.cy()
+                const erx = parseFloat(boundary.attr('rx')), ery = parseFloat(boundary.attr('ry'))
+                const segs = 36
+                for (let i = 0; i < segs; i++) {
+                    const a1 = (i / segs) * 2 * Math.PI
+                    const a2 = ((i + 1) / segs) * 2 * Math.PI
+                    const seg = {
+                        x1: ecx + erx * Math.cos(a1), y1: ecy + ery * Math.sin(a1),
+                        x2: ecx + erx * Math.cos(a2), y2: ecy + ery * Math.sin(a2),
+                    }
+                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) checkAndAddIntersection(pt)
+                    })
+                }
             }
 
         }
@@ -512,6 +562,204 @@ class TrimCommand extends Command {
         }
     }
 
+    calculateEllipseTrim(el, point) {
+        const cx = el.cx ? el.cx() : parseFloat(el.attr('cx'))
+        const cy = el.cy ? el.cy() : parseFloat(el.attr('cy'))
+        const rx = parseFloat(el.attr('rx'))
+        const ry = parseFloat(el.attr('ry'))
+
+        const candidateBoundaries = this.getCandidateBoundaries(el)
+        const intersections = []
+
+        const checkAndAddIntersection = (intersect) => {
+            if (!intersect) return
+            const theta = getEllipseAngle(intersect, { cx, cy, rx, ry })
+            intersections.push({ theta, x: intersect.x, y: intersect.y })
+        }
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary.node === el.node) continue
+
+            if (boundary.type === 'line') {
+                const bEq = getLineEquation(boundary)
+                getLineEllipseIntersections(bEq, { cx, cy, rx, ry }).forEach(pt => {
+                    const intersectMinX = Math.min(bEq.x1, bEq.x2) - 1e-4
+                    const intersectMaxX = Math.max(bEq.x1, bEq.x2) + 1e-4
+                    const intersectMinY = Math.min(bEq.y1, bEq.y2) - 1e-4
+                    const intersectMaxY = Math.max(bEq.y1, bEq.y2) + 1e-4
+                    if (pt.x >= intersectMinX && pt.x <= intersectMaxX && pt.y >= intersectMinY && pt.y <= intersectMaxY) {
+                        checkAndAddIntersection(pt)
+                    }
+                })
+            } else if (boundary.type === 'rect') {
+                const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
+                const rectSegments = [
+                    { x1: rectBounds.x, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y },
+                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y, x2: rectBounds.x + rectBounds.width, y2: rectBounds.y + rectBounds.height },
+                    { x1: rectBounds.x + rectBounds.width, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y + rectBounds.height },
+                    { x1: rectBounds.x, y1: rectBounds.y + rectBounds.height, x2: rectBounds.x, y2: rectBounds.y }
+                ]
+                rectSegments.forEach(seg => {
+                    getLineEllipseIntersections(seg, { cx, cy, rx, ry }).forEach(pt => {
+                        const intersectMinX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const intersectMaxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const intersectMinY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const intersectMaxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= intersectMinX && pt.x <= intersectMaxX && pt.y >= intersectMinY && pt.y <= intersectMaxY) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
+                })
+            } else if (boundary.type === 'circle') {
+                const bcx = boundary.cx(), bcy = boundary.cy(), br = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                // Approximate circle-ellipse intersection by sampling ellipse as segments
+                const segs = 72
+                for (let i = 0; i < segs; i++) {
+                    const a1 = (i / segs) * 2 * Math.PI
+                    const a2 = ((i + 1) / segs) * 2 * Math.PI
+                    const seg = {
+                        x1: cx + rx * Math.cos(a1), y1: cy + ry * Math.sin(a1),
+                        x2: cx + rx * Math.cos(a2), y2: cy + ry * Math.sin(a2),
+                    }
+                    getLineCircleIntersections(seg, { cx: bcx, cy: bcy, r: br }).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) checkAndAddIntersection(pt)
+                    })
+                }
+            } else if (boundary.type === 'ellipse') {
+                // Both ellipses: sample boundary ellipse as line segments and use getLineEllipseIntersections
+                const ecx = boundary.cx(), ecy = boundary.cy()
+                const erx = parseFloat(boundary.attr('rx')), ery = parseFloat(boundary.attr('ry'))
+                const segs = 72
+                for (let i = 0; i < segs; i++) {
+                    const a1 = (i / segs) * 2 * Math.PI
+                    const a2 = ((i + 1) / segs) * 2 * Math.PI
+                    const seg = {
+                        x1: ecx + erx * Math.cos(a1), y1: ecy + ery * Math.sin(a1),
+                        x2: ecx + erx * Math.cos(a2), y2: ecy + ery * Math.sin(a2),
+                    }
+                    getLineEllipseIntersections(seg, { cx, cy, rx, ry }).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) checkAndAddIntersection(pt)
+                    })
+                }
+            } else if (boundary.type === 'path' && boundary.data('splineData')) {
+                getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    getLineEllipseIntersections(seg, { cx, cy, rx, ry }).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) checkAndAddIntersection(pt)
+                    })
+                })
+            }
+        }
+
+        const ccw = true
+        const startTheta = 0
+
+        const getDist = (theta) => {
+            let d = theta - startTheta
+            if (d < 0) d += 2 * Math.PI
+            return d
+        }
+
+        intersections.forEach(inter => inter.dist = getDist(inter.theta))
+        intersections.sort((a, b) => a.dist - b.dist)
+
+        const uniqueIntersects = []
+        for (const inter of intersections) {
+            if (uniqueIntersects.length === 0 || Math.abs(inter.dist - uniqueIntersects[uniqueIntersects.length - 1].dist) > 1e-4) {
+                uniqueIntersects.push(inter)
+            }
+        }
+
+        if (uniqueIntersects.length < 2) return null
+
+        let theta_mouse = getEllipseAngle(point, { cx, cy, rx, ry })
+        let dist_mouse = getDist(theta_mouse)
+
+        let p1, p2, mouseSegIdx = -1
+        for (let i = 0; i < uniqueIntersects.length - 1; i++) {
+            if (dist_mouse >= uniqueIntersects[i].dist && dist_mouse <= uniqueIntersects[i + 1].dist) {
+                p1 = uniqueIntersects[i]
+                p2 = uniqueIntersects[i + 1]
+                mouseSegIdx = i
+                break
+            }
+        }
+
+        if (mouseSegIdx === -1) {
+            // Wrap-around segment
+            p1 = uniqueIntersects[uniqueIntersects.length - 1]
+            p2 = uniqueIntersects[0]
+            mouseSegIdx = uniqueIntersects.length - 1
+        }
+
+        if (mouseSegIdx === -1) return null
+
+        function isAngleSignificant(tA, tB) {
+            let diff = Math.abs(tA - tB)
+            if (diff > Math.PI) diff = 2 * Math.PI - diff
+            return diff > 1e-4
+        }
+
+        const arcsToKeep = []
+
+        for (let i = 0; i < uniqueIntersects.length - 1; i++) {
+            if (i === mouseSegIdx) continue
+            const s1 = uniqueIntersects[i], s2 = uniqueIntersects[i + 1]
+            if (isAngleSignificant(s1.theta, s2.theta)) {
+                arcsToKeep.push({
+                    cx, cy, rx, ry,
+                    theta1: s1.theta,
+                    theta2: s2.theta,
+                    startPt: { x: cx + rx * Math.cos(s1.theta), y: cy + ry * Math.sin(s1.theta) },
+                    endPt: { x: cx + rx * Math.cos(s2.theta), y: cy + ry * Math.sin(s2.theta) },
+                })
+            }
+        }
+
+        if (mouseSegIdx !== uniqueIntersects.length - 1) {
+            const s1 = uniqueIntersects[uniqueIntersects.length - 1], s2 = uniqueIntersects[0]
+            if (isAngleSignificant(s1.theta, s2.theta)) {
+                arcsToKeep.push({
+                    cx, cy, rx, ry,
+                    theta1: s1.theta,
+                    theta2: s2.theta,
+                    startPt: { x: cx + rx * Math.cos(s1.theta), y: cy + ry * Math.sin(s1.theta) },
+                    endPt: { x: cx + rx * Math.cos(s2.theta), y: cy + ry * Math.sin(s2.theta) },
+                })
+            }
+        }
+
+        if (arcsToKeep.length === 0) {
+            return { type: 'ellipse', action: { type: 'remove' } }
+        }
+
+        return {
+            type: 'ellipse',
+            action: { type: 'arcs', arcs: arcsToKeep },
+            preview: {
+                type: 'ellipseArc',
+                cx, cy, rx, ry,
+                theta1: p1.theta,
+                theta2: p2.theta,
+                startPt: { x: p1.x, y: p1.y },
+                endPt: { x: p2.x, y: p2.y },
+            }
+        }
+    }
+
     calculateSplineTrim(el, point) {
         const splineData = el.data('splineData')
         if (!splineData) return null
@@ -622,12 +870,143 @@ class TrimCommand extends Command {
         }
     }
 
+    calculatePolylineTrim(el, point) {
+        const pts = el.array().map(p => [p[0], p[1]])
+        if (pts.length < 2) return null
+
+        const distToSeg = (p, seg) => {
+            const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1
+            const l2 = dx * dx + dy * dy
+            if (l2 === 0) return Math.hypot(p.x - seg.x1, p.y - seg.y1)
+            let t = ((p.x - seg.x1) * dx + (p.y - seg.y1) * dy) / l2
+            t = Math.max(0, Math.min(1, t))
+            return Math.hypot(p.x - (seg.x1 + t * dx), p.y - (seg.y1 + t * dy))
+        }
+
+        // Find the closest segment to the click point
+        let k = 0, minDist = Infinity
+        for (let i = 0; i < pts.length - 1; i++) {
+            const seg = { x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1] }
+            const d = distToSeg(point, seg)
+            if (d < minDist) { minDist = d; k = i }
+        }
+
+        const seg = { x1: pts[k][0], y1: pts[k][1], x2: pts[k + 1][0], y2: pts[k + 1][1] }
+        const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1
+        const segLen = Math.hypot(dx, dy)
+        if (segLen < 1e-6) return null
+
+        const getT = (x, y) => Math.abs(dx) > Math.abs(dy) ? (x - seg.x1) / dx : (y - seg.y1) / dy
+
+        const segIntersections = [
+            { t: 0, x: seg.x1, y: seg.y1 },
+            { t: 1, x: seg.x2, y: seg.y2 },
+        ]
+
+        const candidateBoundaries = this.getCandidateBoundaries(el)
+
+        const checkAndAdd = (intersect) => {
+            if (!intersect) return
+            const minX = Math.min(seg.x1, seg.x2) - 1e-4
+            const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+            const minY = Math.min(seg.y1, seg.y2) - 1e-4
+            const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+            if (intersect.x < minX || intersect.x > maxX || intersect.y < minY || intersect.y > maxY) return
+            const t = getT(intersect.x, intersect.y)
+            if (t > 1e-4 && t < 1 - 1e-4) segIntersections.push({ t, x: intersect.x, y: intersect.y })
+        }
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary.node === el.node) continue
+            if (boundary.type === 'line') {
+                const intersect = getLineIntersection(seg, boundary)
+                if (intersect) {
+                    const bEq = getLineEquation(boundary)
+                    const minX = Math.min(bEq.x1, bEq.x2) - 1e-4
+                    const maxX = Math.max(bEq.x1, bEq.x2) + 1e-4
+                    const minY = Math.min(bEq.y1, bEq.y2) - 1e-4
+                    const maxY = Math.max(bEq.y1, bEq.y2) + 1e-4
+                    if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) checkAndAdd(intersect)
+                }
+            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const r = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getLineCircleIntersections(seg, { cx, cy, r }).forEach(checkAndAdd)
+            } else if (boundary.type === 'rect') {
+                getLineRectIntersections(seg, { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }).forEach(checkAndAdd)
+            } else if (boundary.type === 'path') {
+                getPathSegments(boundary).forEach(ps => {
+                    const intersect = getLineIntersection(seg, ps)
+                    if (intersect) {
+                        const minX = Math.min(ps.x1, ps.x2) - 1e-4
+                        const maxX = Math.max(ps.x1, ps.x2) + 1e-4
+                        const minY = Math.min(ps.y1, ps.y2) - 1e-4
+                        const maxY = Math.max(ps.y1, ps.y2) + 1e-4
+                        if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) checkAndAdd(intersect)
+                    }
+                })
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(ps => {
+                    const intersect = getLineIntersection(seg, ps)
+                    if (intersect) {
+                        const minX = Math.min(ps.x1, ps.x2) - 1e-4
+                        const maxX = Math.max(ps.x1, ps.x2) + 1e-4
+                        const minY = Math.min(ps.y1, ps.y2) - 1e-4
+                        const maxY = Math.max(ps.y1, ps.y2) + 1e-4
+                        if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) checkAndAdd(intersect)
+                    }
+                })
+            }
+        }
+
+        segIntersections.sort((a, b) => a.t - b.t)
+        const unique = []
+        let lastT = -100
+        for (const inter of segIntersections) {
+            if (Math.abs(inter.t - lastT) > 1e-4) { unique.push(inter); lastT = inter.t }
+        }
+
+        if (unique.length <= 2) return null // no interior intersections on this segment
+
+        // Find which interval contains the click
+        const t_mouse = Math.max(0, Math.min(1, getT(point.x, point.y)))
+        let i1Idx = 0, i2Idx = 1
+        for (let i = 0; i < unique.length - 1; i++) {
+            if (t_mouse >= unique[i].t && t_mouse <= unique[i + 1].t) { i1Idx = i; i2Idx = i + 1; break }
+        }
+
+        const I1 = unique[i1Idx]
+        const I2 = unique[i2Idx]
+
+        // Build result polylines: everything before I1, and everything after I2
+        const partA = pts.slice(0, k + 1).map(p => [p[0], p[1]])
+        if (I1.t > 1e-4) partA.push([I1.x, I1.y])
+
+        const partB = []
+        if (I2.t < 1 - 1e-4) partB.push([I2.x, I2.y])
+        pts.slice(k + 1).forEach(p => partB.push([p[0], p[1]]))
+
+        const resultPolylines = []
+        if (partA.length >= 2) resultPolylines.push(partA)
+        if (partB.length >= 2) resultPolylines.push(partB)
+
+        if (resultPolylines.length === 0) return { type: 'polyline', action: { type: 'remove' }, preview: null }
+
+        return {
+            type: 'polyline',
+            action: { type: 'polylines', resultPolylines },
+            preview: { type: 'line', x1: I1.x, y1: I1.y, x2: I2.x, y2: I2.y },
+        }
+    }
+
     calculateTrim(el, point) {
         if (!el || !point) return null
         if (el.type === 'line') return this.calculateLineTrim(el, point)
         if (el.type === 'rect') return this.calculateRectTrim(el, point)
         if (el.type === 'circle' || (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData')))) return this.calculateCircleTrim(el, point)
+        if (el.type === 'ellipse') return this.calculateEllipseTrim(el, point)
         if (el.type === 'path' && el.data('splineData')) return this.calculateSplineTrim(el, point)
+        if (el.type === 'polyline') return this.calculatePolylineTrim(el, point)
         return null
     }
 
@@ -641,7 +1020,7 @@ class TrimCommand extends Command {
             const el = window.SVG(item.node)
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
 
-            let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
+            let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValidHover = true
 
             if (isValidHover) {
@@ -673,6 +1052,16 @@ class TrimCommand extends Command {
 
                 this.ghostArc.plot(d).show().front()
                 this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
+            } else if (p.type === 'ellipseArc') {
+                this.ghostLine.hide()
+
+                // CCW sweep from theta1 to theta2
+                let diff = (p.theta2 - p.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                const largeArc = diff > Math.PI ? 1 : 0
+                const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.rx} ${p.ry} 0 ${largeArc} 1 ${p.endPt.x} ${p.endPt.y}`
+
+                this.ghostArc.plot(d).show().front()
+                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
             } else if (p.type === 'spline') {
                 this.ghostLine.hide()
                 const d = catmullRomToBezierPath(p.points)
@@ -696,11 +1085,11 @@ class TrimCommand extends Command {
     onLineClicked(el, source) {
         try {
             if (!el || el.hasClass('ghostLine')) return
-            let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle'
+            let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValid = true
 
             if (!isValid) {
-                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, circles/arcs, and splines can be trimmed.' })
+                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, circles/arcs, ellipses, splines, and polylines can be trimmed.' })
                 return
             }
 
@@ -724,8 +1113,12 @@ class TrimCommand extends Command {
                 } else {
                     trimCommand = new TrimCircleCommand(this.editor, el, trimData.action)
                 }
+            } else if (trimData.type === 'ellipse') {
+                trimCommand = new TrimEllipseCommand(this.editor, el, trimData.action)
             } else if (trimData.type === 'spline') {
                 trimCommand = new TrimSplineCommand(this.editor, el, { type: trimData.actionType, splines: trimData.splines })
+            } else if (trimData.type === 'polyline') {
+                trimCommand = new TrimPolylineCommand(this.editor, el, trimData.action)
             }
 
             if (trimCommand) this.editor.execute(trimCommand)

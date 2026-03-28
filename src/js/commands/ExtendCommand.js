@@ -3,7 +3,8 @@ import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
 import { ExtendArcCommand } from './ExtendArcCommand'
 import { ExtendSplineCommand } from './ExtendSplineCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections } from '../utils/intersection'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPolylineSegments, getLineEllipseIntersections } from '../utils/intersection'
+import { EditPolylineCommand } from './EditPolylineCommand'
 import { getDrawableElements } from '../Collection'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
 
@@ -111,7 +112,7 @@ class ExtendCommand extends Command {
         // Setup hover events for ghosting
         const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
-            if (el.type === 'line' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
+            if (el.type === 'line' || el.type === 'polyline' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
                 el.node.addEventListener('mouseover', this.boundOnMouseOver)
@@ -133,7 +134,96 @@ class ExtendCommand extends Command {
         if (el.type === 'line') return this.calculateLineExtension(el, point)
         if (el.type === 'path' && el.data('arcData')) return this.calculateArcExtension(el, point)
         if (el.type === 'path' && el.data('splineData')) return this.calculateSplineExtension(el, point)
+        if (el.type === 'polyline') return this.calculatePolylineExtension(el, point)
         return null
+    }
+
+    calculatePolylineExtension(el, point) {
+        const pts = el.array().map(p => [p[0], p[1]])
+        if (pts.length < 2) return null
+
+        const first = pts[0], last = pts[pts.length - 1]
+        const distToFirst = Math.hypot(point.x - first[0], point.y - first[1])
+        const distToLast = Math.hypot(point.x - last[0], point.y - last[1])
+        const extendStart = distToFirst < distToLast
+
+        let dx, dy, rayBase
+        if (extendStart) {
+            dx = first[0] - pts[1][0]; dy = first[1] - pts[1][1]
+            rayBase = { x: first[0], y: first[1] }
+        } else {
+            dx = last[0] - pts[pts.length - 2][0]; dy = last[1] - pts[pts.length - 2][1]
+            rayBase = { x: last[0], y: last[1] }
+        }
+
+        const segLen = Math.hypot(dx, dy)
+        if (segLen < 1e-6) return null
+        const dirX = dx / segLen, dirY = dy / segLen
+        const MAX_DIST = 100000
+
+        const virtualLine = {
+            x1: rayBase.x, y1: rayBase.y,
+            x2: rayBase.x + dirX * MAX_DIST, y2: rayBase.y + dirY * MAX_DIST,
+        }
+
+        const intersections = []
+        const allElements = this.autoExtendMode ? getDrawableElements(this.editor) : null
+        const candidateBoundaries = this.autoExtendMode
+            ? allElements.filter(c => c.node !== el.node && !c.hasClass('grid') && !c.hasClass('axis') && !c.hasClass('ghostLine'))
+            : this.boundaryElements
+
+        const checkAndAddIntersection = (intersect) => {
+            if (!intersect) return
+            const dot = (intersect.x - rayBase.x) * dirX + (intersect.y - rayBase.y) * dirY
+            if (dot > 1e-5) intersections.push({ point: intersect, dist: Math.hypot(intersect.x - rayBase.x, intersect.y - rayBase.y) })
+        }
+
+        for (const boundary of candidateBoundaries) {
+            if (boundary === el) continue
+            if (boundary.type === 'line') {
+                const intersect = getLineIntersection(virtualLine, boundary)
+                if (intersect) {
+                    const bEq = getLineEquation(boundary)
+                    if (intersect.x >= Math.min(bEq.x1, bEq.x2) - 1e-3 && intersect.x <= Math.max(bEq.x1, bEq.x2) + 1e-3 &&
+                        intersect.y >= Math.min(bEq.y1, bEq.y2) - 1e-3 && intersect.y <= Math.max(bEq.y1, bEq.y2) + 1e-3) {
+                        checkAndAddIntersection(intersect)
+                    }
+                }
+            } else if (boundary.type === 'circle') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const r = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getLineCircleIntersections(virtualLine, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const rx = parseFloat(boundary.attr('rx')), ry = parseFloat(boundary.attr('ry'))
+                getLineEllipseIntersections(virtualLine, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'rect') {
+                getLineRectIntersections(virtualLine, { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path') {
+                getPathIntersections(boundary, virtualLine).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    const intersect = getLineIntersection(virtualLine, seg)
+                    if (intersect) {
+                        if (intersect.x >= Math.min(seg.x1, seg.x2) - 1e-3 && intersect.x <= Math.max(seg.x1, seg.x2) + 1e-3 &&
+                            intersect.y >= Math.min(seg.y1, seg.y2) - 1e-3 && intersect.y <= Math.max(seg.y1, seg.y2) + 1e-3) {
+                            checkAndAddIntersection(intersect)
+                        }
+                    }
+                })
+            }
+        }
+
+        if (intersections.length === 0) return null
+        intersections.sort((a, b) => a.dist - b.dist)
+
+        return {
+            type: 'polyline',
+            extendStart,
+            vertexIndex: extendStart ? 0 : pts.length - 1,
+            oldPoints: pts,
+            newPosition: intersections[0].point,
+        }
     }
 
     calculateLineExtension(el, point) {
@@ -213,14 +303,31 @@ class ExtendCommand extends Command {
                         checkAndAddIntersection(intersect)
                     }
                 }
-            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
-                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
-                getLineCircleIntersections(virtualLine, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'circle') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getLineCircleIntersections(virtualLine, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const rx = parseFloat(boundary.attr('rx')), ry = parseFloat(boundary.attr('ry'))
+                getLineEllipseIntersections(virtualLine, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections(virtualLine, rectBounds).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'path') {
                 getPathIntersections(boundary, virtualLine).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    const intersect = getLineIntersection(virtualLine, seg)
+                    if (intersect) {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-3
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-3
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-3
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-3
+                        if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) {
+                            checkAndAddIntersection(intersect)
+                        }
+                    }
+                })
             }
 
         }
@@ -363,6 +470,18 @@ class ExtendCommand extends Command {
                 segments.forEach(seg => {
                     getLineCircleIntersections(seg, circle).forEach(checkAndAddIntersection)
                 })
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    getLineCircleIntersections(seg, circle).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
+                })
             }
         }
 
@@ -456,14 +575,31 @@ class ExtendCommand extends Command {
                         checkAndAddIntersection(intersect)
                     }
                 }
-            } else if (boundary.type === 'circle' || boundary.type === 'ellipse') {
-                const cx = boundary.cx(), cy = boundary.cy(), r = boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx'))
-                getLineCircleIntersections(virtualLine, { cx, cy, r: parseFloat(r) }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'circle') {
+                const cx = boundary.cx(), cy = boundary.cy(), r = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
+                getLineCircleIntersections(virtualLine, { cx, cy, r }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'ellipse') {
+                const cx = boundary.cx(), cy = boundary.cy()
+                const rx = parseFloat(boundary.attr('rx')), ry = parseFloat(boundary.attr('ry'))
+                getLineEllipseIntersections(virtualLine, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections(virtualLine, rectBounds).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'path') {
                 getPathIntersections(boundary, virtualLine).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'polyline') {
+                getPolylineSegments(boundary).forEach(seg => {
+                    const intersect = getLineIntersection(virtualLine, seg)
+                    if (intersect) {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-3
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-3
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-3
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-3
+                        if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) {
+                            checkAndAddIntersection(intersect)
+                        }
+                    }
+                })
             }
 
         }
@@ -485,7 +621,11 @@ class ExtendCommand extends Command {
 
         // Find the precise SVG element associated with the event
         const el = SVG(e.target)
-        if (!el || (el.type !== 'line' && !(el.type === 'path' && (el.data('arcData') || el.data('splineData'))))) return
+        const isExtendable = el && (
+            el.type === 'line' || el.type === 'polyline' ||
+            (el.type === 'path' && (el.data('arcData') || el.data('splineData')))
+        )
+        if (!isExtendable) return
 
         // Need the mouse point translated to SVG coordinates
         const pt = this.editor.svg.node.createSVGPoint()
@@ -530,6 +670,13 @@ class ExtendCommand extends Command {
                 this.ghostLine = this.editor.overlays.path(d)
                     .stroke({ color: '#2196F3', width: 2, opacity: 0.5 }).fill('none')
                     .addClass('ghostLine')
+            } else if (extension.type === 'polyline') {
+                // Show only the extension segment (from old endpoint to new position)
+                const { extendStart, oldPoints, newPosition } = extension
+                const base = extendStart ? oldPoints[0] : oldPoints[oldPoints.length - 1]
+                this.ghostLine = this.editor.overlays.line(base[0], base[1], newPosition.x, newPosition.y)
+                    .stroke({ color: '#2196F3', width: 2, opacity: 0.5 })
+                    .addClass('ghostLine')
             } else {
                 // Create ghost line
                 const x1 = extension.extendStart ? extension.newPosition.x : extension.lineEq.x1
@@ -567,9 +714,13 @@ class ExtendCommand extends Command {
 
     onLineClicked(el, source) {
         try {
-            if (!el || (el.type !== 'line' && !(el.type === 'path' && (el.data('arcData') || el.data('splineData')))) || el.hasClass('ghostLine')) {
+            const isExtendable = el && (
+                el.type === 'line' || el.type === 'polyline' ||
+                (el.type === 'path' && (el.data('arcData') || el.data('splineData')))
+            )
+            if (!isExtendable || el.hasClass('ghostLine')) {
                 if (el && !el.hasClass('ghostLine')) {
-                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, arcs, and splines can be extended.' })
+                    this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, arcs, splines, and polylines can be extended.' })
                 }
                 return
             }
@@ -602,6 +753,10 @@ class ExtendCommand extends Command {
                     extension.extendStart,
                     extension.newPosition
                 )
+            } else if (extension.type === 'polyline') {
+                const newPoints = extension.oldPoints.map(p => [p[0], p[1]])
+                newPoints[extension.vertexIndex] = [extension.newPosition.x, extension.newPosition.y]
+                editCommand = new EditPolylineCommand(this.editor, el, extension.oldPoints, newPoints)
             } else {
                 editCommand = new EditVertexCommand(
                     this.editor,
@@ -654,7 +809,7 @@ class ExtendCommand extends Command {
         // Remove mouse listeners for ghosting
         const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
-            if (el.type === 'line' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
+            if (el.type === 'line' || el.type === 'polyline' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
             }

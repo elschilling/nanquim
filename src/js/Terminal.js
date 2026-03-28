@@ -220,6 +220,12 @@ function Terminal(editor) {
           } else if (element.type === 'circle') {
             element.center(oldPos.cx, oldPos.cy)
             element.radius(oldPos.r)
+          } else if (element.type === 'ellipse') {
+            element.center(oldPos.cx, oldPos.cy)
+            element.attr('rx', oldPos.rx)
+            element.attr('ry', oldPos.ry)
+          } else if (element.type === 'polyline') {
+            element.plot(oldPos.points)
           }
         })
         signals.vertexEditStopped.dispatch()

@@ -493,6 +493,9 @@ function Viewport(editor) {
           else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
           else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
           else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+        } else if (v0.element.type === 'ellipse') {
+          baseX = v0.originalPosition.cx
+          baseY = v0.originalPosition.cy
         }
 
         const dx = point.x - baseX
@@ -530,6 +533,20 @@ function Viewport(editor) {
             const currentCenter = { x: element.cx(), y: element.cy() }
             const newRadius = calculateDistance(currentCenter, point)
             element.radius(newRadius)
+          }
+        } else if (element.type === 'ellipse') {
+          const original = vertexData.originalPosition
+          if (vertexIndex === 0) {
+            // Center: move the ellipse
+            element.center(point.x, point.y)
+          } else if (vertexIndex === 1 || vertexIndex === 3) {
+            // Right or Left quadrant: change rx
+            const newRx = Math.max(1e-3, Math.abs(point.x - original.cx))
+            element.attr('rx', newRx)
+          } else if (vertexIndex === 2 || vertexIndex === 4) {
+            // Bottom or Top quadrant: change ry
+            const newRy = Math.max(1e-3, Math.abs(point.y - original.cy))
+            element.attr('ry', newRy)
           }
         } else if (element.type === 'rect') {
           const original = vertexData.originalPosition
@@ -646,6 +663,10 @@ function Viewport(editor) {
           const d = catmullRomToBezierPath(newPoints)
           element.plot(d)
           element.data('splineData', { points: newPoints })
+        } else if (element.type === 'polyline') {
+          const pts = element.array().map(p => [p[0], p[1]])
+          pts[vertexIndex] = [point.x, point.y]
+          element.plot(pts)
         } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
           // Live render during move
           try {
@@ -903,7 +924,17 @@ function Viewport(editor) {
         distance = minDist
       } else if (el.type === 'ellipse') {
         const center = toRootSpace(el.node.cx.baseVal.value, el.node.cy.baseVal.value)
-        distance = calculateDistance(coordinates, center)
+        const rx = el.node.rx.baseVal.value
+        const ry = el.node.ry.baseVal.value
+        const minR = Math.min(rx, ry)
+        if (minR > 1e-6) {
+          const nx = (coordinates.x - center.x) / rx
+          const ny = (coordinates.y - center.y) / ry
+          const distToUnitCircle = Math.sqrt(nx * nx + ny * ny)
+          distance = Math.abs(distToUnitCircle - 1) * minR
+        } else {
+          distance = calculateDistance(coordinates, center)
+        }
       } else if (el.type === 'text') {
         const bbox = el.bbox()
         const pts = [
@@ -984,8 +1015,10 @@ function Viewport(editor) {
       // Separate line updates and circle updates
       const lineUpdates = []
       const circleUpdates = []
+      const ellipseUpdates = []
       const arcUpdates = []
       const splineUpdates = []
+      const polylineUpdates = []
       const dimensionUpdates = []
       const viewportUpdates = []
 
@@ -1018,6 +1051,24 @@ function Viewport(editor) {
             oldValues: { cx: v.originalPosition.cx, cy: v.originalPosition.cy, r: v.originalPosition.r },
             newValues: { cx: newCx, cy: newCy, r: newR }
           })
+        } else if (v.element.type === 'ellipse') {
+          const original = v.originalPosition
+          let newCx = original.cx, newCy = original.cy
+          let newRx = original.rx, newRy = original.ry
+
+          if (v.vertexIndex === 0) {
+            newCx = point.x; newCy = point.y
+          } else if (v.vertexIndex === 1 || v.vertexIndex === 3) {
+            newRx = Math.max(1e-3, Math.abs(point.x - original.cx))
+          } else if (v.vertexIndex === 2 || v.vertexIndex === 4) {
+            newRy = Math.max(1e-3, Math.abs(point.y - original.cy))
+          }
+
+          ellipseUpdates.push({
+            element: v.element,
+            oldValues: { cx: original.cx, cy: original.cy, rx: original.rx, ry: original.ry },
+            newValues: { cx: newCx, cy: newCy, rx: newRx, ry: newRy }
+          })
         } else if (v.element.type === 'path' && v.element.data('arcData')) {
           const arcData = v.element.data('arcData')
           const oldValues = {
@@ -1042,6 +1093,10 @@ function Viewport(editor) {
           const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
 
           splineUpdates.push({ element: v.element, oldPoints, newPoints })
+        } else if (v.element.type === 'polyline') {
+          const oldPoints = v.originalPosition.points
+          const newPoints = v.element.array().map(p => [p[0], p[1]])
+          polylineUpdates.push({ element: v.element, oldPoints, newPoints })
         } else if (v.element._paperVp) {
           const vp = v.element._paperVp
           viewportUpdates.push({
@@ -1090,6 +1145,15 @@ function Viewport(editor) {
         })
       }
 
+      if (ellipseUpdates.length > 0) {
+        import('./commands/EditEllipseCommand.js').then(({ EditEllipseCommand }) => {
+          ellipseUpdates.forEach(update => {
+            editor.execute(new EditEllipseCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
       if (arcUpdates.length > 0) {
         import('./commands/EditArcCommand.js').then(({ EditArcCommand }) => {
           arcUpdates.forEach(update => {
@@ -1103,6 +1167,15 @@ function Viewport(editor) {
         import('./commands/EditSplineCommand.js').then(({ EditSplineCommand }) => {
           splineUpdates.forEach(update => {
             editor.execute(new EditSplineCommand(editor, update.element, update.oldPoints, update.newPoints))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (polylineUpdates.length > 0) {
+        import('./commands/EditPolylineCommand.js').then(({ EditPolylineCommand }) => {
+          polylineUpdates.forEach(update => {
+            editor.execute(new EditPolylineCommand(editor, update.element, update.oldPoints, update.newPoints))
           })
           signals.updatedSelection.dispatch()
         })

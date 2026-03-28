@@ -564,6 +564,25 @@ function Outliner(editor) {
           if (Math.abs(pRight.x - x) < tolerance && Math.abs(pRight.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
           if (Math.abs(pBottom.x - x) < tolerance && Math.abs(pBottom.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
           if (Math.abs(pLeft.x - x) < tolerance && Math.abs(pLeft.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+        } else if (s.type === 'ellipse') {
+          const cx = s.node.cx.baseVal.value
+          const cy = s.node.cy.baseVal.value
+          const rx = s.node.rx.baseVal.value
+          const ry = s.node.ry.baseVal.value
+
+          const pts = [
+            { pt: localToWorld(s, cx, cy), index: 0 },
+            { pt: localToWorld(s, cx + rx, cy), index: 1 },
+            { pt: localToWorld(s, cx, cy + ry), index: 2 },
+            { pt: localToWorld(s, cx - rx, cy), index: 3 },
+            { pt: localToWorld(s, cx, cy - ry), index: 4 },
+          ]
+
+          pts.forEach(p => {
+            if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
+              vertices.push({ element: s, vertexIndex: p.index, originalPosition: { cx, cy, rx, ry } })
+            }
+          })
         } else if (s.type === 'rect') {
           const rx = s.node.x.baseVal.value
           const ry = s.node.y.baseVal.value
@@ -608,6 +627,15 @@ function Outliner(editor) {
             const wPt = localToWorld(s, sp.x, sp.y)
             if (Math.abs(wPt.x - x) < tolerance && Math.abs(wPt.y - y) < tolerance) {
               vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: spline.points.map(p => ({ x: p.x, y: p.y })) } })
+            }
+          })
+        } else if (s.type === 'polyline') {
+          const pts = s.array()
+          const snapshot = pts.map(p => [p[0], p[1]])
+          pts.forEach((pt, idx) => {
+            const wPt = localToWorld(s, pt[0], pt[1])
+            if (Math.abs(wPt.x - x) < tolerance && Math.abs(wPt.y - y) < tolerance) {
+              vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: snapshot } })
             }
           })
         } else if (s.type === 'g' && s.attr('data-element-type') === 'dimension') {
@@ -719,6 +747,34 @@ function Outliner(editor) {
               signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
             })
         })
+      } else if (el.type === 'ellipse') {
+        const cx = el.node.cx.baseVal.value
+        const cy = el.node.cy.baseVal.value
+        const rx = el.node.rx.baseVal.value
+        const ry = el.node.ry.baseVal.value
+
+        const points = [
+          { pt: localToWorld(el, cx, cy), index: 0 },         // Center
+          { pt: localToWorld(el, cx + rx, cy), index: 1 },    // Right
+          { pt: localToWorld(el, cx, cy + ry), index: 2 },    // Bottom
+          { pt: localToWorld(el, cx - rx, cy), index: 3 },    // Left
+          { pt: localToWorld(el, cx, cy - ry), index: 4 },    // Top
+        ]
+
+        points.forEach((p) => {
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.pt.x, p.pt.y)
+            .addClass('selection-handler-circle')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch([{
+                element: el,
+                vertexIndex: p.index,
+                originalPosition: { cx, cy, rx, ry },
+              }])
+            })
+        })
       } else if (el.type === 'rect' || el._paperVp) {
 
         let rx, ry, rw, rh, s
@@ -817,6 +873,24 @@ function Outliner(editor) {
             .mousedown((e) => {
               e.stopPropagation()
               signals.vertexEditStarted.dispatch(getCoincidentVertices(wPt.x, wPt.y))
+            })
+        })
+      } else if (el.type === 'polyline') {
+        const pts = el.array()
+        const snapshot = pts.map(p => [p[0], p[1]])
+        pts.forEach((pt, idx) => {
+          const wPt = localToWorld(el, pt[0], pt[1])
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(wPt.x, wPt.y)
+            .addClass('selection-handler')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch([{
+                element: el,
+                vertexIndex: idx,
+                originalPosition: { points: snapshot },
+              }])
             })
         })
       }

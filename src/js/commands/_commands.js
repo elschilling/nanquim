@@ -1,5 +1,6 @@
 import { drawLineCommand } from './DrawLineCommand'
 import { drawCircleCommand } from './DrawCircleCommand'
+import { drawEllipseCommand } from './DrawEllipseCommand'
 import { drawRectangleCommand } from './DrawRectangleCommand'
 import { moveCommand } from './MoveCommand'
 import { copyCommand } from './CopyCommand'
@@ -19,6 +20,7 @@ import { ungroupCommand } from './UngroupCommand'
 import { hatchCommand } from './HatchCommand'
 import { textCommand } from './TextCommand'
 import { drawSplineCommand } from './DrawSplineCommand'
+import { drawPolylineCommand } from './DrawPolylineCommand'
 import { createViewportCommand } from './CreateViewportCommand'
 import { linearDimensionCommand, LinearDimensionCommand } from './LinearDimensionCommand'
 import { alignedDimensionCommand } from './AlignedDimensionCommand'
@@ -32,6 +34,10 @@ const commands = {
   CIRCLE: {
     execute: drawCircleCommand,
     aliases: ['c'],
+  },
+  ELLIPSE: {
+    execute: drawEllipseCommand,
+    aliases: ['el'],
   },
   RECTANGLE: {
     execute: drawRectangleCommand,
@@ -104,6 +110,10 @@ const commands = {
   TEXT: {
     execute: textCommand,
     aliases: ['t', 'text'],
+  },
+  POLYLINE: {
+    execute: drawPolylineCommand,
+    aliases: ['pl'],
   },
   SPLINE: {
     execute: drawSplineCommand,
