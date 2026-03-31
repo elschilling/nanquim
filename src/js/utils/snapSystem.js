@@ -499,7 +499,10 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       return perpDistScreen < snapTolerance * 2.5
     })
 
-    // Phase C: generate snap candidates along each active extension ray
+    // Phase C+D: snap along each active extension ray.
+    // When intersection snap is also active, find where the ray crosses real elements or
+    // other extension rays near the cursor's projected position and prefer those over the
+    // plain projection point — intersection beats extension when both are in range.
     editor.extensionHovers.forEach(hover => {
       const dx = cursorWorld.x - hover.point.x
       const dy = cursorWorld.y - hover.point.y
@@ -509,7 +512,54 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         x: hover.point.x + proj * hover.direction.x,
         y: hover.point.y + proj * hover.direction.y,
       }
-      taggedTargets.push({ screenPoint: worldToScreen(snapPt, activeSvg), snapType: 'extension' })
+
+      let hasIntersectionInRange = false
+
+      if (st.intersection) {
+        const ep1 = hover.point
+        const ep2 = { x: hover.point.x + hover.direction.x, y: hover.point.y + hover.direction.y }
+
+        const tryPushIntersection = (pt) => {
+          if (!pt) return
+          const projOnRay = (pt.x - hover.point.x) * hover.direction.x + (pt.y - hover.point.y) * hover.direction.y
+          if (projOnRay <= snapWorldRadius * 0.5) return
+          const sp = worldToScreen(pt, activeSvg)
+          taggedTargets.push({ screenPoint: sp, snapType: 'intersection' })
+          if (calculateDistance(screenCoords, sp) < snapTolerance) hasIntersectionInRange = true
+        }
+
+        // Search elements near the projected cursor position on the ray — wider radius
+        // than the cursor search so we catch elements that cross the ray ahead of the cursor.
+        const searchR = snapWorldRadius * 3
+        const nearProj = snapIndex.search({
+          minX: snapPt.x - searchR,
+          minY: snapPt.y - searchR,
+          maxX: snapPt.x + searchR,
+          maxY: snapPt.y + searchR,
+        }).map(item => item.element)
+
+        nearProj.forEach(el => {
+          getSnapSegments(el).forEach(seg => tryPushIntersection(lineLineIntersectPt(ep1, ep2, seg.p1, seg.p2)))
+          getSnapCircles(el).forEach(cir => lineCircleIntersectPts(ep1, ep2, cir.cx, cir.cy, cir.r).forEach(tryPushIntersection))
+        })
+
+        // Extension-extension intersections (two active extension rays crossing each other)
+        editor.extensionHovers.forEach(other => {
+          if (other === hover) return
+          const op1 = other.point
+          const op2 = { x: other.point.x + other.direction.x, y: other.point.y + other.direction.y }
+          const pt = lineLineIntersectPt(ep1, ep2, op1, op2)
+          if (!pt) return
+          const projB = (pt.x - other.point.x) * other.direction.x + (pt.y - other.point.y) * other.direction.y
+          if (projB > snapWorldRadius * 0.5) tryPushIntersection(pt)
+        })
+      }
+
+      // Only add the plain extension projection when no intersection snap is in range,
+      // so the intersection candidate always wins when the cursor is near a crossing.
+      if (!hasIntersectionInRange) {
+        taggedTargets.push({ screenPoint: worldToScreen(snapPt, activeSvg), snapType: 'extension' })
+      }
     })
   }
 
