@@ -25,6 +25,22 @@ const addFlipXIfApplicable = (entity, { bbox, element }) => {
 }
 
 /**
+ * Create a <line /> element for the LINE entity.
+ */
+const line = (entity) => {
+  const x1 = entity.start.x || 0
+  const y1 = entity.start.y || 0
+  const x2 = entity.end.x || 0
+  const y2 = entity.end.y || 0
+  const bbox = new Box2()
+    .expandByPoint({ x: x1, y: y1 })
+    .expandByPoint({ x: x2, y: y2 })
+  const element = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`
+  const { bbox: bbox0, element: element0 } = addFlipXIfApplicable(entity, { bbox, element })
+  return transformBoundingBoxAndElement(bbox0, element0, entity.transforms)
+}
+
+/**
  * Create a <path /> element. Interpolates curved entities.
  */
 const polyline = (entity) => {
@@ -335,6 +351,7 @@ const entityToBoundsAndElement = (entity) => {
       }
     }
     case 'LINE':
+      return line(entity)
     case 'LWPOLYLINE':
     case 'POLYLINE': {
       return polyline(entity)

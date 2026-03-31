@@ -92,6 +92,9 @@ export function applyMatrixToElement(element, matrix) {
                 // simplistic rotation calculation
                 const rot = Math.atan2(matrix.b, matrix.a) * (180 / Math.PI)
                 newSegment[3] += rot
+                // A reflection (det < 0) reverses the arc sweep direction
+                const det = matrix.a * matrix.d - matrix.b * matrix.c
+                if (det < 0) newSegment[5] = newSegment[5] ? 0 : 1
                 newSegment[6] = p.x
                 newSegment[7] = p.y
                 lastPoint = { x: p.x, y: p.y }
