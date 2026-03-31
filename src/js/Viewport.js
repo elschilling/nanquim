@@ -134,6 +134,7 @@ function Viewport(editor) {
       .mousedown(handleMousedown)
       .panZoom({ zoomFactor, panButton: 1 })
       .on('zoom', updateGrid)
+      .on('zoom', () => editor.signals.refreshHandlers.dispatch())
       .on('pan', updateGrid)
 
     svgInstance.on('dblclick', (e) => {

@@ -457,14 +457,35 @@ function Outliner(editor) {
 
   signals.updatedSelection.add(() => {
     clearSelectionVisuals()
+    let firstLi = null
     editor.selected.forEach((el) => {
       if (el._paperVp) return // Viewports don't have Outliner rows or elementSelected class
       const li = document.getElementById('li' + el.node.id)
       if (el.attr('data-collection') !== 'true') {
         el.addClass('elementSelected')
       }
-      if (li) li.classList.add('outliner-selected')
+      if (li) {
+        li.classList.add('outliner-selected')
+        if (!firstLi) firstLi = li
+      }
     })
+    if (firstLi) {
+      const container = drawingTree.closest('.outliner-container')
+      if (container) {
+        let liTop = 0
+        let el = firstLi
+        while (el && el !== container) {
+          liTop += el.offsetTop
+          el = el.offsetParent
+        }
+        const liBottom = liTop + firstLi.offsetHeight
+        if (liTop < container.scrollTop) {
+          container.scrollTop = liTop
+        } else if (liBottom > container.scrollTop + container.clientHeight) {
+          container.scrollTop = liBottom - container.clientHeight
+        }
+      }
+    }
     signals.updatedProperties.dispatch()
     // Draw handlers for selected elements
     if (!editor.suppressHandlers) {
