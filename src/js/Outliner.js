@@ -504,31 +504,22 @@ function Outliner(editor) {
     const handlerScreenSize = getPreferences().handlerSize
     const handlerWorldSize = handlerScreenSize / currentZoom
 
-    const svgNode = activeSvg.node
-
     // Helper to transform a local element point to world coordinates
+    // Uses screenCTM() instead of getCTM() to work around Firefox bug #1344537
+    const svgScreenCTM = activeSvg.screenCTM()
+    const svgScreenCTMInv = svgScreenCTM.inverse()
     const localToWorld = (element, x, y) => {
-      const pt = svgNode.createSVGPoint()
-      pt.x = x
-      pt.y = y
-      let elementCTM
-      if (element.node) {
-        elementCTM = element.node.getCTM()
-      } else {
-        // Fallback for mock objects like paper viewports
-        elementCTM = svgNode.getCTM()
+      const elCTM = element.node ? element.screenCTM() : svgScreenCTM
+      if (!elCTM) return { x, y }
+
+      // local → screen
+      const sx = elCTM.a * x + elCTM.c * y + elCTM.e
+      const sy = elCTM.b * x + elCTM.d * y + elCTM.f
+      // screen → world (SVG root / viewBox space)
+      return {
+        x: svgScreenCTMInv.a * sx + svgScreenCTMInv.c * sy + svgScreenCTMInv.e,
+        y: svgScreenCTMInv.b * sx + svgScreenCTMInv.d * sy + svgScreenCTMInv.f,
       }
-      const svgCTM = svgNode.getCTM()
-      if (!elementCTM || !svgCTM) return { x, y }
-
-      // We want the point relative to the SVG root drawing area, not the screen
-      const screenPt = pt.matrixTransform(elementCTM)
-
-      // Invert the SVG root's CTM (which handles pan/zoom) to get world coords
-      const invSvgCTM = svgCTM.inverse()
-      const worldPt = screenPt.matrixTransform(invSvgCTM)
-
-      return { x: worldPt.x, y: worldPt.y }
     }
 
     // Helper to find all selected vertices at a given position

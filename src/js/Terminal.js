@@ -199,6 +199,19 @@ function Terminal(editor) {
         if (inputVal !== '') {
           e.preventDefault()
           const typed = inputVal.toLowerCase()
+
+          // 'p' = Previous selection (AutoCAD-style): restore previous selection for further editing
+          if (typed === 'p' && editor.previousSelection.length > 0) {
+            const validPrev = editor.previousSelection.filter(el => el.node && el.node.isConnected)
+            if (validPrev.length > 0) {
+              editor.selected = validPrev
+              editor.signals.updatedSelection.dispatch()
+              terminalText.value = ''
+              e.stopImmediatePropagation()
+              return
+            }
+          }
+
           for (const [command, { execute, aliases }] of Object.entries(commands)) {
             if (aliases.includes(typed)) {
               signals.commandCancelled.dispatch()

@@ -175,11 +175,7 @@ function _captureScaleInput(editor) {
  * Convert screen (client) coordinates to paper SVG coordinates.
  */
 function _screenToPaperSVG(editor, clientX, clientY) {
-  const svgNode = editor.paperSvg.node
-  const pt = svgNode.createSVGPoint()
-  pt.x = clientX
-  pt.y = clientY
-  const svgPt = pt.matrixTransform(svgNode.getScreenCTM().inverse())
+  const svgPt = editor.paperSvg.point(clientX, clientY)
   return { x: svgPt.x, y: svgPt.y }
 }
 

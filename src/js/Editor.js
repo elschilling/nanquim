@@ -71,6 +71,7 @@ function Editor() {
   this.extensionHovers = []
   this.elementIndex = 0
   this.selected = []
+  this.previousSelection = []
   this.loader = new DXFLoader(this)
   this.orthomode = true
   this.polarTracking = false

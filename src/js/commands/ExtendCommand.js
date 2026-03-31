@@ -628,10 +628,7 @@ class ExtendCommand extends Command {
         if (!isExtendable) return
 
         // Need the mouse point translated to SVG coordinates
-        const pt = this.editor.svg.node.createSVGPoint()
-        pt.x = e.clientX
-        pt.y = e.clientY
-        const svgPt = pt.matrixTransform(this.editor.svg.node.getScreenCTM().inverse())
+        const svgPt = this.editor.svg.point(e.clientX, e.clientY)
         const hoverPoint = { x: svgPt.x, y: svgPt.y }
 
         const extension = this.calculateExtension(el, hoverPoint)

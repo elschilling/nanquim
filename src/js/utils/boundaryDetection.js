@@ -261,6 +261,35 @@ function lineLineIntersection(s1, s2) {
     return []
 }
 
+function arcArcIntersection(arc1, arc2) {
+    const dx = arc2.cx - arc1.cx
+    const dy = arc2.cy - arc1.cy
+    const d2 = dx * dx + dy * dy
+    const d = Math.sqrt(d2)
+    if (d < EPS) return [] // concentric
+    if (d > arc1.r + arc2.r + EPS) return [] // too far apart
+    if (d < Math.abs(arc1.r - arc2.r) - EPS) return [] // one inside the other
+
+    const a = (arc1.r * arc1.r - arc2.r * arc2.r + d2) / (2 * d)
+    const h2 = arc1.r * arc1.r - a * a
+    if (h2 < 0) return []
+    const h = Math.sqrt(h2)
+
+    const mx = arc1.cx + a * dx / d
+    const my = arc1.cy + a * dy / d
+    const ox = h * dy / d
+    const oy = h * dx / d
+
+    const pts = [
+        { x: mx + ox, y: my - oy },
+        { x: mx - ox, y: my + oy },
+    ]
+
+    return pts.filter(p =>
+        isPointOnArc(p.x, p.y, arc1) && isPointOnArc(p.x, p.y, arc2)
+    )
+}
+
 function lineArcIntersection(lineSeg, arcSeg) {
     const { cx, cy, r } = arcSeg
     const dx = lineSeg.x2 - lineSeg.x1
@@ -346,6 +375,8 @@ function findBoundaryPath(clickPoint, segments) {
                 ixns = lineArcIntersection(s1, s2)
             } else if (s1.type === 'arc' && s2.type === 'line') {
                 ixns = lineArcIntersection(s2, s1).map(p => ({ ...p }))
+            } else if (s1.type === 'arc' && s2.type === 'arc') {
+                ixns = arcArcIntersection(s1, s2)
             }
 
             for (const ix of ixns) {
@@ -490,6 +521,8 @@ function findBoundaryPath(clickPoint, segments) {
 function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
     const edges = []
     let currentNode = startNode
+    let prevNode = -1
+    let prevSeg = -1
     let prevAngle = incomingAngle
 
     for (let step = 0; step < 1000; step++) {
@@ -503,6 +536,10 @@ function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
         const reverseAngle = normalizeAngle(prevAngle + Math.PI)
 
         for (const edge of neighbors) {
+            // Don't retrace the segment we just arrived on (avoids getting stuck
+            // on parallel edges, e.g. the two half-arcs of a full circle)
+            if (edge.node === prevNode && edge.seg === prevSeg) continue
+
             const nx = nodes[edge.node]
             const edgeAngle = Math.atan2(nx.y - nodes[currentNode].y, nx.x - nodes[currentNode].x)
 
@@ -530,6 +567,9 @@ function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
             nodes[bestNext].y - nodes[currentNode].y,
             nodes[bestNext].x - nodes[currentNode].x
         )
+
+        prevNode = currentNode
+        prevSeg = bestSeg
 
         if (bestNext === startNode) {
             return edges // Closed loop

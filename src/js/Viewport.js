@@ -74,6 +74,9 @@ function Viewport(editor) {
     }
   })
   signals.clearSelection.add(() => {
+    if (editor.selected.length > 0) {
+      editor.previousSelection = editor.selected.slice()
+    }
     editor.selected.forEach((el) => {
       if (el && typeof el.removeClass === 'function') {
         el.removeClass('elementSelected')
@@ -932,10 +935,9 @@ function Viewport(editor) {
     const candidates = []
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (!activeSvg) return
-    const svgNode = activeSvg.node
-
     // Compute inverted SVG root CTM once per frame (not per element)
-    const svgCTM = svgNode.getCTM()
+    // Use screenCTM() instead of getCTM() to get the Firefox workaround for nested SVGs
+    const svgCTM = activeSvg.screenCTM()
     let svgInvDet = 1
     let hasSvgCTM = false
     if (svgCTM) {
@@ -966,7 +968,7 @@ function Viewport(editor) {
 
       // ---- PRECISE DISTANCE ----
       let distance
-      const ctm = el.node.getCTM()
+      const ctm = el.screenCTM()
 
       // Build toRootSpace closure for this element's CTM
       const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
@@ -1484,8 +1486,7 @@ function Viewport(editor) {
           isInsideOrIntersecting = true
         } else {
           const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
-          const svgNode = activeSvg.node
-          const svgCTM = svgNode.getCTM()
+          const svgCTM = activeSvg.screenCTM()
           let svgInvDet = 1
           let hasSvgCTM = false
           if (svgCTM) {
@@ -1493,7 +1494,7 @@ function Viewport(editor) {
             hasSvgCTM = Math.abs(svgInvDet) > 1e-10
           }
 
-          const ctm = el.node.getCTM()
+          const ctm = el.screenCTM()
           const toRootSpace = (ctm && hasSvgCTM) ? (lx, ly) => {
             const ex = ctm.a * lx + ctm.c * ly + ctm.e
             const ey = ctm.b * lx + ctm.d * ly + ctm.f

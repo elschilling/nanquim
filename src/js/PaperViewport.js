@@ -232,7 +232,7 @@ PaperViewport.prototype._attachInteractions = function() {
 
         // To map screen pixels back to model units:
         // 1. Convert screen delta to paper SVG units
-        const ctm = svgEl.getScreenCTM()
+        const ctm = _editor.paperSvg.screenCTM()
         const svgDx = dx / ctm.a
         const svgDy = dy / ctm.d
 
