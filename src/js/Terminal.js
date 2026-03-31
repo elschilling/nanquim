@@ -12,6 +12,40 @@ function Terminal(editor) {
 
   let terminalText = document.getElementById('terminalInput')
   let terminalLog = document.getElementById('terminalLog')
+  let terminalContainer = terminalLog && terminalLog.closest('.terminal')
+
+  // ── Terminal width resize ──────────────────────────────────────────────────
+  const minTerminalWidth = 300
+  let isResizingTerminal = false
+  let terminalResizeStartX = 0
+  let terminalResizeStartWidth = 0
+  let terminalResizeDir = 1 // +1 for right handle, -1 for left handle
+
+  document.querySelectorAll('.terminal-resize-handle').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      isResizingTerminal = true
+      terminalResizeStartX = e.clientX
+      terminalResizeStartWidth = terminalContainer ? terminalContainer.offsetWidth : 600
+      terminalResizeDir = handle.classList.contains('terminal-resize-right') ? 1 : -1
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    })
+  })
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizingTerminal || !terminalContainer) return
+    const dx = (e.clientX - terminalResizeStartX) * terminalResizeDir
+    const newWidth = Math.max(minTerminalWidth, terminalResizeStartWidth + dx * 2)
+    terminalContainer.style.width = newWidth + 'px'
+  })
+
+  document.addEventListener('mouseup', () => {
+    if (!isResizingTerminal) return
+    isResizingTerminal = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  })
 
   signals.updatedCoordinates.add((coordinates) => {
     editor.coordinates = coordinates
@@ -49,7 +83,7 @@ function Terminal(editor) {
   })
 
   function handleInput(e) {
-    if (e.code === 'F3' || e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
+    if (e.code === 'F2' || e.code === 'F3' || e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault()
     }
 
@@ -244,6 +278,11 @@ function Terminal(editor) {
       signals.clearSelection.dispatch()
       editor.selected = []
       signals.updatedProperties.dispatch()
+    } else if (e.code === 'F2') {
+      if (terminalContainer) {
+        terminalContainer.classList.toggle('terminal-expanded')
+        terminalLog.scrollTop = terminalLog.scrollHeight
+      }
     } else if (e.code === 'F3') {
       handleToogleOverlay()
     } else if (e.code === 'F8') {

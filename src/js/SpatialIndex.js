@@ -30,15 +30,15 @@ function localToRoot(x, y, elCTM, svgInv) {
  * Compute the axis-aligned bounding box of an element in SVG root space.
  * Returns { minX, minY, maxX, maxY, element } or null.
  */
-function getElementBBox(el, svgNode) {
+function getElementBBox(el, svgEl) {
     try {
         const bbox = el.node.getBBox()
         if (bbox.width === 0 && bbox.height === 0 && bbox.x === 0 && bbox.y === 0) {
             return null
         }
 
-        const elCTM = el.node.getCTM()
-        const svgCTM = svgNode.getCTM()
+        const elCTM = el.screenCTM()
+        const svgCTM = svgEl.screenCTM()
 
         if (!elCTM || !svgCTM) {
             // No transform info — use local bbox as-is
@@ -103,7 +103,7 @@ SpatialIndex.prototype = {
         const elements = (elementsGetter || getSelectableElements)(editor)
         const items = []
         for (let i = 0; i < elements.length; i++) {
-            const item = getElementBBox(elements[i], this._svgNode)
+            const item = getElementBBox(elements[i], activeSvg)
             if (item) items.push(item)
         }
         this.tree.load(items)

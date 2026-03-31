@@ -1,6 +1,6 @@
 import { Command } from '../Command'
 import { calculateDistance } from '../utils/calculateDistance'
-import { bakeTransforms, applyMatrixToPoint } from '../utils/transformGeometry'
+import { bakeTransforms } from '../utils/transformGeometry'
 
 class ScaleCommand extends Command {
   constructor(editor) {
@@ -95,7 +95,7 @@ class ScaleCommand extends Command {
 
   onScaleFactor(scaleFactor) {
     this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
-    this.scaleFactor = scaleFactor
+    this.scaleFactor = parseFloat(scaleFactor)
     this.editor.distance = null
 
     this.cleanup()
@@ -209,18 +209,10 @@ class ScaleCommand extends Command {
       return element
     }
 
-    const parent = element.parent()
-    const worldToParent = parent.ctm().inverse().multiply(this.editor.drawing.ctm())
-    const baseInParent = applyMatrixToPoint(worldToParent, this.basePoint.x, this.basePoint.y)
-
-    // Create the scaling matrix in the parent's space
-    const sInParent = new SVG.Matrix().scale(factor, factor, baseInParent.x, baseInParent.y)
-
-    // Combine the new scale with the element's original local transformation
-    const finalLocalMatrix = sInParent.multiply(originalPos.matrix)
-
-    // Set the new transform and bake it into the geometry
-    element.transform(finalLocalMatrix)
+    // Restore the element's original local transform, then apply scale via SVG.js
+    // relative mode — identical to what the ghost preview does — then bake.
+    element.transform(originalPos.matrix)
+    element.scale(factor, factor, this.basePoint.x, this.basePoint.y)
     return bakeTransforms(element)
   }
 

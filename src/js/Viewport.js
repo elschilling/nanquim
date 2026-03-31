@@ -88,6 +88,11 @@ function Viewport(editor) {
     clearSelectionRectangle()
   })
   signals.commandCancelled.add(() => {
+    if (_moveRafId !== null) {
+      cancelAnimationFrame(_moveRafId)
+      _moveRafId = null
+      _pendingMoveEvent = null
+    }
     editor.spatialIndex.markDirty()
     editor.fullSpatialIndex.markDirty()
     clearHover()
@@ -188,6 +193,7 @@ function Viewport(editor) {
   function onMoveGhostingStarted(elements, point) {
     isGhostingMove = true
     ghostElements = elements
+    editor.ghostNodes = new Set(elements.map(el => el.node))
     basePoint = point
     ghostElements.forEach((el) => {
       if (el._paperVp) {
@@ -200,6 +206,7 @@ function Viewport(editor) {
 
   function onMoveGhostingStopped() {
     isGhostingMove = false
+    editor.ghostNodes = null
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
       if (el._paperVp) {
@@ -220,6 +227,7 @@ function Viewport(editor) {
   function onScaleGhostingStarted(elements, point) {
     isGhostingScale = true
     ghostElements = elements
+    editor.ghostNodes = new Set(elements.map(el => el.node))
     basePoint = point
     ghostElements.forEach((el) => {
       if (el._paperVp) {
@@ -232,6 +240,7 @@ function Viewport(editor) {
 
   function onScaleGhostingStopped() {
     isGhostingScale = false
+    editor.ghostNodes = null
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
       if (el._paperVp) {
@@ -252,6 +261,7 @@ function Viewport(editor) {
   function onRotateGhostingStarted(elements, cPoint, rPoint) {
     isGhostingRotate = true
     ghostElements = elements
+    editor.ghostNodes = new Set(elements.map(el => el.node))
     centerPoint = cPoint
     referencePoint = rPoint
     ghostElements.forEach((el) => {
@@ -265,6 +275,7 @@ function Viewport(editor) {
 
   function onRotateGhostingStopped() {
     isGhostingRotate = false
+    editor.ghostNodes = null
     ghostElements.forEach((el) => {
       const initial = initialTransforms.get(el)
       if (el._paperVp) {
@@ -350,7 +361,7 @@ function Viewport(editor) {
     }
   }
 
-  function handleMove(e) {
+  function _doHandleMove(e) {
     const activeSvgMove = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     clearSnap(editor, activeSvgMove)
     if (editor.isSnapping) {
@@ -739,6 +750,19 @@ function Viewport(editor) {
     updateCoordinates(coordinates)
     scheduleHoverCheck()
   }
+
+  let _pendingMoveEvent = null
+  let _moveRafId = null
+  function handleMove(e) {
+    _pendingMoveEvent = e
+    if (_moveRafId === null) {
+      _moveRafId = requestAnimationFrame(() => {
+        _moveRafId = null
+        _doHandleMove(_pendingMoveEvent)
+      })
+    }
+  }
+
   function updateCoordinates(coordinates) {
     editor.signals.updatedCoordinates.dispatch(coordinates)
   }

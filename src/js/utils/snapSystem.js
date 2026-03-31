@@ -6,8 +6,8 @@ import { getAllDrawingElements } from '../Collection'
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
  */
-export function worldToScreen(worldPoint, svgCanvas) {
-  const matrix = svgCanvas.screenCTM()
+export function worldToScreen(worldPoint, svgCanvas, ctm) {
+  const matrix = ctm || svgCanvas.screenCTM()
   const screenPoint = new SVG.Point(worldPoint).transform(matrix)
   return { x: screenPoint.x, y: screenPoint.y }
 }
@@ -193,6 +193,8 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
   const worldPerPixel = vb.width / svgWidth
   const snapWorldRadius = snapTolerance * worldPerPixel
   const cursorWorld = activeSvg.point(screenCoords.x, screenCoords.y)
+  // Cache the screen CTM once — reused by every worldToScreen call this frame
+  const ctm = activeSvg.screenCTM()
 
   const useFullIndex = editor.snapExcludeNonSelectable === false
   const snapIndex = useFullIndex ? editor.fullSpatialIndex : editor.spatialIndex
@@ -212,6 +214,9 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     const editingNodes = editor.editingVertices.map(v => v.element.node)
     snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
   }
+  if (editor.isInteracting && editor.ghostNodes && editor.ghostNodes.size > 0) {
+    snapCandidates = snapCandidates.filter(el => !editor.ghostNodes.has(el.node))
+  }
 
   const st = editor.snapTypes || {}
   const taggedTargets = []
@@ -221,13 +226,13 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const pts = el.array()
       if (st.endpoint) {
         pts.forEach((pointArr) => {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg, ctm), snapType: 'endpoint' })
         })
       }
       if (st.midpoint && pts.length >= 2) {
         const mx = (pts[0][0] + pts[1][0]) / 2
         const my = (pts[0][1] + pts[1][1]) / 2
-        taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg, ctm), snapType: 'midpoint' })
       }
       if (st.nearest && pts.length >= 2) {
         const p1 = { x: pts[0][0], y: pts[0][1] }
@@ -237,7 +242,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         if (len2 > 0) {
           let t = ((cursorWorld.x - p1.x) * dx + (cursorWorld.y - p1.y) * dy) / len2
           t = Math.max(0, Math.min(1, t))
-          taggedTargets.push({ screenPoint: worldToScreen({ x: p1.x + t * dx, y: p1.y + t * dy }, activeSvg), snapType: 'nearest' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: p1.x + t * dx, y: p1.y + t * dy }, activeSvg, ctm), snapType: 'nearest' })
         }
       }
     } else if (el.type === 'circle') {
@@ -245,19 +250,19 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const cy = el.node.cy.baseVal.value
       const r = el.node.r.baseVal.value
       if (st.center) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg), snapType: 'center' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg, ctm), snapType: 'center' })
       }
       if (st.quadrant) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy - r }, activeSvg), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx + r, y: cy }, activeSvg), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy + r }, activeSvg), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx - r, y: cy }, activeSvg), snapType: 'quadrant' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy - r }, activeSvg, ctm), snapType: 'quadrant' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx + r, y: cy }, activeSvg, ctm), snapType: 'quadrant' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy + r }, activeSvg, ctm), snapType: 'quadrant' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx - r, y: cy }, activeSvg, ctm), snapType: 'quadrant' })
       }
       if (st.nearest) {
         const dx = cursorWorld.x - cx, dy = cursorWorld.y - cy
         const dist = Math.hypot(dx, dy)
         if (dist > 0) {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r }, activeSvg), snapType: 'nearest' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r }, activeSvg, ctm), snapType: 'nearest' })
         }
       }
     } else if (el.type === 'rect') {
@@ -266,46 +271,46 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const rw = el.node.width.baseVal.value
       const rh = el.node.height.baseVal.value
       if (st.endpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry }, activeSvg), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry }, activeSvg), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh }, activeSvg), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh }, activeSvg), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry }, activeSvg, ctm), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry }, activeSvg, ctm), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh }, activeSvg, ctm), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh }, activeSvg, ctm), snapType: 'endpoint' })
       }
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry }, activeSvg), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh / 2 }, activeSvg), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry + rh }, activeSvg), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh / 2 }, activeSvg), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry }, activeSvg, ctm), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh / 2 }, activeSvg, ctm), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry + rh }, activeSvg, ctm), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh / 2 }, activeSvg, ctm), snapType: 'midpoint' })
       }
     } else if (el.type === 'path' && el.data('arcData')) {
       const arcData = el.data('arcData')
       if (st.endpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p1.x, y: arcData.p1.y }, activeSvg), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p3.x, y: arcData.p3.y }, activeSvg), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p1.x, y: arcData.p1.y }, activeSvg, ctm), snapType: 'endpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p3.x, y: arcData.p3.y }, activeSvg, ctm), snapType: 'endpoint' })
       }
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p2.x, y: arcData.p2.y }, activeSvg), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p2.x, y: arcData.p2.y }, activeSvg, ctm), snapType: 'midpoint' })
       }
       if (st.center) {
         if (arcData.cx !== undefined) {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.cx, y: arcData.cy }, activeSvg), snapType: 'center' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.cx, y: arcData.cy }, activeSvg, ctm), snapType: 'center' })
         } else {
           const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
-          if (geo) taggedTargets.push({ screenPoint: worldToScreen({ x: geo.cx, y: geo.cy }, activeSvg), snapType: 'center' })
+          if (geo) taggedTargets.push({ screenPoint: worldToScreen({ x: geo.cx, y: geo.cy }, activeSvg, ctm), snapType: 'center' })
         }
       }
     } else if (el.type === 'polygon' || el.type === 'polyline') {
       const pts = el.array()
       if (st.endpoint) {
         pts.forEach((pointArr) => {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg, ctm), snapType: 'endpoint' })
         })
       }
       if (st.midpoint) {
         for (let i = 0; i < pts.length - 1; i++) {
           const mx = (pts[i][0] + pts[i + 1][0]) / 2
           const my = (pts[i][1] + pts[i + 1][1]) / 2
-          taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg), snapType: 'midpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg, ctm), snapType: 'midpoint' })
         }
       }
     } else if (el.type === 'path' && !el.data('arcData')) {
@@ -319,20 +324,20 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       if (st.endpoint) {
         if (splineData) {
           splineData.points.forEach(sp => {
-            taggedTargets.push({ screenPoint: worldToScreen(sp, activeSvg), snapType: 'endpoint' })
+            taggedTargets.push({ screenPoint: worldToScreen(sp, activeSvg, ctm), snapType: 'endpoint' })
           })
         } else {
-          taggedTargets.push({ screenPoint: worldToScreen(ptAt(0), activeSvg), snapType: 'endpoint' })
-          taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength), activeSvg), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen(ptAt(0), activeSvg, ctm), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength), activeSvg, ctm), snapType: 'endpoint' })
         }
       }
 
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength / 2), activeSvg), snapType: 'midpoint' })
+        taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength / 2), activeSvg, ctm), snapType: 'midpoint' })
       }
 
       if (st.nearest) {
-        const samples = Math.max(32, Math.ceil(totalLength / 5))
+        const samples = Math.max(16, Math.ceil(totalLength / 10))
         let minDist = Infinity
         let nearestPt = null
         for (let i = 0; i <= samples; i++) {
@@ -344,7 +349,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           }
         }
         if (nearestPt) {
-          taggedTargets.push({ screenPoint: worldToScreen(nearestPt, activeSvg), snapType: 'nearest' })
+          taggedTargets.push({ screenPoint: worldToScreen(nearestPt, activeSvg, ctm), snapType: 'nearest' })
         }
       }
     }
@@ -352,14 +357,15 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
 
   // ---- INTERSECTION SNAP ----
   if (st.intersection && snapCandidates.length > 1) {
-    for (let i = 0; i < snapCandidates.length; i++) {
-      for (let j = i + 1; j < snapCandidates.length; j++) {
-        const elA = snapCandidates[i], elB = snapCandidates[j]
+    const intCandidates = snapCandidates.length > 8 ? snapCandidates.slice(0, 8) : snapCandidates
+    for (let i = 0; i < intCandidates.length; i++) {
+      for (let j = i + 1; j < intCandidates.length; j++) {
+        const elA = intCandidates[i], elB = intCandidates[j]
         const segsA = getSnapSegments(elA), segsB = getSnapSegments(elB)
         const cirsA = getSnapCircles(elA), cirsB = getSnapCircles(elB)
 
         const pushPt = pt => {
-          if (pt) taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg), snapType: 'intersection' })
+          if (pt) taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'intersection' })
         }
 
         // line-line
@@ -379,7 +385,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
   // Requires a base point: finds the foot where a line FROM lastClick TO the element is perpendicular.
   if (st.perpendicular && editor.lastClick) {
     const from = editor.lastClick
-    const pushPerp = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg), snapType: 'perpendicular' })
+    const pushPerp = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'perpendicular' })
 
     snapCandidates.forEach(el => {
       if (el.type === 'line') {
@@ -523,7 +529,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           if (!pt) return
           const projOnRay = (pt.x - hover.point.x) * hover.direction.x + (pt.y - hover.point.y) * hover.direction.y
           if (projOnRay <= snapWorldRadius * 0.5) return
-          const sp = worldToScreen(pt, activeSvg)
+          const sp = worldToScreen(pt, activeSvg, ctm)
           taggedTargets.push({ screenPoint: sp, snapType: 'intersection' })
           if (calculateDistance(screenCoords, sp) < snapTolerance) hasIntersectionInRange = true
         }
@@ -558,7 +564,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       // Only add the plain extension projection when no intersection snap is in range,
       // so the intersection candidate always wins when the cursor is near a crossing.
       if (!hasIntersectionInRange) {
-        taggedTargets.push({ screenPoint: worldToScreen(snapPt, activeSvg), snapType: 'extension' })
+        taggedTargets.push({ screenPoint: worldToScreen(snapPt, activeSvg, ctm), snapType: 'extension' })
       }
     })
   }
