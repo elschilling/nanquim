@@ -7,8 +7,8 @@ export class DimensionStyle {
     this.properties = {
       fontFamily: config.fontFamily || 'Inter',
       fontSize: config.fontSize !== undefined ? config.fontSize : 0.15,
-      arrowSize: config.arrowSize !== undefined ? config.arrowSize : 0.15,
-      tickSize: config.tickSize !== undefined ? config.tickSize : 0, // 0 means arrowheads, >0 means architectural ticks
+      markerType: config.markerType || 'arrow', // 'arrow' | 'tick' | 'bullet'
+      markerSize: config.markerSize !== undefined ? config.markerSize : 0.15,
       extensionLineOffset: config.extensionLineOffset !== undefined ? config.extensionLineOffset : 0.1,
       extensionLineExtend: config.extensionLineExtend !== undefined ? config.extensionLineExtend : 0.1,
       textOffset: config.textOffset !== undefined ? config.textOffset : 0.1,
@@ -27,7 +27,15 @@ export class DimensionStyle {
   }
 
   static fromJSON(data) {
-    return new DimensionStyle(data.id, data.name, data.properties)
+    const props = { ...data.properties }
+    // Migrate old arrowSize/tickSize to markerType/markerSize
+    if (props.markerType === undefined) {
+      props.markerType = props.tickSize > 0 ? 'tick' : 'arrow'
+      props.markerSize = props.tickSize > 0 ? props.tickSize : (props.arrowSize ?? 0.15)
+      delete props.arrowSize
+      delete props.tickSize
+    }
+    return new DimensionStyle(data.id, data.name, props)
   }
 }
 
@@ -58,6 +66,21 @@ export class DimensionManager {
   setActiveStyle(id) {
     if (this.styles.has(id)) {
       this.activeStyleId = id
+    }
+  }
+
+  deleteStyle(id) {
+    if (id === 'Standard' || !this.styles.has(id)) return
+    this.styles.delete(id)
+    if (this.activeStyleId === id) this.activeStyleId = 'Standard'
+    this.editor.signals.updatedProperties.dispatch()
+  }
+
+  renameStyle(id, newName) {
+    const style = this.styles.get(id)
+    if (style) {
+      style.name = newName
+      this.editor.signals.updatedProperties.dispatch()
     }
   }
 

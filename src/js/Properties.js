@@ -5,12 +5,14 @@ const propertiesPanel = document.getElementById('properties-panel')
 
 function Properties(editor) {
   const signals = editor.signals
-  let activeTab = 'transform' // 'transform' | 'style' | 'settings'
+  let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles'
+  const dimStylesExpanded = new Set()
 
   // Side Icon Navigation
   const transformTabBtn = document.getElementById('tab-transform')
   const styleTabBtn = document.getElementById('tab-style')
   const settingsTabBtn = document.getElementById('tab-settings')
+  const dimStylesTabBtn = document.getElementById('tab-dimstyles')
 
   if (transformTabBtn && styleTabBtn) {
     transformTabBtn.addEventListener('click', () => {
@@ -34,13 +36,22 @@ function Properties(editor) {
     })
   }
 
+  if (dimStylesTabBtn) {
+    dimStylesTabBtn.addEventListener('click', () => {
+      activeTab = 'dimstyles'
+      updateTabUI()
+      render()
+    })
+  }
+
   function updateTabUI() {
-    ;[transformTabBtn, styleTabBtn, settingsTabBtn].forEach(btn => {
+    ;[transformTabBtn, styleTabBtn, settingsTabBtn, dimStylesTabBtn].forEach(btn => {
       if (btn) btn.classList.remove('active')
     })
     if (activeTab === 'transform' && transformTabBtn) transformTabBtn.classList.add('active')
     else if (activeTab === 'style' && styleTabBtn) styleTabBtn.classList.add('active')
     else if (activeTab === 'settings' && settingsTabBtn) settingsTabBtn.classList.add('active')
+    else if (activeTab === 'dimstyles' && dimStylesTabBtn) dimStylesTabBtn.classList.add('active')
   }
 
   // Show/hide the Settings tab icon based on editor mode
@@ -78,6 +89,15 @@ function Properties(editor) {
 
   function render() {
     propertiesPanel.innerHTML = ''
+
+    // ── DIMENSION STYLES TAB (available in all modes, independent of selection) ──
+    if (activeTab === 'dimstyles') {
+      const content = document.createElement('div')
+      content.className = 'properties-content'
+      propertiesPanel.appendChild(content)
+      renderDimStylesTab(content)
+      return
+    }
 
     // ── PAPER MODE ──────────────────────────────────────────────────────────
     if (editor.mode === 'paper') {
@@ -154,6 +174,250 @@ function Properties(editor) {
         renderStyleTab(content, element, node)
       }
     }
+  }
+
+  // ── DIMENSION STYLES TAB ────────────────────────────────────────────────────
+
+  function createDimColorRow(container, label, value, onChange) {
+    const isInherit = value === 'inherit'
+    const row = document.createElement('div')
+    row.className = 'property-row'
+
+    const labelEl = document.createElement('label')
+    labelEl.textContent = label
+    labelEl.className = 'property-label'
+
+    const controls = document.createElement('div')
+    controls.style.cssText = 'display:flex;align-items:center;flex:1;gap:3px;min-width:0;'
+
+    const toggleBtn = document.createElement('button')
+    toggleBtn.textContent = isInherit ? 'C' : 'O'
+    toggleBtn.title = isInherit ? 'Inheriting from collection — click to set fixed color' : 'Override — click to inherit from collection'
+    toggleBtn.style.cssText = 'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' + (isInherit ? 'var(--accent-color)' : '#555')
+
+    const colorBox = document.createElement('div')
+    colorBox.className = 'property-input'
+    colorBox.style.cssText = 'height:20px;width:32px;padding:0;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
+
+    function syncBox(inherit, color) {
+      if (inherit) {
+        colorBox.style.background = 'repeating-linear-gradient(45deg,#444 0px,#444 4px,#222 4px,#222 8px)'
+        colorBox.style.opacity = '0.4'
+        colorBox.style.cursor = 'default'
+        colorBox.style.pointerEvents = 'none'
+      } else {
+        colorBox.style.background = color || '#ffffff'
+        colorBox.style.opacity = '1'
+        colorBox.style.cursor = 'pointer'
+        colorBox.style.pointerEvents = 'auto'
+      }
+    }
+    syncBox(isInherit, value)
+
+    let currentColor = isInherit ? '#ffffff' : (value || '#ffffff')
+
+    colorBox.addEventListener('click', () => {
+      openColorPicker(currentColor, (newColor) => {
+        currentColor = newColor
+        syncBox(false, newColor)
+        onChange(newColor)
+      })
+    })
+
+    toggleBtn.addEventListener('click', () => {
+      const nowInherit = toggleBtn.textContent !== 'C'
+      if (nowInherit) {
+        toggleBtn.textContent = 'C'
+        toggleBtn.title = 'Inheriting from collection — click to set fixed color'
+        toggleBtn.style.background = 'var(--accent-color)'
+        syncBox(true, null)
+        onChange('inherit')
+      } else {
+        toggleBtn.textContent = 'O'
+        toggleBtn.title = 'Override — click to inherit from collection'
+        toggleBtn.style.background = '#555'
+        syncBox(false, currentColor)
+        onChange(currentColor)
+      }
+    })
+
+    controls.appendChild(toggleBtn)
+    controls.appendChild(colorBox)
+    row.appendChild(labelEl)
+    row.appendChild(controls)
+    container.appendChild(row)
+  }
+
+  function renderDimStylesTab(container) {
+    const dm = editor.dimensionManager
+
+    // Active style picker
+    const activeRow = document.createElement('div')
+    activeRow.className = 'property-row'
+    activeRow.style.marginBottom = '4px'
+    const activeLabel = document.createElement('label')
+    activeLabel.className = 'property-label'
+    activeLabel.textContent = 'Active Style'
+    const activeSelect = document.createElement('select')
+    activeSelect.className = 'property-input'
+    activeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    dm.styles.forEach((styleObj, sId) => {
+      const opt = document.createElement('option')
+      opt.value = sId
+      opt.textContent = styleObj.name
+      if (sId === dm.activeStyleId) opt.selected = true
+      activeSelect.appendChild(opt)
+    })
+    activeSelect.addEventListener('change', (e) => {
+      dm.setActiveStyle(e.target.value)
+    })
+    activeRow.appendChild(activeLabel)
+    activeRow.appendChild(activeSelect)
+    container.appendChild(activeRow)
+
+    // Per-style accordions
+    dm.styles.forEach((styleObj, sId) => {
+      const props = styleObj.properties
+      const isExpanded = dimStylesExpanded.has(sId)
+
+      // Accordion wrapper
+      const accordion = document.createElement('div')
+      accordion.style.cssText = 'border-top:1px solid #2a2a2a;margin-top:2px;'
+
+      // Header row
+      const accordionHeader = document.createElement('div')
+      accordionHeader.style.cssText = 'display:flex;align-items:center;gap:4px;padding:5px 4px 5px 2px;cursor:pointer;user-select:none;'
+
+      const collapseIcon = document.createElement('span')
+      collapseIcon.className = 'icon icon-collapse' + (isExpanded ? ' on' : '')
+      collapseIcon.style.cssText = 'flex-shrink:0;transition:transform 0.15s;' + (isExpanded ? '' : 'transform:rotate(-90deg);')
+
+      const styleTitle = document.createElement('span')
+      styleTitle.style.cssText = 'font-size:11px;text-transform:uppercase;opacity:0.8;flex:1;font-weight:bold;'
+      styleTitle.textContent = styleObj.name
+
+      const renameBtn = document.createElement('button')
+      renameBtn.title = 'Rename'
+      renameBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.6;'
+      renameBtn.addEventListener('mouseenter', () => { renameBtn.style.opacity = '1' })
+      renameBtn.addEventListener('mouseleave', () => { renameBtn.style.opacity = '0.6' })
+      const renameIcon = document.createElement('span')
+      renameIcon.className = 'icon icon-rename'
+      renameBtn.appendChild(renameIcon)
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const newName = prompt('Rename style:', styleObj.name)
+        if (newName && newName.trim()) dm.renameStyle(sId, newName.trim())
+      })
+
+      accordionHeader.appendChild(collapseIcon)
+      accordionHeader.appendChild(styleTitle)
+      accordionHeader.appendChild(renameBtn)
+
+      if (sId !== 'Standard') {
+        const deleteBtn = document.createElement('button')
+        deleteBtn.title = 'Delete style'
+        deleteBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.5;'
+        deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.opacity = '1' })
+        deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.opacity = '0.5' })
+        const deleteIcon = document.createElement('span')
+        deleteIcon.className = 'icon icon-trash'
+        deleteBtn.appendChild(deleteIcon)
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (confirm(`Delete style "${styleObj.name}"?`)) dm.deleteStyle(sId)
+        })
+        accordionHeader.appendChild(deleteBtn)
+      }
+
+      // Body (property fields)
+      const accordionBody = document.createElement('div')
+      accordionBody.style.display = isExpanded ? 'block' : 'none'
+      accordionBody.style.paddingBottom = '6px'
+
+      accordionHeader.addEventListener('click', () => {
+        const open = accordionBody.style.display === 'none'
+        accordionBody.style.display = open ? 'block' : 'none'
+        collapseIcon.style.transform = open ? '' : 'rotate(-90deg)'
+        if (open) dimStylesExpanded.add(sId)
+        else dimStylesExpanded.delete(sId)
+      })
+
+      createPropertyField(accordionBody, 'Font Family', props.fontFamily, (val) => {
+        if (val.trim()) dm.updateStyle(sId, { fontFamily: val.trim() })
+      })
+      createPropertyField(accordionBody, 'Font Size', props.fontSize, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num) && num > 0) dm.updateStyle(sId, { fontSize: num })
+      })
+      // Marker type dropdown
+      const markerRow = document.createElement('div')
+      markerRow.className = 'property-row'
+      const markerLabel = document.createElement('label')
+      markerLabel.className = 'property-label'
+      markerLabel.textContent = 'Marker'
+      const markerSelect = document.createElement('select')
+      markerSelect.className = 'property-input'
+      markerSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      ;['arrow', 'tick', 'bullet'].forEach(type => {
+        const opt = document.createElement('option')
+        opt.value = type
+        opt.textContent = type.charAt(0).toUpperCase() + type.slice(1)
+        if (type === (props.markerType || 'arrow')) opt.selected = true
+        markerSelect.appendChild(opt)
+      })
+      markerSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { markerType: e.target.value })
+      })
+      markerRow.appendChild(markerLabel)
+      markerRow.appendChild(markerSelect)
+      accordionBody.appendChild(markerRow)
+
+      createPropertyField(accordionBody, 'Marker Size', props.markerSize ?? 0.15, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num) && num >= 0) dm.updateStyle(sId, { markerSize: num })
+      })
+      createPropertyField(accordionBody, 'Text Offset', props.textOffset, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num)) dm.updateStyle(sId, { textOffset: num })
+      })
+      createPropertyField(accordionBody, 'Ext Line Offset', props.extensionLineOffset, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num)) dm.updateStyle(sId, { extensionLineOffset: num })
+      })
+      createPropertyField(accordionBody, 'Ext Line Extend', props.extensionLineExtend, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num)) dm.updateStyle(sId, { extensionLineExtend: num })
+      })
+      createPropertyField(accordionBody, 'Line Width', props.lineWidth, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num) && num > 0) dm.updateStyle(sId, { lineWidth: num })
+      })
+      createDimColorRow(accordionBody, 'Text Color', props.textColor, (color) => {
+        dm.updateStyle(sId, { textColor: color })
+      })
+      createDimColorRow(accordionBody, 'Line Color', props.lineColor, (color) => {
+        dm.updateStyle(sId, { lineColor: color })
+      })
+
+      accordion.appendChild(accordionHeader)
+      accordion.appendChild(accordionBody)
+      container.appendChild(accordion)
+    })
+
+    // New style button
+    const newBtn = document.createElement('button')
+    newBtn.textContent = '+ New Style'
+    newBtn.style.cssText = 'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
+    newBtn.addEventListener('click', () => {
+      const name = prompt('New style name:')
+      if (name && name.trim()) {
+        const trimmed = name.trim()
+        dm.createStyle(trimmed.replace(/\s+/g, '_'), trimmed, {})
+        safeDispatch('updatedProperties')
+      }
+    })
+    container.appendChild(newBtn)
   }
 
   // ── PAPER SETTINGS TAB ──────────────────────────────────────────────────────
@@ -520,6 +784,7 @@ function Properties(editor) {
       select.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
 
       editor.collections.forEach((data, colId) => {
+        if (colId === 'paper-annotations') return
         const option = document.createElement('option')
         option.value = colId
         option.textContent = data.group.attr('name') || 'Collection'
@@ -665,105 +930,6 @@ function Properties(editor) {
       createPropertyField(container, 'Height', bbox.height.toFixed(2), null, true)
     }
 
-    // DIMENSION PROPERTIES
-    if (node.nodeName === 'g' && element.attr('data-element-type') === 'dimension') {
-      const dimDataRaw = element.attr('data-dim-data')
-      if (dimDataRaw) {
-        try {
-          const dimData = JSON.parse(dimDataRaw)
-          const styleId = dimData.styleId || 'Standard'
-          
-          const dimHeader = document.createElement('div')
-          dimHeader.style.cssText = 'font-weight:bold;padding:12px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;border-top:1px solid #333;margin-top:8px;'
-          dimHeader.textContent = 'Dimension Style'
-          container.appendChild(dimHeader)
-
-          // 1. Style Dropdown
-          const styleRow = document.createElement('div')
-          styleRow.className = 'property-row'
-          
-          const styleLabel = document.createElement('label')
-          styleLabel.textContent = 'Style'
-          styleLabel.className = 'property-label'
-          
-          const styleSelect = document.createElement('select')
-          styleSelect.className = 'property-input'
-          styleSelect.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
-          
-          editor.dimensionManager.styles.forEach((styleObj, sId) => {
-            const opt = document.createElement('option')
-            opt.value = sId
-            opt.textContent = styleObj.name
-            if (sId === styleId) opt.selected = true
-            styleSelect.appendChild(opt)
-          })
-          
-          styleSelect.addEventListener('change', (e) => {
-            const newStyleId = e.target.value
-            dimData.styleId = newStyleId
-            element.attr('data-dim-data', JSON.stringify(dimData))
-            editor.signals.refreshDimensions.dispatch({ element: element, data: dimData })
-            safeDispatch('updatedProperties')
-          })
-          
-          styleRow.appendChild(styleLabel)
-          styleRow.appendChild(styleSelect)
-          container.appendChild(styleRow)
-
-          // 2. Style Properties Details (edits the global style!)
-          const activeStyle = editor.dimensionManager.styles.get(styleId)
-          if (activeStyle) {
-            const props = activeStyle.properties
-
-            createPropertyField(container, 'Font Size', props.fontSize, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num) && num > 0) {
-                editor.dimensionManager.updateStyle(styleId, { fontSize: num })
-              }
-            })
-
-            createPropertyField(container, 'Arrow Size', props.arrowSize, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num) && num >= 0) {
-                editor.dimensionManager.updateStyle(styleId, { arrowSize: num })
-              }
-            })
-
-            createPropertyField(container, 'Tick Size (0=Arrows)', props.tickSize, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num) && num >= 0) {
-                editor.dimensionManager.updateStyle(styleId, { tickSize: num })
-              }
-            })
-
-            createPropertyField(container, 'Text Offset', props.textOffset, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num)) {
-                editor.dimensionManager.updateStyle(styleId, { textOffset: num })
-              }
-            })
-
-            createPropertyField(container, 'Ext Line Offset', props.extensionLineOffset, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num)) {
-                editor.dimensionManager.updateStyle(styleId, { extensionLineOffset: num })
-              }
-            })
-
-            createPropertyField(container, 'Ext Line Extend', props.extensionLineExtend, (val) => {
-              const num = parseFloat(val)
-              if (!isNaN(num)) {
-                editor.dimensionManager.updateStyle(styleId, { extensionLineExtend: num })
-              }
-            })
-          }
-
-        } catch (e) {
-          console.warn('Failed to parse dimension data', e)
-        }
-      }
-    }
-
     // Universal Rotation Field
     if (element.transform) {
       const currentRotation = element.transform().rotate || 0
@@ -791,8 +957,60 @@ function Properties(editor) {
     }
   }
 
+  function renderDimStylePicker(container, element) {
+    const dimDataRaw = element.attr('data-dim-data')
+    if (!dimDataRaw) return
+    try {
+      const dimData = JSON.parse(dimDataRaw)
+      const styleId = dimData.styleId || 'Standard'
+
+      const header = document.createElement('div')
+      header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+      header.textContent = 'Dimension Style'
+      container.appendChild(header)
+
+      const styleRow = document.createElement('div')
+      styleRow.className = 'property-row'
+
+      const styleLabel = document.createElement('label')
+      styleLabel.textContent = 'Style'
+      styleLabel.className = 'property-label'
+
+      const styleSelect = document.createElement('select')
+      styleSelect.className = 'property-input'
+      styleSelect.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+
+      editor.dimensionManager.styles.forEach((styleObj, sId) => {
+        const opt = document.createElement('option')
+        opt.value = sId
+        opt.textContent = styleObj.name
+        if (sId === styleId) opt.selected = true
+        styleSelect.appendChild(opt)
+      })
+
+      styleSelect.addEventListener('change', (e) => {
+        const newStyleId = e.target.value
+        dimData.styleId = newStyleId
+        element.attr('data-dim-data', JSON.stringify(dimData))
+        editor.signals.refreshDimensions.dispatch({ element: element, data: dimData })
+        safeDispatch('updatedProperties')
+      })
+
+      styleRow.appendChild(styleLabel)
+      styleRow.appendChild(styleSelect)
+      container.appendChild(styleRow)
+    } catch (e) {
+      console.warn('Failed to parse dimension data', e)
+    }
+  }
+
   function renderStyleTab(container, element, node) {
     const computedStyle = window.getComputedStyle(node)
+
+    // If this is a dimension element, show the style picker first
+    if (node.nodeName === 'g' && element.attr('data-element-type') === 'dimension') {
+      renderDimStylePicker(container, element)
+    }
 
     // Check if element is inside a collection
     let collectionAncestor = element.parent ? element.parent() : null

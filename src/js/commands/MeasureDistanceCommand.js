@@ -61,12 +61,38 @@ class MeasureDistanceCommand extends Command {
         this.ghostLine = this.ghostGroup
             .line(point.x, point.y, point.x, point.y)
             .addClass('measure-ghost')
+        this.ghostText = this.ghostGroup
+            .text('')
+            .addClass('measure-text')
+            .attr('font-family', "'Fira Mono', 'JetBrains Mono', 'Cascadia Code', monospace")
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .fill('#cccccc')
 
-        // Live update ghost line on mouse move
+        // Live update ghost line and distance label on mouse move
         this.boundOnMouseMove = (e) => {
             const coords = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
             if (this.ghostLine) {
                 this.ghostLine.plot(this.firstPoint.x, this.firstPoint.y, coords.x, coords.y)
+            }
+            if (this.ghostText) {
+                const zoom = this.editor.svg.zoom() || 1
+                const dx = coords.x - this.firstPoint.x
+                const dy = coords.y - this.firstPoint.y
+                const dist = Math.hypot(dx, dy)
+                const angle = Math.atan2(dy, dx)
+                let angleDeg = angle * (180 / Math.PI)
+                if (angleDeg > 90) angleDeg -= 180
+                if (angleDeg < -90) angleDeg += 180
+                const midX = this.firstPoint.x + dx / 2
+                const midY = this.firstPoint.y + dy / 2
+                const offsetDist = 10 / zoom
+                const ox = midX - Math.sin(angle) * offsetDist
+                const oy = midY + Math.cos(angle) * offsetDist
+                this.ghostText
+                    .text(dist.toFixed(4))
+                    .attr('font-size', 14 / zoom)
+                    .attr('transform', `translate(${ox}, ${oy}) rotate(${angleDeg})`)
             }
         }
         this.editor.svg.on('mousemove', this.boundOnMouseMove)
@@ -139,15 +165,26 @@ class MeasureDistanceCommand extends Command {
         this.drawCross(this.measureGroup, p1, crossSize, strokeWidth)
         this.drawCross(this.measureGroup, p2, crossSize, strokeWidth)
 
-        // Text label at midpoint
+        // Text label at midpoint, offset perpendicularly and rotated to match line angle
         const midX = (p1.x + p2.x) / 2
         const midY = (p1.y + p2.y) / 2
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x)
+        let angleDeg = angle * (180 / Math.PI)
+        if (angleDeg > 90) angleDeg -= 180
+        if (angleDeg < -90) angleDeg += 180
+        const offsetDist = 10 / zoom
+        const offsetX = midX - Math.sin(angle) * offsetDist
+        const offsetY = midY + Math.cos(angle) * offsetDist
 
         this.measureGroup
             .text(distance.toFixed(4))
             .addClass('measure-text')
-            .font({ size: fontSize, anchor: 'middle' })
-            .center(midX, midY)
+            .attr('font-family', "'Fira Mono', 'JetBrains Mono', 'Cascadia Code', monospace")
+            .attr('font-size', fontSize)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .fill('#cccccc')
+            .attr('transform', `translate(${offsetX}, ${offsetY}) rotate(${angleDeg})`)
 
         // Register cleanup on next command or cancel
         this.boundOnClearMeasure = () => this.clearMeasurement()

@@ -29,6 +29,7 @@ main
 .screen
     background: var(--editor-border-color)
     flex: 1
+    min-height: 0
     display: flex
 .viewport
     display: flex
@@ -43,6 +44,7 @@ main
     // background: var(--editor-header-bg)
     width: 300px
     min-width: 300px
+    overflow: hidden
     display: flex
     flex-direction: column
 .sidepanel-resize
@@ -67,6 +69,7 @@ main
     cursor: row-resize
 .properties
     flex: 1
+    min-height: 0
     border-top: solid calc(var(--editor-border-width)/1.5) var(--editor-border-color)
     border-radius: 20px
     background: var(--editor-header-bg)
@@ -352,6 +355,7 @@ main
 
 .properties-container
     flex: 1
+    min-height: 0
     background: #303030
     display: flex
     border-radius: 0 0 20px 20px
@@ -372,15 +376,16 @@ main
         border-color: #303030
         opacity: 1
 
-.properties-panel-container 
+.properties-panel-container
     flex: 1
+    min-height: 0
+    overflow-y: auto
     background-color: #303030
 .properties-panel
     margin: 10px
     padding: 10px
     border-radius: 5px
     background-color: #3d3d3d
-    overflow: hidden
 
 .properties-content
     display: flex

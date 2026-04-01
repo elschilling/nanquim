@@ -1361,6 +1361,7 @@ function Viewport(editor) {
 
         // Only capture points for single-click operations here.
         // Rectangle selection captures its own points via draw plugin.
+        const hadPointListener = signals.pointCaptured.getNumListeners() > 0
         if (!editor.isSelecting) {
           if (editor.snapPoint) {
             signals.pointCaptured.dispatch(editor.snapPoint)
@@ -1369,12 +1370,12 @@ function Viewport(editor) {
           }
         }
 
-        if (hoveredElements.length > 1) {
+        if (hoveredElements.length > 1 && !editor.suppressHandlers && !hadPointListener) {
           showDisambiguationMenu(hoveredElements, e, 'interacting')
         } else if (hoveredElements.length === 1) {
           editor.lastClick = point
           signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
-        } else if (!editor.selectSingleElement) {
+        } else if (!editor.selectSingleElement && !hadPointListener) {
           handleRectSelection(e)
         }
         return

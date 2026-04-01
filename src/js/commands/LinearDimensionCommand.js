@@ -183,11 +183,12 @@ class LinearDimensionCommand extends Command {
         // By default, group children look up to collection.
         // We handle exact line weights and fonts in renderDimensionGraphics.
 
+        const resolvedStyle = LinearDimensionCommand.resolveColors(activeStyle, dimGroup, this.editor)
         LinearDimensionCommand.renderDimensionGraphics(
-            dimGroup, 
-            this.p1, this.p2, this.p3, 
-            activeStyle, 
-            1, // actual geometry uses scale 1
+            dimGroup,
+            this.p1, this.p2, this.p3,
+            resolvedStyle,
+            1,
             false
         )
 
@@ -321,45 +322,51 @@ class LinearDimensionCommand extends Command {
         setup(group.line(ex2Start.x, ex2Start.y, ex2End.x, ex2End.y).addClass('dim-ext-line'))
         setup(group.line(dimStart.x, dimStart.y, dimEnd.x, dimEnd.y).addClass('dim-main-line'))
 
-        // Draw arrowheads / ticks
-        if (props.tickSize > 0) {
-            const tick = props.tickSize
+        // Draw end markers
+        const markerType = props.markerType || 'arrow'
+        const markerSize = props.markerSize ?? props.arrowSize ?? 0.15
+
+        if (markerType === 'tick') {
+            const tick = markerSize
             setup(group.line(dimStart.x - tick, dimStart.y + tick, dimStart.x + tick, dimStart.y - tick).addClass('dim-tick'))
             setup(group.line(dimEnd.x - tick, dimEnd.y + tick, dimEnd.x + tick, dimEnd.y - tick).addClass('dim-tick'))
-        } else if (props.arrowSize > 0) {
+        } else if (markerType === 'bullet') {
+            const r = markerSize / 2
+            const b1 = group.circle(r * 2).center(dimStart.x, dimStart.y).addClass('dim-bullet')
+            const b2 = group.circle(r * 2).center(dimEnd.x, dimEnd.y).addClass('dim-bullet')
+            setup(b1); b1.attr('fill', lColor).css('fill', lColor)
+            setup(b2); b2.attr('fill', lColor).css('fill', lColor)
+        } else if (markerSize > 0) {
             const buildArrow = (pt, isStart) => {
                 const factor = isStart ? 1 : -1
                 let p1x, p1y, p2x, p2y, p3x, p3y
-                
+
                 if (isAligned) {
                     const ux = dx / p1p2Dist
                     const uy = dy / p1p2Dist
                     const nx = -uy
                     const ny = ux
-                    
                     p1x = pt.x
                     p1y = pt.y
-                    p2x = pt.x + (props.arrowSize * factor * ux) + (props.arrowSize * 0.3 * nx)
-                    p2y = pt.y + (props.arrowSize * factor * uy) + (props.arrowSize * 0.3 * ny)
-                    p3x = pt.x + (props.arrowSize * factor * ux) - (props.arrowSize * 0.3 * nx)
-                    p3y = pt.y + (props.arrowSize * factor * uy) - (props.arrowSize * 0.3 * ny)
+                    p2x = pt.x + (markerSize * factor * ux) + (markerSize * 0.3 * nx)
+                    p2y = pt.y + (markerSize * factor * uy) + (markerSize * 0.3 * ny)
+                    p3x = pt.x + (markerSize * factor * ux) - (markerSize * 0.3 * nx)
+                    p3y = pt.y + (markerSize * factor * uy) - (markerSize * 0.3 * ny)
                 } else if (isHorizontalDir) {
                     p1x = pt.x; p1y = pt.y
-                    p2x = pt.x + (props.arrowSize * factor); p2y = pt.y + (props.arrowSize * 0.3)
-                    p3x = pt.x + (props.arrowSize * factor); p3y = pt.y - (props.arrowSize * 0.3)
+                    p2x = pt.x + (markerSize * factor); p2y = pt.y + (markerSize * 0.3)
+                    p3x = pt.x + (markerSize * factor); p3y = pt.y - (markerSize * 0.3)
                 } else {
                     p1x = pt.x; p1y = pt.y
-                    p2x = pt.x + (props.arrowSize * 0.3); p2y = pt.y + (props.arrowSize * factor)
-                    p3x = pt.x - (props.arrowSize * 0.3); p3y = pt.y + (props.arrowSize * factor)
+                    p2x = pt.x + (markerSize * 0.3); p2y = pt.y + (markerSize * factor)
+                    p3x = pt.x - (markerSize * 0.3); p3y = pt.y + (markerSize * factor)
                 }
-                const pathStr = `M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y} Z`
-                const ap = group.path(pathStr).addClass('dim-arrow')
+                const ap = group.path(`M ${p1x} ${p1y} L ${p2x} ${p2y} L ${p3x} ${p3y} Z`).addClass('dim-arrow')
                 setup(ap)
                 ap.attr('fill', lColor).css('fill', lColor)
             }
             const signX = Math.sign(dimEnd.x - dimStart.x) || 1
             const signY = Math.sign(dimEnd.y - dimStart.y) || 1
-            
             if (isAligned) {
                 buildArrow(dimStart, true)
                 buildArrow(dimEnd, false)
@@ -430,31 +437,50 @@ class LinearDimensionCommand extends Command {
         setElementOverrides(t, { fill: true, stroke: true })
     }
 
+    static getCollectionStrokeColor(element, editor) {
+        let ancestor = element.parent ? element.parent() : null
+        while (ancestor && ancestor.node && ancestor.node.nodeName !== 'svg') {
+            if (ancestor.attr && ancestor.attr('data-collection') === 'true') {
+                const colData = editor.collections.get(ancestor.attr('id'))
+                if (colData) return colData.style.stroke || '#ffffff'
+            }
+            ancestor = ancestor.parent ? ancestor.parent() : null
+        }
+        return '#ffffff'
+    }
+
+    static resolveColors(style, element, editor) {
+        const { lineColor, textColor } = style.properties
+        if (lineColor !== 'inherit' && textColor !== 'inherit') return style
+        const collectionColor = LinearDimensionCommand.getCollectionStrokeColor(element, editor)
+        const resolved = JSON.parse(JSON.stringify(style))
+        if (resolved.properties.lineColor === 'inherit') resolved.properties.lineColor = collectionColor
+        if (resolved.properties.textColor === 'inherit') resolved.properties.textColor = collectionColor
+        return resolved
+    }
+
     static registerRedrawListener(editor) {
         editor.signals.refreshDimensions.add(({ element, data }) => {
             const style = editor.dimensionManager.getStyle(data.styleId)
             const oldId = element.attr('id')
             const oldName = element.attr('name')
             const oldCollection = element.attr('data-collection')
-            
-            // Re-apply instance-specific textPosition if it exists
+
             const mergedStyle = JSON.parse(JSON.stringify(style))
             if (data.textPosition) {
                 mergedStyle.textPosition = data.textPosition
             }
 
-            // clear inline styles so they don't block new style redraw overrides if user had toggled them
-            // Actually it's simpler: renderDimensionGraphics just clears the group and redraws everything inside it
+            const resolvedStyle = LinearDimensionCommand.resolveColors(mergedStyle, element, editor)
             LinearDimensionCommand.renderDimensionGraphics(
                 element,
                 data.p1, data.p2, data.p3,
-                mergedStyle,
+                resolvedStyle,
                 1,
                 false,
                 data.dimType || 'linear'
             )
-            
-            // Reapply collection styling for any "inherit" properties
+
             applyCollectionStyleToElement(editor, element)
         })
     }
