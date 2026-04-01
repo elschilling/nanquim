@@ -97,6 +97,9 @@ function Navbar(editor) {
     // Serialize Dimension Styles
     const dimStylesStr = JSON.stringify(editor.dimensionManager.toJSON()).replace(/"/g, '&quot;')
 
+    // Serialize Text Styles
+    const textStylesStr = JSON.stringify(editor.textStyleManager.toJSON()).replace(/"/g, '&quot;')
+
     const svgString = [
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs"`,
@@ -106,6 +109,7 @@ function Navbar(editor) {
       `  data-paper-config="${paperConfigStr}"`,
       `  data-paper-viewports="${viewportsStr}"`,
       `  data-dim-styles="${dimStylesStr}"`,
+      `  data-text-styles="${textStylesStr}"`,
       convertStrokes ? `  data-nanquim-converted-strokes="true">` : `>`,
       drawingContent,
       `</svg>`,

@@ -3,6 +3,7 @@ import { DXFLoader } from './utils/DXFloader'
 import { initCollections } from './Collection'
 import { SpatialIndex } from './SpatialIndex'
 import { DimensionManager } from './DimensionManager'
+import { TextStyleManager } from './TextStyleManager'
 
 function Editor() {
   const Signal = signals.Signal
@@ -118,6 +119,9 @@ function Editor() {
 
   // Initialize Dimension Manager for styles
   this.dimensionManager = new DimensionManager(this)
+
+  // Initialize Text Style Manager
+  this.textStyleManager = new TextStyleManager(this)
 
   // Spatial index for fast hit-testing (R-tree) — selectable elements only
   this.spatialIndex = new SpatialIndex()

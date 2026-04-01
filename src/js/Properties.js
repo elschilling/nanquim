@@ -5,14 +5,16 @@ const propertiesPanel = document.getElementById('properties-panel')
 
 function Properties(editor) {
   const signals = editor.signals
-  let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles'
+  let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles' | 'textstyles'
   const dimStylesExpanded = new Set()
+  const textStylesExpanded = new Set()
 
   // Side Icon Navigation
   const transformTabBtn = document.getElementById('tab-transform')
   const styleTabBtn = document.getElementById('tab-style')
   const settingsTabBtn = document.getElementById('tab-settings')
   const dimStylesTabBtn = document.getElementById('tab-dimstyles')
+  const textStylesTabBtn = document.getElementById('tab-textstyles')
 
   if (transformTabBtn && styleTabBtn) {
     transformTabBtn.addEventListener('click', () => {
@@ -44,14 +46,23 @@ function Properties(editor) {
     })
   }
 
+  if (textStylesTabBtn) {
+    textStylesTabBtn.addEventListener('click', () => {
+      activeTab = 'textstyles'
+      updateTabUI()
+      render()
+    })
+  }
+
   function updateTabUI() {
-    ;[transformTabBtn, styleTabBtn, settingsTabBtn, dimStylesTabBtn].forEach(btn => {
+    ;[transformTabBtn, styleTabBtn, settingsTabBtn, dimStylesTabBtn, textStylesTabBtn].forEach((btn) => {
       if (btn) btn.classList.remove('active')
     })
     if (activeTab === 'transform' && transformTabBtn) transformTabBtn.classList.add('active')
     else if (activeTab === 'style' && styleTabBtn) styleTabBtn.classList.add('active')
     else if (activeTab === 'settings' && settingsTabBtn) settingsTabBtn.classList.add('active')
     else if (activeTab === 'dimstyles' && dimStylesTabBtn) dimStylesTabBtn.classList.add('active')
+    else if (activeTab === 'textstyles' && textStylesTabBtn) textStylesTabBtn.classList.add('active')
   }
 
   // Show/hide the Settings tab icon based on editor mode
@@ -96,6 +107,15 @@ function Properties(editor) {
       content.className = 'properties-content'
       propertiesPanel.appendChild(content)
       renderDimStylesTab(content)
+      return
+    }
+
+    // ── TEXT STYLES TAB ──
+    if (activeTab === 'textstyles') {
+      const content = document.createElement('div')
+      content.className = 'properties-content'
+      propertiesPanel.appendChild(content)
+      renderTextStylesTab(content)
       return
     }
 
@@ -193,7 +213,9 @@ function Properties(editor) {
     const toggleBtn = document.createElement('button')
     toggleBtn.textContent = isInherit ? 'C' : 'O'
     toggleBtn.title = isInherit ? 'Inheriting from collection — click to set fixed color' : 'Override — click to inherit from collection'
-    toggleBtn.style.cssText = 'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' + (isInherit ? 'var(--accent-color)' : '#555')
+    toggleBtn.style.cssText =
+      'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' +
+      (isInherit ? 'var(--accent-color)' : '#555')
 
     const colorBox = document.createElement('div')
     colorBox.className = 'property-input'
@@ -214,14 +236,14 @@ function Properties(editor) {
     }
     syncBox(isInherit, value)
 
-    let currentColor = isInherit ? '#ffffff' : (value || '#ffffff')
+    let currentColor = isInherit ? '#ffffff' : value || '#ffffff'
 
     colorBox.addEventListener('click', () => {
-      openColorPicker(currentColor, (newColor) => {
-        currentColor = newColor
-        syncBox(false, newColor)
-        onChange(newColor)
-      })
+      openColorPicker(
+        currentColor,
+        (newColor) => { currentColor = newColor; syncBox(false, newColor); onChange(newColor) },
+        (newColor) => { currentColor = newColor; syncBox(false, newColor) },
+      )
     })
 
     toggleBtn.addEventListener('click', () => {
@@ -299,8 +321,12 @@ function Properties(editor) {
       const renameBtn = document.createElement('button')
       renameBtn.title = 'Rename'
       renameBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.6;'
-      renameBtn.addEventListener('mouseenter', () => { renameBtn.style.opacity = '1' })
-      renameBtn.addEventListener('mouseleave', () => { renameBtn.style.opacity = '0.6' })
+      renameBtn.addEventListener('mouseenter', () => {
+        renameBtn.style.opacity = '1'
+      })
+      renameBtn.addEventListener('mouseleave', () => {
+        renameBtn.style.opacity = '0.6'
+      })
       const renameIcon = document.createElement('span')
       renameIcon.className = 'icon icon-rename'
       renameBtn.appendChild(renameIcon)
@@ -318,8 +344,12 @@ function Properties(editor) {
         const deleteBtn = document.createElement('button')
         deleteBtn.title = 'Delete style'
         deleteBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.5;'
-        deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.opacity = '1' })
-        deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.opacity = '0.5' })
+        deleteBtn.addEventListener('mouseenter', () => {
+          deleteBtn.style.opacity = '1'
+        })
+        deleteBtn.addEventListener('mouseleave', () => {
+          deleteBtn.style.opacity = '0.5'
+        })
         const deleteIcon = document.createElement('span')
         deleteIcon.className = 'icon icon-trash'
         deleteBtn.appendChild(deleteIcon)
@@ -332,24 +362,38 @@ function Properties(editor) {
 
       // Body (property fields)
       const accordionBody = document.createElement('div')
-      accordionBody.style.display = isExpanded ? 'block' : 'none'
-      accordionBody.style.paddingBottom = '6px'
+      accordionBody.className = 'dim-style-body'
+      accordionBody.style.display = isExpanded ? 'flex' : 'none'
 
       accordionHeader.addEventListener('click', () => {
         const open = accordionBody.style.display === 'none'
-        accordionBody.style.display = open ? 'block' : 'none'
+        accordionBody.style.display = open ? 'flex' : 'none'
         collapseIcon.style.transform = open ? '' : 'rotate(-90deg)'
         if (open) dimStylesExpanded.add(sId)
         else dimStylesExpanded.delete(sId)
       })
 
-      createPropertyField(accordionBody, 'Font Family', props.fontFamily, (val) => {
-        if (val.trim()) dm.updateStyle(sId, { fontFamily: val.trim() })
+      const tsRow = document.createElement('div')
+      tsRow.className = 'property-row'
+      const tsLabel = document.createElement('label')
+      tsLabel.className = 'property-label'
+      tsLabel.textContent = 'Text Style'
+      const tsSelect = document.createElement('select')
+      tsSelect.className = 'property-input'
+      tsSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      editor.textStyleManager.styles.forEach((tsObj, tsId) => {
+        const opt = document.createElement('option')
+        opt.value = tsId
+        opt.textContent = tsObj.name
+        if (tsId === (props.textStyleId || 'Standard')) opt.selected = true
+        tsSelect.appendChild(opt)
       })
-      createPropertyField(accordionBody, 'Font Size', props.fontSize, (val) => {
-        const num = parseFloat(val)
-        if (!isNaN(num) && num > 0) dm.updateStyle(sId, { fontSize: num })
+      tsSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { textStyleId: e.target.value })
       })
+      tsRow.appendChild(tsLabel)
+      tsRow.appendChild(tsSelect)
+      accordionBody.appendChild(tsRow)
       // Marker type dropdown
       const markerRow = document.createElement('div')
       markerRow.className = 'property-row'
@@ -358,8 +402,9 @@ function Properties(editor) {
       markerLabel.textContent = 'Marker'
       const markerSelect = document.createElement('select')
       markerSelect.className = 'property-input'
-      markerSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
-      ;['arrow', 'tick', 'bullet'].forEach(type => {
+      markerSelect.style.cssText =
+        'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      ;['arrow', 'tick', 'bullet'].forEach((type) => {
         const opt = document.createElement('option')
         opt.value = type
         opt.textContent = type.charAt(0).toUpperCase() + type.slice(1)
@@ -408,12 +453,310 @@ function Properties(editor) {
     // New style button
     const newBtn = document.createElement('button')
     newBtn.textContent = '+ New Style'
-    newBtn.style.cssText = 'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
+    newBtn.style.cssText =
+      'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
     newBtn.addEventListener('click', () => {
       const name = prompt('New style name:')
       if (name && name.trim()) {
         const trimmed = name.trim()
         dm.createStyle(trimmed.replace(/\s+/g, '_'), trimmed, {})
+        safeDispatch('updatedProperties')
+      }
+    })
+    container.appendChild(newBtn)
+  }
+
+  // ── TEXT STYLES TAB ─────────────────────────────────────────────────────────
+
+  function renderTextStylesTab(container) {
+    const tm = editor.textStyleManager
+    const CAD_FONTS = [
+      'Arial',
+      'Cascadia Code',
+      'Courier New',
+      'DM Sans',
+      'Fira Code',
+      'Fira Mono',
+      'Georgia',
+      'Helvetica',
+      'Inter',
+      'JetBrains Mono',
+      'Times New Roman',
+    ]
+    // Weights available per font (Google Fonts loaded weights + sensible system font subsets)
+    const FONT_WEIGHTS = {
+      'Inter':           [['400','Regular'],['500','Medium'],['600','Semi-bold']],
+      'DM Sans':         [['300','Light'],['400','Regular'],['700','Bold']],
+      'JetBrains Mono':  [['400','Regular'],['500','Medium']],
+      'Fira Code':       [['300','Light'],['400','Regular'],['500','Medium'],['600','Semi-bold'],['700','Bold']],
+      'Fira Mono':       [['400','Regular'],['500','Medium'],['700','Bold']],
+      'Cascadia Code':   [['200','Extra-light'],['300','Light'],['400','Regular'],['600','Semi-bold']],
+    }
+    const DEFAULT_WEIGHTS = [['400','Regular'],['700','Bold']]
+    const getWeights = (family) => FONT_WEIGHTS[family] || DEFAULT_WEIGHTS
+
+    function makeDropdownRow(parentEl, label, options, currentValue, onChange) {
+      const row = document.createElement('div')
+      row.className = 'property-row'
+      const lbl = document.createElement('label')
+      lbl.className = 'property-label'
+      lbl.textContent = label
+      const sel = document.createElement('select')
+      sel.className = 'property-input'
+      sel.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      options.forEach(([val, text]) => {
+        const opt = document.createElement('option')
+        opt.value = val
+        opt.textContent = text || val
+        if (val === currentValue) opt.selected = true
+        sel.appendChild(opt)
+      })
+      sel.addEventListener('change', (e) => onChange(e.target.value))
+      row.appendChild(lbl)
+      row.appendChild(sel)
+      parentEl.appendChild(row)
+    }
+
+    function makeColorRow(parentEl, label, currentValue, onChange) {
+      const row = document.createElement('div')
+      row.className = 'property-row'
+      const lbl = document.createElement('label')
+      lbl.className = 'property-label'
+      lbl.textContent = label
+      const colorBox = document.createElement('div')
+      colorBox.className = 'property-input'
+      colorBox.style.cssText = `height:20px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;background:${currentValue || '#ffffff'};`
+      colorBox.addEventListener('click', () => {
+        openColorPicker(
+          currentValue || '#ffffff',
+          (newColor) => { colorBox.style.background = newColor; onChange(newColor) },
+          (newColor) => { colorBox.style.background = newColor },
+        )
+      })
+      row.appendChild(lbl)
+      row.appendChild(colorBox)
+      parentEl.appendChild(row)
+    }
+
+    // Active style picker
+    const activeRow = document.createElement('div')
+    activeRow.className = 'property-row'
+    activeRow.style.marginBottom = '4px'
+    const activeLabel = document.createElement('label')
+    activeLabel.className = 'property-label'
+    activeLabel.textContent = 'Active Style'
+    const activeSelect = document.createElement('select')
+    activeSelect.className = 'property-input'
+    activeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    tm.styles.forEach((styleObj, sId) => {
+      const opt = document.createElement('option')
+      opt.value = sId
+      opt.textContent = styleObj.name
+      if (sId === tm.activeStyleId) opt.selected = true
+      activeSelect.appendChild(opt)
+    })
+    activeSelect.addEventListener('change', (e) => tm.setActiveStyle(e.target.value))
+    activeRow.appendChild(activeLabel)
+    activeRow.appendChild(activeSelect)
+    container.appendChild(activeRow)
+
+    // Per-style accordions
+    tm.styles.forEach((styleObj, sId) => {
+      const props = styleObj.properties
+      const isExpanded = textStylesExpanded.has(sId)
+
+      const accordion = document.createElement('div')
+      accordion.style.cssText = 'border-top:1px solid #2a2a2a;margin-top:2px;'
+
+      const accordionHeader = document.createElement('div')
+      accordionHeader.style.cssText = 'display:flex;align-items:center;gap:4px;padding:5px 4px 5px 2px;cursor:pointer;user-select:none;'
+
+      const collapseIcon = document.createElement('span')
+      collapseIcon.className = 'icon icon-collapse' + (isExpanded ? ' on' : '')
+      collapseIcon.style.cssText = 'flex-shrink:0;transition:transform 0.15s;' + (isExpanded ? '' : 'transform:rotate(-90deg);')
+
+      const styleTitle = document.createElement('span')
+      styleTitle.style.cssText = 'font-size:11px;text-transform:uppercase;opacity:0.8;flex:1;font-weight:bold;'
+      styleTitle.textContent = styleObj.name
+
+      const renameBtn = document.createElement('button')
+      renameBtn.title = 'Rename'
+      renameBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.6;'
+      renameBtn.addEventListener('mouseenter', () => {
+        renameBtn.style.opacity = '1'
+      })
+      renameBtn.addEventListener('mouseleave', () => {
+        renameBtn.style.opacity = '0.6'
+      })
+      const renameIcon = document.createElement('span')
+      renameIcon.className = 'icon icon-rename'
+      renameBtn.appendChild(renameIcon)
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const newName = prompt('Rename style:', styleObj.name)
+        if (newName && newName.trim()) tm.renameStyle(sId, newName.trim())
+      })
+
+      accordionHeader.appendChild(collapseIcon)
+      accordionHeader.appendChild(styleTitle)
+      accordionHeader.appendChild(renameBtn)
+
+      if (sId !== 'Standard') {
+        const deleteBtn = document.createElement('button')
+        deleteBtn.title = 'Delete style'
+        deleteBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.5;'
+        deleteBtn.addEventListener('mouseenter', () => {
+          deleteBtn.style.opacity = '1'
+        })
+        deleteBtn.addEventListener('mouseleave', () => {
+          deleteBtn.style.opacity = '0.5'
+        })
+        const deleteIcon = document.createElement('span')
+        deleteIcon.className = 'icon icon-trash'
+        deleteBtn.appendChild(deleteIcon)
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (confirm(`Delete style "${styleObj.name}"?`)) tm.deleteStyle(sId)
+        })
+        accordionHeader.appendChild(deleteBtn)
+      }
+
+      const accordionBody = document.createElement('div')
+      accordionBody.className = 'dim-style-body'
+      accordionBody.style.display = isExpanded ? 'flex' : 'none'
+
+      accordionHeader.addEventListener('click', () => {
+        const open = accordionBody.style.display === 'none'
+        accordionBody.style.display = open ? 'flex' : 'none'
+        collapseIcon.style.transform = open ? '' : 'rotate(-90deg)'
+        if (open) textStylesExpanded.add(sId)
+        else textStylesExpanded.delete(sId)
+      })
+
+      // Font Family row (linked to weight dropdown)
+      const familyRow = document.createElement('div')
+      familyRow.className = 'property-row'
+      const familyLabel = document.createElement('label')
+      familyLabel.className = 'property-label'
+      familyLabel.textContent = 'Font Family'
+      const familySelect = document.createElement('select')
+      familySelect.className = 'property-input'
+      familySelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      CAD_FONTS.forEach(f => {
+        const opt = document.createElement('option')
+        opt.value = f
+        opt.textContent = f
+        if (f === (props.fontFamily || 'Inter')) opt.selected = true
+        familySelect.appendChild(opt)
+      })
+      familyRow.appendChild(familyLabel)
+      familyRow.appendChild(familySelect)
+      accordionBody.appendChild(familyRow)
+
+      createPropertyField(accordionBody, 'Font Size', props.fontSize, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num) && num > 0) tm.updateStyle(sId, { fontSize: num })
+      })
+
+      // Font Weight row (options driven by selected family)
+      const weightRow = document.createElement('div')
+      weightRow.className = 'property-row'
+      const weightLabel = document.createElement('label')
+      weightLabel.className = 'property-label'
+      weightLabel.textContent = 'Font Weight'
+      const weightSelect = document.createElement('select')
+      weightSelect.className = 'property-input'
+      weightSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+
+      function populateWeights(family, currentWeight) {
+        weightSelect.innerHTML = ''
+        getWeights(family).forEach(([val, text]) => {
+          const opt = document.createElement('option')
+          opt.value = val
+          opt.textContent = text
+          if (val === currentWeight) opt.selected = true
+          weightSelect.appendChild(opt)
+        })
+        // If saved weight isn't in the list, default to first option
+        if (!weightSelect.value) weightSelect.selectedIndex = 0
+      }
+      populateWeights(props.fontFamily || 'Inter', props.fontWeight || '400')
+
+      familySelect.addEventListener('change', (e) => {
+        const newFamily = e.target.value
+        populateWeights(newFamily, weightSelect.value)
+        tm.updateStyle(sId, { fontFamily: newFamily, fontWeight: weightSelect.value })
+      })
+      weightSelect.addEventListener('change', (e) => tm.updateStyle(sId, { fontWeight: e.target.value }))
+
+      weightRow.appendChild(weightLabel)
+      weightRow.appendChild(weightSelect)
+      accordionBody.appendChild(weightRow)
+      makeDropdownRow(
+        accordionBody,
+        'Font Style',
+        [
+          ['normal', 'Normal'],
+          ['italic', 'Italic'],
+        ],
+        props.fontStyle || 'normal',
+        (val) => tm.updateStyle(sId, { fontStyle: val }),
+      )
+      makeDropdownRow(
+        accordionBody,
+        'Text Anchor',
+        [
+          ['start', 'Start'],
+          ['middle', 'Middle'],
+          ['end', 'End'],
+        ],
+        props.textAnchor || 'start',
+        (val) => tm.updateStyle(sId, { textAnchor: val }),
+      )
+      makeDropdownRow(
+        accordionBody,
+        'Baseline',
+        [
+          ['auto', 'Auto'],
+          ['middle', 'Middle'],
+          ['central', 'Central'],
+          ['hanging', 'Hanging'],
+        ],
+        props.dominantBaseline || 'auto',
+        (val) => tm.updateStyle(sId, { dominantBaseline: val }),
+      )
+      createPropertyField(accordionBody, 'Letter Spacing', props.letterSpacing ?? 0, (val) => {
+        const num = parseFloat(val)
+        if (!isNaN(num)) tm.updateStyle(sId, { letterSpacing: num })
+      })
+      makeDropdownRow(
+        accordionBody,
+        'Decoration',
+        [
+          ['none', 'None'],
+          ['underline', 'Underline'],
+          ['overline', 'Overline'],
+          ['line-through', 'Line-through'],
+        ],
+        props.textDecoration || 'none',
+        (val) => tm.updateStyle(sId, { textDecoration: val }),
+      )
+      makeColorRow(accordionBody, 'Fill', props.fill || '#ffffff', (color) => tm.updateStyle(sId, { fill: color }))
+
+      accordion.appendChild(accordionHeader)
+      accordion.appendChild(accordionBody)
+      container.appendChild(accordion)
+    })
+
+    const newBtn = document.createElement('button')
+    newBtn.textContent = '+ New Style'
+    newBtn.style.cssText =
+      'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
+    newBtn.addEventListener('click', () => {
+      const name = prompt('New style name:')
+      if (name && name.trim()) {
+        const trimmed = name.trim()
+        tm.createStyle(trimmed.replace(/\s+/g, '_'), trimmed, {})
         safeDispatch('updatedProperties')
       }
     })
@@ -442,8 +785,8 @@ function Properties(editor) {
     sizeSelect.className = 'property-input'
     sizeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
 
-    const sizes = ['A0','A1','A2','A3','A4','custom']
-    sizes.forEach(s => {
+    const sizes = ['A0', 'A1', 'A2', 'A3', 'A4', 'custom']
+    sizes.forEach((s) => {
       const opt = document.createElement('option')
       opt.value = s
       opt.textContent = s === 'custom' ? 'Custom' : s
@@ -482,7 +825,7 @@ function Properties(editor) {
     const orientSelect = document.createElement('select')
     orientSelect.className = 'property-input'
     orientSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
-    ;['portrait', 'landscape'].forEach(o => {
+    ;['portrait', 'landscape'].forEach((o) => {
       const opt = document.createElement('option')
       opt.value = o
       opt.textContent = o.charAt(0).toUpperCase() + o.slice(1)
@@ -513,7 +856,8 @@ function Properties(editor) {
 
     // Export buttons
     const exportHeader = document.createElement('div')
-    exportHeader.style.cssText = 'font-weight:bold;padding:4px 8px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    exportHeader.style.cssText =
+      'font-weight:bold;padding:4px 8px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
     exportHeader.textContent = 'Export'
     container.appendChild(exportHeader)
 
@@ -524,7 +868,8 @@ function Properties(editor) {
   function _makeExportButton(container, label, bg, onClick) {
     const btn = document.createElement('button')
     btn.textContent = label
-    btn.style.cssText = `display:block;width:calc(100% - 16px);margin:4px 8px;padding:6px;` +
+    btn.style.cssText =
+      `display:block;width:calc(100% - 16px);margin:4px 8px;padding:6px;` +
       `background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;`
     btn.addEventListener('click', onClick)
     container.appendChild(btn)
@@ -542,19 +887,31 @@ function Properties(editor) {
 
     createPropertyField(container, 'X (cm)', vp.x.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) { vp.x = n; vp.refreshGeometry() }
+      if (!isNaN(n)) {
+        vp.x = n
+        vp.refreshGeometry()
+      }
     })
     createPropertyField(container, 'Y (cm)', vp.y.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) { vp.y = n; vp.refreshGeometry() }
+      if (!isNaN(n)) {
+        vp.y = n
+        vp.refreshGeometry()
+      }
     })
     createPropertyField(container, 'Width (cm)', vp.w.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) { vp.w = n; vp.refreshGeometry() }
+      if (!isNaN(n) && n > 0) {
+        vp.w = n
+        vp.refreshGeometry()
+      }
     })
     createPropertyField(container, 'Height (cm)', vp.h.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) { vp.h = n; vp.refreshGeometry() }
+      if (!isNaN(n) && n > 0) {
+        vp.h = n
+        vp.refreshGeometry()
+      }
     })
     createPropertyField(container, 'Scale (1:N)', vp.scale, (val) => {
       const n = parseFloat(val)
@@ -572,7 +929,8 @@ function Properties(editor) {
     // Delete button
     const deleteBtn = document.createElement('button')
     deleteBtn.textContent = '🗑 Delete Viewport'
-    deleteBtn.style.cssText = 'display:block;width:calc(100% - 16px);margin:12px 8px 4px;padding:6px;' +
+    deleteBtn.style.cssText =
+      'display:block;width:calc(100% - 16px);margin:12px 8px 4px;padding:6px;' +
       'background:#6a2a2a;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;'
     deleteBtn.addEventListener('click', () => {
       if (editor.paperEditor) editor.paperEditor.removeViewport(vp.id)
@@ -596,14 +954,18 @@ function Properties(editor) {
     // Presets row
     const presetsRow = document.createElement('div')
     presetsRow.style.cssText = 'display:flex;gap:4px;padding:4px 8px 8px;flex-wrap:wrap;'
-
-    ;[['Color', null], ['Monochrome', '#000000'], ['Grayscale', 'grayscale']].forEach(([label, preset]) => {
+    ;[
+      ['Color', null],
+      ['Monochrome', '#000000'],
+      ['Grayscale', 'grayscale'],
+    ].forEach(([label, preset]) => {
       const btn = document.createElement('button')
       btn.textContent = label
-      btn.style.cssText = 'flex:1;padding:4px;background:#333;color:white;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px;'
+      btn.style.cssText =
+        'flex:1;padding:4px;background:#333;color:white;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px;'
       btn.addEventListener('click', () => {
         const colors = pe ? pe.getUsedColors() : []
-        colors.forEach(c => {
+        colors.forEach((c) => {
           if (!cfg.colorMap[c]) cfg.colorMap[c] = { printColor: c, enabled: true }
           if (preset === null) {
             cfg.colorMap[c].printColor = c // pass-through
@@ -630,7 +992,7 @@ function Properties(editor) {
       return
     }
 
-    colors.forEach(sourceColor => {
+    colors.forEach((sourceColor) => {
       if (!cfg.colorMap[sourceColor]) {
         cfg.colorMap[sourceColor] = { printColor: sourceColor, enabled: true }
       }
@@ -645,8 +1007,8 @@ function Properties(editor) {
       cb.type = 'checkbox'
       cb.checked = mapping.enabled
       cb.style.flexShrink = '0'
-      cb.addEventListener('change', () => { 
-        mapping.enabled = cb.checked 
+      cb.addEventListener('change', () => {
+        mapping.enabled = cb.checked
         editor.signals.colorMapUpdated.dispatch()
       })
 
@@ -702,7 +1064,7 @@ function Properties(editor) {
     // Default stroke color
     createColorProperty(container, 'Stroke', data.style.stroke || 'white', (value) => {
       setCollectionStyle(editor, id, { stroke: value })
-    })
+    }, () => {})
 
     // Default stroke width
     createPropertyField(container, 'Stroke Width', data.style['stroke-width'] || 0.1, (value) => {
@@ -721,7 +1083,7 @@ function Properties(editor) {
     // Default fill
     createColorProperty(container, 'Fill', data.style.fill || 'transparent', (value) => {
       setCollectionStyle(editor, id, { fill: value })
-    })
+    }, () => {})
   }
 
   function renderCollectionTransformTab(container, element) {
@@ -768,7 +1130,8 @@ function Properties(editor) {
       if (collectionAncestor.attr('data-collection') === 'true') break
       collectionAncestor = collectionAncestor.parent()
     }
-    const currentParentId = (collectionAncestor && collectionAncestor.attr('data-collection') === 'true') ? collectionAncestor.attr('id') : null
+    const currentParentId =
+      collectionAncestor && collectionAncestor.attr('data-collection') === 'true' ? collectionAncestor.attr('id') : null
 
     // Only show collection dropdown if the element is actually inside one of our collections
     if (currentParentId && editor.collections.has(currentParentId)) {
@@ -781,7 +1144,8 @@ function Properties(editor) {
 
       const select = document.createElement('select')
       select.className = 'property-input'
-      select.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+      select.style.cssText =
+        'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
 
       editor.collections.forEach((data, colId) => {
         if (colId === 'paper-annotations') return
@@ -799,7 +1163,7 @@ function Properties(editor) {
           // Move the SVG element's DOM node to the new collection's <g> group
           newCollection.group.add(element)
 
-          // If the element was using default collection styles (not overridden), 
+          // If the element was using default collection styles (not overridden),
           // we need to re-apply the new collection's styles because it moved.
           applyCollectionStyleToElement(editor, element)
 
@@ -957,6 +1321,54 @@ function Properties(editor) {
     }
   }
 
+  function renderTextStylePicker(container, element) {
+    const styleId = element.attr('data-text-style-id') || 'Standard'
+
+    const header = document.createElement('div')
+    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    header.textContent = 'Text Style'
+    container.appendChild(header)
+
+    const styleRow = document.createElement('div')
+    styleRow.className = 'property-row'
+
+    const styleLabel = document.createElement('label')
+    styleLabel.textContent = 'Style'
+    styleLabel.className = 'property-label'
+
+    const styleSelect = document.createElement('select')
+    styleSelect.className = 'property-input'
+    styleSelect.style.cssText =
+      'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+
+    editor.textStyleManager.styles.forEach((styleObj, sId) => {
+      const opt = document.createElement('option')
+      opt.value = sId
+      opt.textContent = styleObj.name
+      if (sId === styleId) opt.selected = true
+      styleSelect.appendChild(opt)
+    })
+
+    styleSelect.addEventListener('change', (e) => {
+      const newId = e.target.value
+      element.attr('data-text-style-id', newId)
+      const p = editor.textStyleManager.getStyle(newId).properties
+      element.font({ family: p.fontFamily, size: p.fontSize, weight: p.fontWeight, style: p.fontStyle })
+      element.attr({
+        'text-anchor': p.textAnchor,
+        'dominant-baseline': p.dominantBaseline !== 'auto' ? p.dominantBaseline : null,
+        'letter-spacing': p.letterSpacing !== 0 ? p.letterSpacing : null,
+        'text-decoration': p.textDecoration !== 'none' ? p.textDecoration : null,
+      })
+      element.css('fill', p.fill)
+      safeDispatch('updatedProperties')
+    })
+
+    styleRow.appendChild(styleLabel)
+    styleRow.appendChild(styleSelect)
+    container.appendChild(styleRow)
+  }
+
   function renderDimStylePicker(container, element) {
     const dimDataRaw = element.attr('data-dim-data')
     if (!dimDataRaw) return
@@ -965,7 +1377,8 @@ function Properties(editor) {
       const styleId = dimData.styleId || 'Standard'
 
       const header = document.createElement('div')
-      header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+      header.style.cssText =
+        'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
       header.textContent = 'Dimension Style'
       container.appendChild(header)
 
@@ -978,7 +1391,8 @@ function Properties(editor) {
 
       const styleSelect = document.createElement('select')
       styleSelect.className = 'property-input'
-      styleSelect.style.cssText = 'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+      styleSelect.style.cssText =
+        'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
 
       editor.dimensionManager.styles.forEach((styleObj, sId) => {
         const opt = document.createElement('option')
@@ -1007,9 +1421,14 @@ function Properties(editor) {
   function renderStyleTab(container, element, node) {
     const computedStyle = window.getComputedStyle(node)
 
-    // If this is a dimension element, show the style picker first
+    // If this is a dimension element, show the dimension style picker first
     if (node.nodeName === 'g' && element.attr('data-element-type') === 'dimension') {
       renderDimStylePicker(container, element)
+    }
+
+    // If this is a text element, show the text style picker first
+    if (node.nodeName === 'text') {
+      renderTextStylePicker(container, element)
     }
 
     // Check if element is inside a collection
@@ -1026,7 +1445,7 @@ function Properties(editor) {
     const overrides = inCollection ? getElementOverrides(element) : {}
 
     // Helper: create a style property row with optional "By Collection" toggle
-    function createStylableProperty(propName, label, currentValue, applyFn, isColor) {
+    function createStylableProperty(propName, label, currentValue, applyFn, isColor, liveFn) {
       const isOverridden = !!overrides[propName]
 
       if (inCollection && collectionData) {
@@ -1044,7 +1463,9 @@ function Properties(editor) {
         const toggleBtn = document.createElement('button')
         toggleBtn.textContent = isOverridden ? 'O' : 'C'
         toggleBtn.title = isOverridden ? 'Own style — click to inherit from collection' : 'Collection style — click to override'
-        toggleBtn.style.cssText = 'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' + (isOverridden ? '#555' : 'var(--accent-color)')
+        toggleBtn.style.cssText =
+          'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' +
+          (isOverridden ? '#555' : 'var(--accent-color)')
         controls.appendChild(toggleBtn)
 
         if (isColor) {
@@ -1081,16 +1502,17 @@ function Properties(editor) {
 
           checkbox.addEventListener('change', () => {
             syncBoxState()
-            const applyVal = checkbox.checked ? (rgbToHex(colorBox.style.background) || '#000000') : 'none'
+            const applyVal = checkbox.checked ? rgbToHex(colorBox.style.background) || '#000000' : 'none'
             applyFn(applyVal)
           })
 
           colorBox.addEventListener('click', () => {
             if (!isOverridden || !checkbox.checked) return
-            openColorPicker(colorBox.style.background, (newColor) => {
-              updateBoxColor(newColor)
-              applyFn(newColor)
-            })
+            openColorPicker(
+              colorBox.style.background,
+              (newColor) => { updateBoxColor(newColor); applyFn(newColor) },
+              liveFn ? (newColor) => { updateBoxColor(newColor); liveFn(newColor) } : undefined,
+            )
           })
 
           toggleBtn.addEventListener('click', () => {
@@ -1112,7 +1534,10 @@ function Properties(editor) {
 
           textInput.addEventListener('change', (e) => applyFn(e.target.value))
           textInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { applyFn(e.target.value); textInput.blur() }
+            if (e.key === 'Enter') {
+              applyFn(e.target.value)
+              textInput.blur()
+            }
           })
 
           toggleBtn.addEventListener('click', () => {
@@ -1131,7 +1556,7 @@ function Properties(editor) {
       } else {
         // No collection — plain property with checkbox for colors
         if (isColor) {
-          createColorProperty(container, label, currentValue, applyFn)
+          createColorProperty(container, label, currentValue, applyFn, liveFn)
         } else {
           createPropertyField(container, label, currentValue, applyFn)
         }
@@ -1144,7 +1569,7 @@ function Properties(editor) {
       el.css(prop, val)
       if (el.type === 'g') {
         const stripFromChildren = (parent) => {
-          parent.children().each(child => {
+          parent.children().each((child) => {
             const overrides = getElementOverrides(child)
             if (!overrides[prop]) {
               child.node.style.removeProperty(prop)
@@ -1160,60 +1585,93 @@ function Properties(editor) {
     // Fill Color (only for closed shapes or paths or text or generic groups)
     if (['circle', 'rect', 'path', 'polygon', 'text', 'g'].includes(node.nodeName)) {
       const currentFill = element.css('fill') || element.attr('fill')
-      let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : (currentFill || '#ffffff')
+      let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : currentFill || '#ffffff'
       if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
 
-      createStylableProperty('fill', 'Fill', visualFill, (value) => {
-        applyPropAndInherit(element, 'fill', value)
-        safeDispatch('refreshHandlers')
-      }, true)
+      createStylableProperty(
+        'fill',
+        'Fill',
+        visualFill,
+        (value) => {
+          applyPropAndInherit(element, 'fill', value)
+          safeDispatch('refreshHandlers')
+        },
+        true,
+        (value) => element.css('fill', value),
+      )
     }
 
     // Stroke Color
     const currentStroke = element.css('stroke') || element.attr('stroke')
-    let visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : (currentStroke || '#000000')
+    let visualStroke = computedStyle.stroke !== 'none' ? computedStyle.stroke : currentStroke || '#000000'
     if (visualStroke === 'transparent' || visualStroke === 'rgba(0, 0, 0, 0)') visualStroke = 'none'
 
-    createStylableProperty('stroke', 'Stroke', visualStroke, (value) => {
-      applyPropAndInherit(element, 'stroke', value)
-      safeDispatch('refreshHandlers')
-    }, true)
+    createStylableProperty(
+      'stroke',
+      'Stroke',
+      visualStroke,
+      (value) => {
+        applyPropAndInherit(element, 'stroke', value)
+        safeDispatch('refreshHandlers')
+      },
+      true,
+      (value) => element.css('stroke', value),
+    )
 
     // Stroke Width
-    const currentWidth = parseFloat(element.css('stroke-width') || element.attr('stroke-width')) || parseFloat(computedStyle.strokeWidth) || 1
+    const currentWidth =
+      parseFloat(element.css('stroke-width') || element.attr('stroke-width')) || parseFloat(computedStyle.strokeWidth) || 1
 
-    createStylableProperty('stroke-width', 'Stroke Width', currentWidth, (value) => {
-      const num = parseFloat(value)
-      if (!isNaN(num) && num >= 0) {
-        applyPropAndInherit(element, 'stroke-width', num)
-        safeDispatch('refreshHandlers')
-      }
-    }, false)
+    createStylableProperty(
+      'stroke-width',
+      'Stroke Width',
+      currentWidth,
+      (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num) && num >= 0) {
+          applyPropAndInherit(element, 'stroke-width', num)
+          safeDispatch('refreshHandlers')
+        }
+      },
+      false,
+    )
 
     // Stroke Dasharray
     const currentDasharray = element.css('stroke-dasharray') || element.attr('stroke-dasharray') || computedStyle.strokeDasharray || 'none'
-    const visualDasharray = (currentDasharray === 'none' || currentDasharray === '') ? '' : currentDasharray
+    const visualDasharray = currentDasharray === 'none' || currentDasharray === '' ? '' : currentDasharray
 
-    createStylableProperty('stroke-dasharray', 'Dash Array', visualDasharray, (value) => {
-      const val = value.trim()
-      if (val === '') {
-        element.node.style.removeProperty('stroke-dasharray')
-        element.node.removeAttribute('stroke-dasharray')
-        if (element.type === 'g') applyPropAndInherit(element, 'stroke-dasharray', null) // clear children too
-      } else {
-        applyPropAndInherit(element, 'stroke-dasharray', val)
-      }
-      safeDispatch('refreshHandlers')
-    }, false)
+    createStylableProperty(
+      'stroke-dasharray',
+      'Dash Array',
+      visualDasharray,
+      (value) => {
+        const val = value.trim()
+        if (val === '') {
+          element.node.style.removeProperty('stroke-dasharray')
+          element.node.removeAttribute('stroke-dasharray')
+          if (element.type === 'g') applyPropAndInherit(element, 'stroke-dasharray', null) // clear children too
+        } else {
+          applyPropAndInherit(element, 'stroke-dasharray', val)
+        }
+        safeDispatch('refreshHandlers')
+      },
+      false,
+    )
 
     if (node.nodeName === 'text') {
       const currentFamily = element.font('family') || element.css('font-family') || computedStyle.fontFamily || 'sans-serif'
-      createStylableProperty('font-family', 'Font Family', currentFamily, (value) => {
-        if (value.trim() !== '') {
-          element.font({ family: value })
-          safeDispatch('refreshHandlers')
-        }
-      }, false)
+      createStylableProperty(
+        'font-family',
+        'Font Family',
+        currentFamily,
+        (value) => {
+          if (value.trim() !== '') {
+            element.font({ family: value })
+            safeDispatch('refreshHandlers')
+          }
+        },
+        false,
+      )
     }
 
     // Opacity (always element-level, no collection inheritance)
@@ -1227,51 +1685,59 @@ function Properties(editor) {
 
   // Helper to convert any valid CSS color to #rrggbb
   function rgbToHex(color) {
-    if (!color || color === 'none' || color === 'transparent') return '#000000';
+    if (!color || color === 'none' || color === 'transparent') return '#000000'
     if (color.startsWith('#')) {
       if (color.length === 4) {
-        return '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+        return '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3]
       }
-      return color;
+      return color
     }
-    const ctx = document.createElement('canvas').getContext('2d');
-    ctx.fillStyle = color;
-    return ctx.fillStyle;
+    const ctx = document.createElement('canvas').getContext('2d')
+    ctx.fillStyle = color
+    return ctx.fillStyle
   }
 
-  let hiddenColorPicker = null;
+  let hiddenColorPicker = null
 
-  function openColorPicker(initialColor, onUpdate) {
+  function openColorPicker(initialColor, onUpdate, onLiveUpdate) {
     if (!hiddenColorPicker) {
-      hiddenColorPicker = document.createElement('input');
-      hiddenColorPicker.type = 'color';
-      hiddenColorPicker.style.position = 'fixed';
-      hiddenColorPicker.style.left = '40%';
-      hiddenColorPicker.style.top = '40%';
-      hiddenColorPicker.style.opacity = '0';
-      hiddenColorPicker.style.pointerEvents = 'none';
-      hiddenColorPicker.style.zIndex = '-9999';
-      document.body.appendChild(hiddenColorPicker);
+      hiddenColorPicker = document.createElement('input')
+      hiddenColorPicker.type = 'color'
+      hiddenColorPicker.style.position = 'fixed'
+      hiddenColorPicker.style.left = '40%'
+      hiddenColorPicker.style.top = '40%'
+      hiddenColorPicker.style.opacity = '0'
+      hiddenColorPicker.style.pointerEvents = 'none'
+      hiddenColorPicker.style.zIndex = '-9999'
+      document.body.appendChild(hiddenColorPicker)
     }
 
     // Refresh listeners by replacing node
-    const newPicker = hiddenColorPicker.cloneNode(true);
-    hiddenColorPicker.replaceWith(newPicker);
-    hiddenColorPicker = newPicker;
+    const newPicker = hiddenColorPicker.cloneNode(true)
+    hiddenColorPicker.replaceWith(newPicker)
+    hiddenColorPicker = newPicker
 
-    hiddenColorPicker.value = rgbToHex(initialColor);
+    hiddenColorPicker.value = rgbToHex(initialColor)
 
+    let rafPending = false
     hiddenColorPicker.addEventListener('input', (e) => {
-      onUpdate(e.target.value);
-    });
+      if (rafPending) return
+      rafPending = true
+      const color = e.target.value
+      requestAnimationFrame(() => {
+        rafPending = false
+        ;(onLiveUpdate || onUpdate)(color)
+      })
+    })
     hiddenColorPicker.addEventListener('change', (e) => {
-      onUpdate(e.target.value);
-    });
+      rafPending = false
+      onUpdate(e.target.value)
+    })
 
-    hiddenColorPicker.click();
+    hiddenColorPicker.click()
   }
 
-  function createColorProperty(container, label, value, onChange) {
+  function createColorProperty(container, label, value, onChange, onLive) {
     const row = document.createElement('div')
     row.className = 'property-row'
 
@@ -1321,10 +1787,11 @@ function Properties(editor) {
 
     colorBox.addEventListener('click', () => {
       if (!checkbox.checked) return
-      openColorPicker(colorBox.style.background, (newColor) => {
-        updateBoxColor(newColor)
-        onChange(newColor)
-      })
+      openColorPicker(
+        colorBox.style.background,
+        (newColor) => { updateBoxColor(newColor); onChange(newColor) },
+        onLive ? (newColor) => { updateBoxColor(newColor); onLive(newColor) } : undefined,
+      )
     })
 
     controls.appendChild(checkbox)

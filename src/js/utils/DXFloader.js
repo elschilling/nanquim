@@ -43,6 +43,9 @@ function DXFLoader(editor) {
       // Read Dimension Styles
       const savedDimStylesStr = svgRoot.getAttribute('data-dim-styles')
 
+      // Read Text Styles
+      const savedTextStylesStr = svgRoot.getAttribute('data-text-styles')
+
       if (savedPaperConfigStr) {
         try {
           const parsedConfig = JSON.parse(savedPaperConfigStr)
@@ -58,6 +61,15 @@ function DXFLoader(editor) {
           editor.dimensionManager.fromJSON(parsedStyles)
         } catch (e) {
           console.warn('Failed to parse dimension styles', e)
+        }
+      }
+
+      if (savedTextStylesStr) {
+        try {
+          const parsedTextStyles = JSON.parse(savedTextStylesStr)
+          editor.textStyleManager.fromJSON(parsedTextStyles)
+        } catch (e) {
+          console.warn('Failed to parse text styles', e)
         }
       }
 

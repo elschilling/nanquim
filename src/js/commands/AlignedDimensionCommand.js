@@ -124,11 +124,12 @@ class AlignedDimensionCommand extends Command {
             // Generate temporary dimension vectors
             LinearDimensionCommand.renderDimensionGraphics(
                 this.ghostGroup,
-                this.p1, this.p2, coords, 
+                this.p1, this.p2, coords,
                 this.editor.dimensionManager.getActiveStyle(),
                 this.editor.svg.zoom(),
                 true, // isGhost
-                'aligned'
+                'aligned',
+                this.editor
             )
         }
         this.editor.svg.on('mousemove', this.boundOnMouseMove2)
@@ -181,12 +182,13 @@ class AlignedDimensionCommand extends Command {
         dimGroup.attr('name', 'Aligned Dimension')
         
         LinearDimensionCommand.renderDimensionGraphics(
-            dimGroup, 
-            this.p1, this.p2, this.p3, 
-            activeStyle, 
+            dimGroup,
+            this.p1, this.p2, this.p3,
+            activeStyle,
             1,
             false,
-            'aligned'
+            'aligned',
+            this.editor
         )
 
         applyCollectionStyleToElement(this.editor, dimGroup)

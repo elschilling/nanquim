@@ -650,6 +650,13 @@ function Outliner(editor) {
               vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: snapshot } })
             }
           })
+        } else if (s.type === 'text') {
+          const tx = parseFloat(s.attr('x') || 0)
+          const ty = parseFloat(s.attr('y') || 0)
+          const pt = localToWorld(s, tx, ty)
+          if (Math.abs(pt.x - x) < tolerance && Math.abs(pt.y - y) < tolerance) {
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: tx, y: ty } })
+          }
         } else if (s.type === 'g' && s.attr('data-element-type') === 'dimension') {
           try {
             const dimData = JSON.parse(s.attr('data-dim-data'))
@@ -905,6 +912,22 @@ function Outliner(editor) {
               }])
             })
         })
+      } else if (el.type === 'text') {
+        const tx = parseFloat(el.attr('x') || 0)
+        const ty = parseFloat(el.attr('y') || 0)
+        const pt = localToWorld(el, tx, ty)
+        editor.handlers
+          .rect(handlerWorldSize, handlerWorldSize)
+          .center(pt.x, pt.y)
+          .addClass('selection-handler')
+          .mousedown((e) => {
+            e.stopPropagation()
+            signals.vertexEditStarted.dispatch([{
+              element: el,
+              vertexIndex: 0,
+              originalPosition: { x: tx, y: ty },
+            }])
+          })
       }
     })
   }

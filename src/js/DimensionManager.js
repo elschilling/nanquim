@@ -5,8 +5,7 @@ export class DimensionStyle {
     
     // Default properties for a newly created style
     this.properties = {
-      fontFamily: config.fontFamily || 'Inter',
-      fontSize: config.fontSize !== undefined ? config.fontSize : 0.15,
+      textStyleId: config.textStyleId || 'Standard',
       markerType: config.markerType || 'arrow', // 'arrow' | 'tick' | 'bullet'
       markerSize: config.markerSize !== undefined ? config.markerSize : 0.15,
       extensionLineOffset: config.extensionLineOffset !== undefined ? config.extensionLineOffset : 0.1,
@@ -34,6 +33,12 @@ export class DimensionStyle {
       props.markerSize = props.tickSize > 0 ? props.tickSize : (props.arrowSize ?? 0.15)
       delete props.arrowSize
       delete props.tickSize
+    }
+    // Migrate old fontFamily/fontSize to textStyleId
+    if (props.textStyleId === undefined) {
+      delete props.fontFamily
+      delete props.fontSize
+      props.textStyleId = 'Standard'
     }
     return new DimensionStyle(data.id, data.name, props)
   }

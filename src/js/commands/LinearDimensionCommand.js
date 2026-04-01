@@ -123,10 +123,12 @@ class LinearDimensionCommand extends Command {
             // Generate temporary dimension vectors
             LinearDimensionCommand.renderDimensionGraphics(
                 this.ghostGroup,
-                this.p1, this.p2, coords, 
+                this.p1, this.p2, coords,
                 this.editor.dimensionManager.getActiveStyle(),
                 this.editor.svg.zoom(),
-                true // isGhost
+                true, // isGhost
+                'linear',
+                this.editor
             )
         }
         this.editor.svg.on('mousemove', this.boundOnMouseMove2)
@@ -189,7 +191,9 @@ class LinearDimensionCommand extends Command {
             this.p1, this.p2, this.p3,
             resolvedStyle,
             1,
-            false
+            false,
+            'linear',
+            this.editor
         )
 
         applyCollectionStyleToElement(this.editor, dimGroup)
@@ -224,7 +228,7 @@ class LinearDimensionCommand extends Command {
         }, 10)
     }
 
-    static renderDimensionGraphics(group, p1, p2, p3, style, zoom = 1, isGhost = false, dimType = 'linear') {
+    static renderDimensionGraphics(group, p1, p2, p3, style, zoom = 1, isGhost = false, dimType = 'linear', editor = null) {
         group.clear() // Remove existing graphics
 
         const props = style.properties
@@ -422,14 +426,20 @@ class LinearDimensionCommand extends Command {
             'transform': `rotate(${angle}, ${txtX}, ${txtY})`
         })
 
+        const tStyle = editor ? editor.textStyleManager.getStyle(props.textStyleId || 'Standard').properties : {}
         t.font({
-            family: props.fontFamily || 'Inter',
-            size: props.fontSize || 0.15
+            family: tStyle.fontFamily || 'Inter',
+            size:   tStyle.fontSize   !== undefined ? tStyle.fontSize : 0.15,
+            weight: tStyle.fontWeight || 'normal',
+            style:  tStyle.fontStyle  || 'normal',
         })
+        if (tStyle.dominantBaseline && tStyle.dominantBaseline !== 'auto') t.attr('dominant-baseline', tStyle.dominantBaseline)
+        if (tStyle.letterSpacing) t.attr('letter-spacing', tStyle.letterSpacing)
+        if (tStyle.textDecoration && tStyle.textDecoration !== 'none') t.attr('text-decoration', tStyle.textDecoration)
 
-        const tStyle = { 'pointer-events': 'none' }
-        if (isGhost) tStyle['opacity'] = 0.5
-        t.css(tStyle)
+        const tCss = { 'pointer-events': 'none' }
+        if (isGhost) tCss['opacity'] = 0.5
+        t.css(tCss)
         
         group.attr('data-dim-text-center', JSON.stringify({ x: txtX, y: txtY }))
         group.attr('data-dim-text-base', JSON.stringify({ x: textBaseX, y: textBaseY }))
@@ -478,7 +488,8 @@ class LinearDimensionCommand extends Command {
                 resolvedStyle,
                 1,
                 false,
-                data.dimType || 'linear'
+                data.dimType || 'linear',
+                editor
             )
 
             applyCollectionStyleToElement(editor, element)

@@ -47,23 +47,25 @@ class TextCommand extends Command {
         })
 
         // Create live feedback text element
+        const activeTextStyle = this.editor.textStyleManager.getActiveStyle()
+        const tsp = activeTextStyle.properties
+
         let textElement = this.drawing.text('')
         this.textElement = textElement
-        textElement.font({ size: 0.5, family: 'monospace' }) // setup default font size BEFORE move to fix bbox calcs
+        textElement.font({ size: tsp.fontSize, family: tsp.fontFamily, weight: tsp.fontWeight, style: tsp.fontStyle }) // setup font BEFORE move to fix bbox calcs
+        textElement.attr({
+            'text-anchor': tsp.textAnchor,
+            'dominant-baseline': tsp.dominantBaseline !== 'auto' ? tsp.dominantBaseline : null,
+            'letter-spacing': tsp.letterSpacing !== 0 ? tsp.letterSpacing : null,
+            'text-decoration': tsp.textDecoration !== 'none' ? tsp.textDecoration : null,
+        })
 
         // Position text
         textElement.move(this.insertionPoint.x, this.insertionPoint.y)
 
-        applyCollectionStyleToElement(this.editor, textElement)
+        textElement.attr('data-text-style-id', activeTextStyle.id)
 
-        // Default text to being filled instead of outlined
-        const currentStroke = textElement.css('stroke') || textElement.attr('stroke') || 'white'
-        const fillColor = (currentStroke !== 'transparent' && currentStroke !== 'none') ? currentStroke : '#ffffff'
-
-        textElement.css({
-            fill: fillColor,
-            stroke: 'none'
-        })
+        textElement.css({ fill: tsp.fill, stroke: 'none' })
         setElementOverrides(textElement, { fill: true, stroke: true })
         
         this.boundOnInput = () => {

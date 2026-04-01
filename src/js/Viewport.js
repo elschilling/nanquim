@@ -689,6 +689,8 @@ function Viewport(editor) {
           const pts = element.array().map(p => [p[0], p[1]])
           pts[vertexIndex] = [point.x, point.y]
           element.plot(pts)
+        } else if (element.type === 'text') {
+          element.attr({ x: point.x, y: point.y })
         } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
           // Live render during move
           try {
@@ -1183,6 +1185,7 @@ function Viewport(editor) {
       const polylineUpdates = []
       const dimensionUpdates = []
       const viewportUpdates = []
+      const textPositionUpdates = []
 
       editor.editingVertices.forEach(v => {
         if (v.element.type === 'line') {
@@ -1277,6 +1280,12 @@ function Viewport(editor) {
             const newData = JSON.parse(v.element.attr('data-dim-data'))
             dimensionUpdates.push({ element: v.element, oldData, newData })
           } catch (e) { }
+        } else if (v.element.type === 'text') {
+          textPositionUpdates.push({
+            element: v.element,
+            oldValues: { x: v.originalPosition.x, y: v.originalPosition.y },
+            newValues: { x: point.x, y: point.y }
+          })
         }
       })
 
@@ -1348,6 +1357,15 @@ function Viewport(editor) {
           editor.execute(new EditViewportCommand(editor, update.viewport, update.oldValues, update.newValues))
         })
         signals.updatedSelection.dispatch()
+      }
+
+      if (textPositionUpdates.length > 0) {
+        import('./commands/EditTextPositionCommand.js').then(({ EditTextPositionCommand }) => {
+          textPositionUpdates.forEach(update => {
+            editor.execute(new EditTextPositionCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
       }
 
       return

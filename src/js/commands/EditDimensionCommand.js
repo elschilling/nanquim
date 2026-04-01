@@ -36,7 +36,9 @@ export class EditDimensionCommand extends Command {
                     data.p1, data.p2, data.p3,
                     tempStyle,
                     1,
-                    false
+                    false,
+                    data.dimType || 'linear',
+                    this.editor
                 )
                 import('../Collection.js').then(({ applyCollectionStyleToElement }) => {
                     applyCollectionStyleToElement(this.editor, update.element)
