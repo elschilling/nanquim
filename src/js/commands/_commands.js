@@ -24,6 +24,7 @@ import { drawPolylineCommand } from './DrawPolylineCommand'
 import { createViewportCommand } from './CreateViewportCommand'
 import { linearDimensionCommand, LinearDimensionCommand } from './LinearDimensionCommand'
 import { alignedDimensionCommand } from './AlignedDimensionCommand'
+import { areaCommand } from './AreaCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -130,6 +131,10 @@ const commands = {
   DIMALIGNED: {
     execute: alignedDimensionCommand,
     aliases: ['da', 'dimaligned'],
+  },
+  AREA: {
+    execute: areaCommand,
+    aliases: ['ar', 'area'],
   },
   // Add more commands and functions as needed
 }

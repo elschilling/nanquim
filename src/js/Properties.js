@@ -1,5 +1,6 @@
 import { setCollectionStyle, getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from './Collection'
 import { Matrix } from '@svgdotjs/svg.js'
+import { HATCH_PATTERNS, ensurePattern } from './utils/hatchPatterns'
 
 const propertiesPanel = document.getElementById('properties-panel')
 
@@ -8,6 +9,7 @@ function Properties(editor) {
   let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles' | 'textstyles'
   const dimStylesExpanded = new Set()
   const textStylesExpanded = new Set()
+  const transformAccordionsExpanded = new Set(['general', 'transform'])
 
   // Side Icon Navigation
   const transformTabBtn = document.getElementById('tab-transform')
@@ -1140,17 +1142,61 @@ function Properties(editor) {
   }
 
   function renderTransformTab(container, element, node) {
-    // Name field
-    createPropertyField(container, 'Name', element.attr('name') || node.nodeName, (value) => {
+    function makeAccordion(title, key) {
+      const isExpanded = transformAccordionsExpanded.has(key)
+      const accordion = document.createElement('div')
+      accordion.className = 'prop-accordion'
+
+      const header = document.createElement('div')
+      header.className = 'prop-accordion-header'
+
+      const collapseIcon = document.createElement('span')
+      collapseIcon.className = 'icon icon-collapse prop-collapse-icon' + (isExpanded ? ' on' : '')
+      if (!isExpanded) collapseIcon.style.transform = 'rotate(-90deg)'
+
+      const titleEl = document.createElement('span')
+      titleEl.className = 'prop-section-title'
+      titleEl.textContent = title
+
+      header.appendChild(collapseIcon)
+      header.appendChild(titleEl)
+
+      const body = document.createElement('div')
+      body.className = 'prop-accordion-body'
+      body.style.display = isExpanded ? 'flex' : 'none'
+
+      header.addEventListener('click', () => {
+        const open = body.style.display === 'none'
+        body.style.display = open ? 'flex' : 'none'
+        collapseIcon.style.transform = open ? '' : 'rotate(-90deg)'
+        collapseIcon.classList.toggle('on', open)
+        if (open) transformAccordionsExpanded.add(key)
+        else transformAccordionsExpanded.delete(key)
+      })
+
+      accordion.appendChild(header)
+      accordion.appendChild(body)
+      container.appendChild(accordion)
+      return body
+    }
+
+    // ── General ──────────────────────────────────────────────────────────────
+    const generalBody = makeAccordion('General', 'general')
+
+    createPropertyField(generalBody, 'Name', element.attr('name') || node.nodeName, (value) => {
       element.attr('name', value)
       safeDispatch('updatedOutliner')
     })
+    createPropertyField(generalBody, 'Type', node.nodeName, null, true)
+    createPropertyField(generalBody, 'ID', element.attr('id'), null, true)
 
-    // Type field (read-only)
-    createPropertyField(container, 'Type', node.nodeName, null, true)
-
-    // ID field (read-only)
-    createPropertyField(container, 'ID', element.attr('id'), null, true)
+    // Text content goes in General
+    if (node.nodeName === 'text') {
+      createPropertyField(generalBody, 'Content', element.text(), (value) => {
+        element.text(value)
+        safeDispatch('refreshHandlers')
+      })
+    }
 
     // Collection dropdown
     let collectionAncestor = element.parent()
@@ -1161,18 +1207,14 @@ function Properties(editor) {
     const currentParentId =
       collectionAncestor && collectionAncestor.attr('data-collection') === 'true' ? collectionAncestor.attr('id') : null
 
-    // Only show collection dropdown if the element is actually inside one of our collections
     if (currentParentId && editor.collections.has(currentParentId)) {
       const row = document.createElement('div')
       row.className = 'property-row'
-
       const labelEl = document.createElement('label')
       labelEl.textContent = 'Collection'
       labelEl.className = 'property-label'
-
       const select = document.createElement('select')
       select.className = 'property-input property-select'
-
       editor.collections.forEach((data, colId) => {
         if (colId === 'paper-annotations') return
         const option = document.createElement('option')
@@ -1181,149 +1223,103 @@ function Properties(editor) {
         if (colId === currentParentId) option.selected = true
         select.appendChild(option)
       })
-
       select.addEventListener('change', (e) => {
         const newColId = e.target.value
         const newCollection = editor.collections.get(newColId)
         if (newCollection && newCollection.group) {
-          // Move the SVG element's DOM node to the new collection's <g> group
           newCollection.group.add(element)
-
-          // If the element was using default collection styles (not overridden),
-          // we need to re-apply the new collection's styles because it moved.
-          applyCollectionStyleToElement(editor, element)
-
+          if (element.attr('data-element-type') === 'dimension') {
+            try {
+              const dimData = JSON.parse(element.attr('data-dim-data'))
+              editor.signals.refreshDimensions.dispatch({ element, data: dimData })
+            } catch (_) { applyCollectionStyleToElement(editor, element) }
+          } else {
+            applyCollectionStyleToElement(editor, element)
+          }
           safeDispatch('updatedOutliner')
           safeDispatch('updatedProperties')
         }
       })
-
       row.appendChild(labelEl)
       row.appendChild(select)
-      container.appendChild(row)
+      generalBody.appendChild(row)
     }
 
-    // Coordinates based on element type
+    // ── Transform ─────────────────────────────────────────────────────────────
+    const transformBody = makeAccordion('Transform', 'transform')
+
     if (node.nodeName === 'line') {
-      createPropertyField(container, 'X1', parseFloat(element.attr('x1')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'X1', parseFloat(element.attr('x1')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('x1', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('x1', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Y1', parseFloat(element.attr('y1')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Y1', parseFloat(element.attr('y1')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('y1', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('y1', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'X2', parseFloat(element.attr('x2')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'X2', parseFloat(element.attr('x2')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('x2', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('x2', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Y2', parseFloat(element.attr('y2')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Y2', parseFloat(element.attr('y2')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('y2', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('y2', num); safeDispatch('refreshHandlers') }
       })
     } else if (node.nodeName === 'circle') {
-      createPropertyField(container, 'CX', parseFloat(element.attr('cx')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'CX', parseFloat(element.attr('cx')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('cx', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('cx', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'CY', parseFloat(element.attr('cy')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'CY', parseFloat(element.attr('cy')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('cy', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('cy', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Radius', parseFloat(element.attr('r')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Radius', parseFloat(element.attr('r')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num) && num > 0) {
-          element.attr('r', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num) && num > 0) { element.attr('r', num); safeDispatch('refreshHandlers') }
       })
     } else if (node.nodeName === 'rect') {
-      createPropertyField(container, 'X', parseFloat(element.attr('x')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'X', parseFloat(element.attr('x')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('x', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('x', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Y', parseFloat(element.attr('y')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Y', parseFloat(element.attr('y')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('y', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('y', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Width', parseFloat(element.attr('width')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Width', parseFloat(element.attr('width')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num) && num > 0) {
-          element.attr('width', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num) && num > 0) { element.attr('width', num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Height', parseFloat(element.attr('height')).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Height', parseFloat(element.attr('height')).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.attr('height', num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.attr('height', num); safeDispatch('refreshHandlers') }
       })
     } else if (node.nodeName === 'text') {
-      createPropertyField(container, 'Content', element.text(), (value) => {
-        element.text(value)
-        safeDispatch('refreshHandlers')
-      })
-      createPropertyField(container, 'X', parseFloat(element.x()).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'X', parseFloat(element.x()).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.x(num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.x(num); safeDispatch('refreshHandlers') }
       })
-      createPropertyField(container, 'Y', parseFloat(element.y()).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Y', parseFloat(element.y()).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num)) {
-          element.y(num)
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num)) { element.y(num); safeDispatch('refreshHandlers') }
       })
       const fontSize = element.font('size') || element.css('font-size') || 10
-      createPropertyField(container, 'Font Size', parseFloat(fontSize).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Font Size', parseFloat(fontSize).toFixed(2), (value) => {
         const num = parseFloat(value)
-        if (!isNaN(num) && num > 0) {
-          element.font({ size: num })
-          safeDispatch('refreshHandlers')
-        }
+        if (!isNaN(num) && num > 0) { element.font({ size: num }); safeDispatch('refreshHandlers') }
       })
     } else if (node.nodeName === 'path') {
-      // For paths, show bounding box info (read-only for now)
       const bbox = element.bbox()
-      createPropertyField(container, 'X', bbox.x.toFixed(2), null, true)
-      createPropertyField(container, 'Y', bbox.y.toFixed(2), null, true)
-      createPropertyField(container, 'Width', bbox.width.toFixed(2), null, true)
-      createPropertyField(container, 'Height', bbox.height.toFixed(2), null, true)
+      createPropertyField(transformBody, 'X', bbox.x.toFixed(2), null, true)
+      createPropertyField(transformBody, 'Y', bbox.y.toFixed(2), null, true)
+      createPropertyField(transformBody, 'Width', bbox.width.toFixed(2), null, true)
+      createPropertyField(transformBody, 'Height', bbox.height.toFixed(2), null, true)
     }
 
-    // Universal Rotation Field
     if (element.transform) {
       const currentRotation = element.transform().rotate || 0
-      createPropertyField(container, 'Rotation', parseFloat(currentRotation).toFixed(2), (value) => {
+      createPropertyField(transformBody, 'Rotation', parseFloat(currentRotation).toFixed(2), (value) => {
         const num = parseFloat(value)
         if (!isNaN(num)) {
           const currentRot = element.transform().rotate || 0
@@ -1332,12 +1328,9 @@ function Properties(editor) {
             const bbox = element.bbox()
             const transform = element.transform()
             const matrix = new Matrix(transform)
-
-            // The `Matrix.rotate` method acts on the global coordinate space.
-            // Map the element's local (untransformed) bounding center into global space:
+            // Map the element's local bounding center into global space
             const globalCx = matrix.a * bbox.cx + matrix.c * bbox.cy + matrix.e
             const globalCy = matrix.b * bbox.cx + matrix.d * bbox.cy + matrix.f
-
             element.transform(matrix.rotate(delta, globalCx, globalCy))
             safeDispatch('refreshHandlers')
             safeDispatch('updatedProperties')
@@ -1384,7 +1377,9 @@ function Properties(editor) {
         'letter-spacing': p.letterSpacing !== 0 ? p.letterSpacing : null,
         'text-decoration': p.textDecoration !== 'none' ? p.textDecoration : null,
       })
-      element.css('fill', p.fill)
+      if ((element.attr('data-fill-source') || 'textstyle') === 'textstyle') {
+        element.css('fill', p.fill)
+      }
       safeDispatch('updatedProperties')
     })
 
@@ -1439,8 +1434,118 @@ function Properties(editor) {
     }
   }
 
+  function renderHatchProperties(container, element) {
+    const hd = element.data('hatchData')
+    if (!hd) return
+
+    const section = document.createElement('div')
+    section.className = 'properties-content'
+    container.appendChild(section)
+
+    // Pattern selector
+    const patRow = document.createElement('div')
+    patRow.className = 'property-row'
+    const patLabel = document.createElement('label')
+    patLabel.textContent = 'Pattern'
+    patLabel.className = 'property-label'
+    const patSelect = document.createElement('select')
+    patSelect.className = 'property-input'
+    patSelect.style.flex = '1'
+    Object.entries(HATCH_PATTERNS).forEach(([key, def]) => {
+      const opt = document.createElement('option')
+      opt.value = key
+      opt.textContent = def.label
+      if (key === (hd.patternType || 'ANSI31')) opt.selected = true
+      patSelect.appendChild(opt)
+    })
+    patRow.appendChild(patLabel)
+    patRow.appendChild(patSelect)
+    section.appendChild(patRow)
+
+    // Color picker
+    const colorRow = document.createElement('div')
+    colorRow.className = 'property-row'
+    const colorLabel = document.createElement('label')
+    colorLabel.textContent = 'Color'
+    colorLabel.className = 'property-label'
+    const colorInput = document.createElement('input')
+    colorInput.type = 'color'
+    colorInput.className = 'property-input'
+    colorInput.style.flex = '1'
+    colorInput.value = hd.fillColor || '#888888'
+    colorRow.appendChild(colorLabel)
+    colorRow.appendChild(colorInput)
+    section.appendChild(colorRow)
+
+    // Scale
+    const scaleRow = document.createElement('div')
+    scaleRow.className = 'property-row'
+    const scaleLabel = document.createElement('label')
+    scaleLabel.textContent = 'Scale'
+    scaleLabel.className = 'property-label'
+    const scaleInput = document.createElement('input')
+    scaleInput.type = 'number'
+    scaleInput.className = 'property-input'
+    scaleInput.style.flex = '1'
+    scaleInput.min = 1
+    scaleInput.max = 500
+    scaleInput.value = hd.hatchScale || 10
+    scaleRow.appendChild(scaleLabel)
+    scaleRow.appendChild(scaleInput)
+    section.appendChild(scaleRow)
+
+    // Opacity (SOLID only)
+    const opacityRow = document.createElement('div')
+    opacityRow.className = 'property-row'
+    const opacityLabel = document.createElement('label')
+    opacityLabel.textContent = 'Opacity'
+    opacityLabel.className = 'property-label'
+    const opacityInput = document.createElement('input')
+    opacityInput.type = 'range'
+    opacityInput.className = 'property-input'
+    opacityInput.style.flex = '1'
+    opacityInput.min = 0
+    opacityInput.max = 100
+    opacityInput.value = Math.round((hd.opacity ?? 0.3) * 100)
+    opacityRow.appendChild(opacityLabel)
+    opacityRow.appendChild(opacityInput)
+    opacityRow.style.display = (hd.patternType || 'ANSI31') === 'SOLID' ? '' : 'none'
+    section.appendChild(opacityRow)
+
+    function applyFill() {
+      const type = patSelect.value
+      const color = colorInput.value
+      const scale = Number(scaleInput.value) || 10
+      const opacity = Number(opacityInput.value) / 100
+
+      let fillValue
+      if (type === 'SOLID') {
+        fillValue = { color, opacity }
+      } else {
+        const patternId = ensurePattern(editor.svg, type, color, scale)
+        fillValue = patternId ? `url(#${patternId})` : { color, opacity: 0.3 }
+      }
+
+      element.fill(fillValue)
+      element.data('hatchData', { ...hd, patternType: type, fillColor: color, hatchScale: scale, opacity })
+      opacityRow.style.display = type === 'SOLID' ? '' : 'none'
+      safeDispatch('refreshHandlers')
+    }
+
+    patSelect.addEventListener('change', applyFill)
+    colorInput.addEventListener('input', applyFill)
+    scaleInput.addEventListener('change', applyFill)
+    opacityInput.addEventListener('input', applyFill)
+  }
+
   function renderStyleTab(container, element, node) {
     const computedStyle = window.getComputedStyle(node)
+
+    // Hatch elements get their own dedicated property controls
+    if (element.data && element.data('hatchData')) {
+      renderHatchProperties(container, element)
+      return
+    }
 
     // If this is a dimension element, show the dimension style picker first
     if (node.nodeName === 'g' && element.attr('data-element-type') === 'dimension') {
@@ -1606,21 +1711,125 @@ function Properties(editor) {
 
     // Fill Color (only for closed shapes or paths or text or generic groups)
     if (['circle', 'rect', 'path', 'polygon', 'text', 'g'].includes(node.nodeName)) {
-      const currentFill = element.css('fill') || element.attr('fill')
-      let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : currentFill || '#ffffff'
-      if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
+      if (node.nodeName === 'text') {
+        // Text fill: 3-way source — textstyle | collection | custom
+        const fillSource = element.attr('data-fill-source') || 'textstyle'
+        const styleId = element.attr('data-text-style-id') || 'Standard'
+        const tsProps = editor.textStyleManager.getStyle(styleId)?.properties
+        const textStyleFill = tsProps?.fill || '#ffffff'
 
-      createStylableProperty(
-        'fill',
-        'Fill',
-        visualFill,
-        (value) => {
-          applyPropAndInherit(element, 'fill', value)
+        let swatchColor
+        if (fillSource === 'textstyle') {
+          swatchColor = textStyleFill
+        } else if (fillSource === 'collection') {
+          swatchColor = collectionData?.style?.fill || '#888888'
+        } else {
+          const raw = element.css('fill') || element.attr('fill')
+          swatchColor = computedStyle.fill && computedStyle.fill !== 'none' ? computedStyle.fill : raw || '#ffffff'
+          if (swatchColor === 'transparent' || swatchColor === 'rgba(0, 0, 0, 0)') swatchColor = '#ffffff'
+        }
+
+        const row = document.createElement('div')
+        row.className = 'property-row'
+        const labelEl = document.createElement('label')
+        labelEl.textContent = 'Fill'
+        labelEl.className = 'property-label'
+
+        const controls = document.createElement('div')
+        controls.className = 'prop-controls'
+        controls.style.gap = '4px'
+        controls.style.overflow = 'hidden'
+
+        const modeSelect = document.createElement('select')
+        modeSelect.className = 'property-input property-select'
+        modeSelect.style.flex = '1'
+        modeSelect.style.minWidth = '0'
+        ;[
+          { value: 'textstyle', label: 'Text Style' },
+          { value: 'collection', label: 'Collection' },
+          { value: 'custom', label: 'Custom' },
+        ].forEach(({ value, label }) => {
+          const opt = document.createElement('option')
+          opt.value = value
+          opt.textContent = label
+          if (value === fillSource) opt.selected = true
+          if (value === 'collection' && !inCollection) opt.disabled = true
+          modeSelect.appendChild(opt)
+        })
+
+        const colorBox = document.createElement('div')
+        colorBox.className = 'property-input prop-color-box-wide'
+        colorBox.style.background = swatchColor
+        colorBox.style.cursor = fillSource === 'custom' ? 'pointer' : 'default'
+        colorBox.style.opacity = fillSource === 'custom' ? '1' : '0.5'
+
+        colorBox.addEventListener('click', () => {
+          if (modeSelect.value !== 'custom') return
+          openColorPicker(
+            colorBox.style.background,
+            (newColor) => {
+              element.css('fill', newColor)
+              colorBox.style.background = newColor
+              safeDispatch('refreshHandlers')
+            },
+            (liveColor) => {
+              element.css('fill', liveColor)
+              colorBox.style.background = liveColor
+            },
+          )
+        })
+
+        modeSelect.addEventListener('change', (e) => {
+          const mode = e.target.value
+          element.attr('data-fill-source', mode)
+          if (mode === 'textstyle') {
+            element.css('fill', textStyleFill)
+            colorBox.style.background = textStyleFill
+            colorBox.style.cursor = 'default'
+            colorBox.style.opacity = '0.5'
+            if (inCollection) { overrides.fill = true; setElementOverrides(element, overrides) }
+          } else if (mode === 'collection') {
+            element.node.style.removeProperty('fill')
+            element.node.removeAttribute('fill')
+            if (inCollection) {
+              overrides.fill = false
+              setElementOverrides(element, overrides)
+              applyCollectionStyleToElement(editor, element)
+            }
+            const colFill = collectionData?.style?.fill || '#888888'
+            colorBox.style.background = colFill
+            colorBox.style.cursor = 'default'
+            colorBox.style.opacity = '0.5'
+          } else {
+            colorBox.style.cursor = 'pointer'
+            colorBox.style.opacity = '1'
+            if (inCollection) { overrides.fill = true; setElementOverrides(element, overrides) }
+          }
           safeDispatch('refreshHandlers')
-        },
-        true,
-        (value) => element.css('fill', value),
-      )
+        })
+
+        controls.appendChild(modeSelect)
+        controls.appendChild(colorBox)
+        row.appendChild(labelEl)
+        row.appendChild(controls)
+        container.appendChild(row)
+      } else {
+        const currentFill = element.css('fill') || element.attr('fill')
+        let visualFill = computedStyle.fill !== 'none' ? computedStyle.fill : currentFill || '#ffffff'
+        if (visualFill === 'transparent' || visualFill === 'rgba(0, 0, 0, 0)') visualFill = 'none'
+
+        createStylableProperty(
+          'fill',
+          'Fill',
+          visualFill,
+          (value) => {
+            applyPropAndInherit(element, 'fill', value)
+            safeDispatch('refreshHandlers')
+          },
+          true,
+          (value) => element.css('fill', value),
+        )
+      }
     }
 
     // Stroke Color

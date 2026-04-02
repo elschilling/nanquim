@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { findEnclosingBoundary, boundaryToPathD, extractSegments } from '../utils/boundaryDetection'
 import { applyCollectionStyleToElement } from '../Collection'
+import { ensurePattern, HATCH_PATTERNS } from '../utils/hatchPatterns'
 
 class HatchCommand extends Command {
     constructor(editor) {
@@ -9,6 +10,8 @@ class HatchCommand extends Command {
         this.name = 'Hatch'
         this.hatchElement = null
         this.interactiveExecutionDone = false
+        this.patternType = editor.lastHatchPattern || 'ANSI31'
+        this.hatchScale = editor.lastHatchScale || 10
     }
 
     execute() {
@@ -16,10 +19,11 @@ class HatchCommand extends Command {
             return
         }
 
+        const patternLabel = HATCH_PATTERNS[this.patternType]?.label || this.patternType
         this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'HATCH ' })
         this.editor.signals.terminalLogged.dispatch({
             type: 'span',
-            msg: 'Click inside a region to hatch.',
+            msg: `[${patternLabel} / scale ${this.hatchScale}] Click inside a closed region to hatch.`,
         })
 
         this.editor.isInteracting = true
@@ -42,12 +46,10 @@ class HatchCommand extends Command {
             this.editor.signals.terminalLogged.dispatch({
                 msg: 'No closed boundary found at that point. Try clicking inside a closed region.',
             })
-            // Allow the user to try again
             this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
             return
         }
 
-        // Build path from boundary edges (supports arc commands)
         const pathD = boundaryToPathD(boundaryEdges, segments)
         if (!pathD) {
             this.editor.signals.terminalLogged.dispatch({ msg: 'Failed to create hatch path.' })
@@ -55,7 +57,7 @@ class HatchCommand extends Command {
             return
         }
 
-        // Get fill color from active collection style
+        // Derive fill color from active collection stroke
         const collection = this.editor.activeCollection
         let fillColor = '#888888'
         if (collection) {
@@ -65,16 +67,28 @@ class HatchCommand extends Command {
             if (collectionData && collectionData.style && collectionData.style.stroke) {
                 fillColor = collectionData.style.stroke
             } else {
-                // Fallback: read stroke from the collection group
                 const stroke = collection.attr('stroke')
                 if (stroke && stroke !== 'none') fillColor = stroke
             }
         }
 
-        // Create hatch fill element
+        // Resolve fill — SVG pattern or solid
+        let fillValue
+        if (this.patternType === 'SOLID') {
+            fillValue = { color: fillColor, opacity: 0.3 }
+        } else {
+            const patternId = ensurePattern(this.editor.svg, this.patternType, fillColor, this.hatchScale)
+            if (patternId) {
+                fillValue = `url(#${patternId})`
+            } else {
+                fillValue = { color: fillColor, opacity: 0.3 }
+            }
+        }
+
+        // Create hatch path element
         const parent = this.editor.activeCollection || this.editor.drawing
         const hatchPath = parent.path(pathD)
-        hatchPath.fill({ color: fillColor, opacity: 0.3 })
+        hatchPath.fill(fillValue)
         hatchPath.stroke({ width: 0, opacity: 0 })
         hatchPath.addClass('hatch-fill')
         hatchPath.attr('id', this.editor.elementIndex++)
@@ -82,9 +96,10 @@ class HatchCommand extends Command {
         hatchPath.data('hatchData', {
             clickPoint: { x: point.x, y: point.y },
             fillColor,
+            patternType: this.patternType,
+            hatchScale: this.hatchScale,
         })
 
-        // Send it behind other elements in the collection
         hatchPath.back()
 
         this.hatchElement = hatchPath
@@ -96,6 +111,9 @@ class HatchCommand extends Command {
 
         this.cleanup()
         this.interactiveExecutionDone = true
+        // Persist last-used settings on editor for next invocation
+        this.editor.lastHatchPattern = this.patternType
+        this.editor.lastHatchScale = this.hatchScale
         this.editor.execute(this)
         this.editor.lastCommand = this
         this.editor.signals.updatedOutliner.dispatch()
@@ -123,6 +141,11 @@ class HatchCommand extends Command {
     redo() {
         if (this.hatchElement) {
             const parent = this.editor.activeCollection || this.editor.drawing
+            // Re-ensure pattern in case defs were cleared
+            const hd = this.hatchElement.data('hatchData')
+            if (hd && hd.patternType && hd.patternType !== 'SOLID') {
+                ensurePattern(this.editor.svg, hd.patternType, hd.fillColor, hd.hatchScale)
+            }
             parent.add(this.hatchElement)
             this.hatchElement.back()
             this.editor.spatialIndex.markDirty()

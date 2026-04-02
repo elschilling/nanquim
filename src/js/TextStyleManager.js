@@ -96,7 +96,7 @@ export class TextStyleManager {
           'letter-spacing': p.letterSpacing !== 0 ? p.letterSpacing : null,
           'text-decoration': p.textDecoration !== 'none' ? p.textDecoration : null,
         })
-        el.css('fill', p.fill)
+        if ((el.attr('data-fill-source') || 'textstyle') === 'textstyle') el.css('fill', p.fill)
       }
       if (el.children) el.children().each(apply)
     }

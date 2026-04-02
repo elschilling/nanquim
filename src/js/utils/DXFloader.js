@@ -165,6 +165,14 @@ function DXFLoader(editor) {
       // Rebuild collections from DOM (handles legacy and new files)
       rebuildCollectionsFromDOM(editor)
 
+      // Collapse all collections and group elements in the outliner on load
+      editor.collections.forEach(data => {
+        data.collapsed = true
+      })
+      editor.drawing.find('[data-group="true"]').each(g => {
+        g.attr('data-collapsed', 'true')
+      })
+
       // Build spatial index for fast hit-testing on the imported geometry
       editor.spatialIndex.rebuild(editor)
 
