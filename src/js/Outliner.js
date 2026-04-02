@@ -655,7 +655,7 @@ function Outliner(editor) {
           const ty = parseFloat(s.attr('y') || 0)
           const pt = localToWorld(s, tx, ty)
           if (Math.abs(pt.x - x) < tolerance && Math.abs(pt.y - y) < tolerance) {
-            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: tx, y: ty } })
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: tx, y: ty, worldX: pt.x, worldY: pt.y } })
           }
         } else if (s.type === 'g' && s.attr('data-element-type') === 'dimension') {
           try {
@@ -925,7 +925,7 @@ function Outliner(editor) {
             signals.vertexEditStarted.dispatch([{
               element: el,
               vertexIndex: 0,
-              originalPosition: { x: tx, y: ty },
+              originalPosition: { x: tx, y: ty, worldX: pt.x, worldY: pt.y },
             }])
           })
       }

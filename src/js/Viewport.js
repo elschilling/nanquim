@@ -690,7 +690,10 @@ function Viewport(editor) {
           pts[vertexIndex] = [point.x, point.y]
           element.plot(pts)
         } else if (element.type === 'text') {
-          element.attr({ x: point.x, y: point.y })
+          const op = vertexData.originalPosition
+          element.attr('x', op.x + (point.x - op.worldX))
+          element.attr('y', op.y + (point.y - op.worldY))
+          element.rebuild()
         } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
           // Live render during move
           try {
@@ -1281,10 +1284,11 @@ function Viewport(editor) {
             dimensionUpdates.push({ element: v.element, oldData, newData })
           } catch (e) { }
         } else if (v.element.type === 'text') {
+          const op = v.originalPosition
           textPositionUpdates.push({
             element: v.element,
-            oldValues: { x: v.originalPosition.x, y: v.originalPosition.y },
-            newValues: { x: point.x, y: point.y }
+            oldValues: { x: op.x, y: op.y },
+            newValues: { x: op.x + (point.x - op.worldX), y: op.y + (point.y - op.worldY) }
           })
         }
       })

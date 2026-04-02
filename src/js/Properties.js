@@ -208,18 +208,16 @@ function Properties(editor) {
     labelEl.className = 'property-label'
 
     const controls = document.createElement('div')
-    controls.style.cssText = 'display:flex;align-items:center;flex:1;gap:3px;min-width:0;'
+    controls.className = 'prop-controls'
 
     const toggleBtn = document.createElement('button')
     toggleBtn.textContent = isInherit ? 'C' : 'O'
     toggleBtn.title = isInherit ? 'Inheriting from collection — click to set fixed color' : 'Override — click to inherit from collection'
-    toggleBtn.style.cssText =
-      'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' +
-      (isInherit ? 'var(--accent-color)' : '#555')
+    toggleBtn.className = 'prop-inherit-toggle'
+    toggleBtn.style.background = isInherit ? 'var(--accent-color)' : '#555'
 
     const colorBox = document.createElement('div')
-    colorBox.className = 'property-input'
-    colorBox.style.cssText = 'height:20px;width:32px;padding:0;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
+    colorBox.className = 'prop-color-box'
 
     function syncBox(inherit, color) {
       if (inherit) {
@@ -241,8 +239,15 @@ function Properties(editor) {
     colorBox.addEventListener('click', () => {
       openColorPicker(
         currentColor,
-        (newColor) => { currentColor = newColor; syncBox(false, newColor); onChange(newColor) },
-        (newColor) => { currentColor = newColor; syncBox(false, newColor) },
+        (newColor) => {
+          currentColor = newColor
+          syncBox(false, newColor)
+          onChange(newColor)
+        },
+        (newColor) => {
+          currentColor = newColor
+          syncBox(false, newColor)
+        },
       )
     })
 
@@ -281,8 +286,7 @@ function Properties(editor) {
     activeLabel.className = 'property-label'
     activeLabel.textContent = 'Active Style'
     const activeSelect = document.createElement('select')
-    activeSelect.className = 'property-input'
-    activeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    activeSelect.className = 'property-input property-select'
     dm.styles.forEach((styleObj, sId) => {
       const opt = document.createElement('option')
       opt.value = sId
@@ -304,29 +308,23 @@ function Properties(editor) {
 
       // Accordion wrapper
       const accordion = document.createElement('div')
-      accordion.style.cssText = 'border-top:1px solid #2a2a2a;margin-top:2px;'
+      accordion.className = 'prop-accordion'
 
       // Header row
       const accordionHeader = document.createElement('div')
-      accordionHeader.style.cssText = 'display:flex;align-items:center;gap:4px;padding:5px 4px 5px 2px;cursor:pointer;user-select:none;'
+      accordionHeader.className = 'prop-accordion-header'
 
       const collapseIcon = document.createElement('span')
-      collapseIcon.className = 'icon icon-collapse' + (isExpanded ? ' on' : '')
-      collapseIcon.style.cssText = 'flex-shrink:0;transition:transform 0.15s;' + (isExpanded ? '' : 'transform:rotate(-90deg);')
+      collapseIcon.className = 'icon icon-collapse prop-collapse-icon' + (isExpanded ? ' on' : '')
+      if (!isExpanded) collapseIcon.style.transform = 'rotate(-90deg)'
 
       const styleTitle = document.createElement('span')
-      styleTitle.style.cssText = 'font-size:11px;text-transform:uppercase;opacity:0.8;flex:1;font-weight:bold;'
+      styleTitle.className = 'prop-section-title'
       styleTitle.textContent = styleObj.name
 
       const renameBtn = document.createElement('button')
       renameBtn.title = 'Rename'
-      renameBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.6;'
-      renameBtn.addEventListener('mouseenter', () => {
-        renameBtn.style.opacity = '1'
-      })
-      renameBtn.addEventListener('mouseleave', () => {
-        renameBtn.style.opacity = '0.6'
-      })
+      renameBtn.className = 'prop-icon-btn'
       const renameIcon = document.createElement('span')
       renameIcon.className = 'icon icon-rename'
       renameBtn.appendChild(renameIcon)
@@ -343,7 +341,8 @@ function Properties(editor) {
       if (sId !== 'Standard') {
         const deleteBtn = document.createElement('button')
         deleteBtn.title = 'Delete style'
-        deleteBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.5;'
+        deleteBtn.className = 'prop-icon-btn'
+        deleteBtn.style.opacity = '0.5'
         deleteBtn.addEventListener('mouseenter', () => {
           deleteBtn.style.opacity = '1'
         })
@@ -379,8 +378,7 @@ function Properties(editor) {
       tsLabel.className = 'property-label'
       tsLabel.textContent = 'Text Style'
       const tsSelect = document.createElement('select')
-      tsSelect.className = 'property-input'
-      tsSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      tsSelect.className = 'property-input property-select'
       editor.textStyleManager.styles.forEach((tsObj, tsId) => {
         const opt = document.createElement('option')
         opt.value = tsId
@@ -401,9 +399,7 @@ function Properties(editor) {
       markerLabel.className = 'property-label'
       markerLabel.textContent = 'Marker'
       const markerSelect = document.createElement('select')
-      markerSelect.className = 'property-input'
-      markerSelect.style.cssText =
-        'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      markerSelect.className = 'property-input property-select'
       ;['arrow', 'tick', 'bullet'].forEach((type) => {
         const opt = document.createElement('option')
         opt.value = type
@@ -453,8 +449,7 @@ function Properties(editor) {
     // New style button
     const newBtn = document.createElement('button')
     newBtn.textContent = '+ New Style'
-    newBtn.style.cssText =
-      'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
+    newBtn.className = 'prop-new-style-btn'
     newBtn.addEventListener('click', () => {
       const name = prompt('New style name:')
       if (name && name.trim()) {
@@ -485,14 +480,43 @@ function Properties(editor) {
     ]
     // Weights available per font (Google Fonts loaded weights + sensible system font subsets)
     const FONT_WEIGHTS = {
-      'Inter':           [['400','Regular'],['500','Medium'],['600','Semi-bold']],
-      'DM Sans':         [['300','Light'],['400','Regular'],['700','Bold']],
-      'JetBrains Mono':  [['400','Regular'],['500','Medium']],
-      'Fira Code':       [['300','Light'],['400','Regular'],['500','Medium'],['600','Semi-bold'],['700','Bold']],
-      'Fira Mono':       [['400','Regular'],['500','Medium'],['700','Bold']],
-      'Cascadia Code':   [['200','Extra-light'],['300','Light'],['400','Regular'],['600','Semi-bold']],
+      Inter: [
+        ['400', 'Regular'],
+        ['500', 'Medium'],
+        ['600', 'Semi-bold'],
+      ],
+      'DM Sans': [
+        ['300', 'Light'],
+        ['400', 'Regular'],
+        ['700', 'Bold'],
+      ],
+      'JetBrains Mono': [
+        ['400', 'Regular'],
+        ['500', 'Medium'],
+      ],
+      'Fira Code': [
+        ['300', 'Light'],
+        ['400', 'Regular'],
+        ['500', 'Medium'],
+        ['600', 'Semi-bold'],
+        ['700', 'Bold'],
+      ],
+      'Fira Mono': [
+        ['400', 'Regular'],
+        ['500', 'Medium'],
+        ['700', 'Bold'],
+      ],
+      'Cascadia Code': [
+        ['200', 'Extra-light'],
+        ['300', 'Light'],
+        ['400', 'Regular'],
+        ['600', 'Semi-bold'],
+      ],
     }
-    const DEFAULT_WEIGHTS = [['400','Regular'],['700','Bold']]
+    const DEFAULT_WEIGHTS = [
+      ['400', 'Regular'],
+      ['700', 'Bold'],
+    ]
     const getWeights = (family) => FONT_WEIGHTS[family] || DEFAULT_WEIGHTS
 
     function makeDropdownRow(parentEl, label, options, currentValue, onChange) {
@@ -502,8 +526,7 @@ function Properties(editor) {
       lbl.className = 'property-label'
       lbl.textContent = label
       const sel = document.createElement('select')
-      sel.className = 'property-input'
-      sel.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      sel.className = 'property-input property-select'
       options.forEach(([val, text]) => {
         const opt = document.createElement('option')
         opt.value = val
@@ -524,13 +547,19 @@ function Properties(editor) {
       lbl.className = 'property-label'
       lbl.textContent = label
       const colorBox = document.createElement('div')
-      colorBox.className = 'property-input'
-      colorBox.style.cssText = `height:20px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;background:${currentValue || '#ffffff'};`
+      colorBox.className = 'property-input prop-color-box'
+      colorBox.style.cursor = 'pointer'
+      colorBox.style.background = currentValue || '#ffffff'
       colorBox.addEventListener('click', () => {
         openColorPicker(
           currentValue || '#ffffff',
-          (newColor) => { colorBox.style.background = newColor; onChange(newColor) },
-          (newColor) => { colorBox.style.background = newColor },
+          (newColor) => {
+            colorBox.style.background = newColor
+            onChange(newColor)
+          },
+          (newColor) => {
+            colorBox.style.background = newColor
+          },
         )
       })
       row.appendChild(lbl)
@@ -546,8 +575,7 @@ function Properties(editor) {
     activeLabel.className = 'property-label'
     activeLabel.textContent = 'Active Style'
     const activeSelect = document.createElement('select')
-    activeSelect.className = 'property-input'
-    activeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    activeSelect.className = 'property-input property-select'
     tm.styles.forEach((styleObj, sId) => {
       const opt = document.createElement('option')
       opt.value = sId
@@ -566,28 +594,22 @@ function Properties(editor) {
       const isExpanded = textStylesExpanded.has(sId)
 
       const accordion = document.createElement('div')
-      accordion.style.cssText = 'border-top:1px solid #2a2a2a;margin-top:2px;'
+      accordion.className = 'prop-accordion'
 
       const accordionHeader = document.createElement('div')
-      accordionHeader.style.cssText = 'display:flex;align-items:center;gap:4px;padding:5px 4px 5px 2px;cursor:pointer;user-select:none;'
+      accordionHeader.className = 'prop-accordion-header'
 
       const collapseIcon = document.createElement('span')
-      collapseIcon.className = 'icon icon-collapse' + (isExpanded ? ' on' : '')
-      collapseIcon.style.cssText = 'flex-shrink:0;transition:transform 0.15s;' + (isExpanded ? '' : 'transform:rotate(-90deg);')
+      collapseIcon.className = 'icon icon-collapse prop-collapse-icon' + (isExpanded ? ' on' : '')
+      if (!isExpanded) collapseIcon.style.transform = 'rotate(-90deg)'
 
       const styleTitle = document.createElement('span')
-      styleTitle.style.cssText = 'font-size:11px;text-transform:uppercase;opacity:0.8;flex:1;font-weight:bold;'
+      styleTitle.className = 'prop-section-title'
       styleTitle.textContent = styleObj.name
 
       const renameBtn = document.createElement('button')
       renameBtn.title = 'Rename'
-      renameBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.6;'
-      renameBtn.addEventListener('mouseenter', () => {
-        renameBtn.style.opacity = '1'
-      })
-      renameBtn.addEventListener('mouseleave', () => {
-        renameBtn.style.opacity = '0.6'
-      })
+      renameBtn.className = 'prop-icon-btn'
       const renameIcon = document.createElement('span')
       renameIcon.className = 'icon icon-rename'
       renameBtn.appendChild(renameIcon)
@@ -604,7 +626,8 @@ function Properties(editor) {
       if (sId !== 'Standard') {
         const deleteBtn = document.createElement('button')
         deleteBtn.title = 'Delete style'
-        deleteBtn.style.cssText = 'background:none;border:none;padding:1px;cursor:pointer;display:flex;align-items:center;opacity:0.5;'
+        deleteBtn.className = 'prop-icon-btn'
+        deleteBtn.style.opacity = '0.5'
         deleteBtn.addEventListener('mouseenter', () => {
           deleteBtn.style.opacity = '1'
         })
@@ -640,9 +663,8 @@ function Properties(editor) {
       familyLabel.className = 'property-label'
       familyLabel.textContent = 'Font Family'
       const familySelect = document.createElement('select')
-      familySelect.className = 'property-input'
-      familySelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
-      CAD_FONTS.forEach(f => {
+      familySelect.className = 'property-input property-select'
+      CAD_FONTS.forEach((f) => {
         const opt = document.createElement('option')
         opt.value = f
         opt.textContent = f
@@ -665,8 +687,7 @@ function Properties(editor) {
       weightLabel.className = 'property-label'
       weightLabel.textContent = 'Font Weight'
       const weightSelect = document.createElement('select')
-      weightSelect.className = 'property-input'
-      weightSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+      weightSelect.className = 'property-input property-select'
 
       function populateWeights(family, currentWeight) {
         weightSelect.innerHTML = ''
@@ -750,8 +771,7 @@ function Properties(editor) {
 
     const newBtn = document.createElement('button')
     newBtn.textContent = '+ New Style'
-    newBtn.style.cssText =
-      'margin:10px 4px 4px;padding:4px 10px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#ccc;cursor:pointer;font-size:11px;'
+    newBtn.className = 'prop-new-style-btn'
     newBtn.addEventListener('click', () => {
       const name = prompt('New style name:')
       if (name && name.trim()) {
@@ -771,7 +791,7 @@ function Properties(editor) {
 
     // Section header
     const header = document.createElement('div')
-    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    header.className = 'prop-section-header'
     header.textContent = 'Paper Settings'
     container.appendChild(header)
 
@@ -782,8 +802,7 @@ function Properties(editor) {
     sizeLabel.className = 'property-label'
     sizeLabel.textContent = 'Paper Size'
     const sizeSelect = document.createElement('select')
-    sizeSelect.className = 'property-input'
-    sizeSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    sizeSelect.className = 'property-input property-select'
 
     const sizes = ['A0', 'A1', 'A2', 'A3', 'A4', 'custom']
     sizes.forEach((s) => {
@@ -823,8 +842,7 @@ function Properties(editor) {
     orientLabel.className = 'property-label'
     orientLabel.textContent = 'Orientation'
     const orientSelect = document.createElement('select')
-    orientSelect.className = 'property-input'
-    orientSelect.style.cssText = 'flex:1;min-width:0;height:24px;background:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;'
+    orientSelect.className = 'property-input property-select'
     ;['portrait', 'landscape'].forEach((o) => {
       const opt = document.createElement('option')
       opt.value = o
@@ -851,13 +869,12 @@ function Properties(editor) {
 
     // Divider
     const divider = document.createElement('hr')
-    divider.style.cssText = 'border:none;border-top:1px solid #333;margin:8px 0;'
+    divider.className = 'prop-divider'
     container.appendChild(divider)
 
     // Export buttons
     const exportHeader = document.createElement('div')
-    exportHeader.style.cssText =
-      'font-weight:bold;padding:4px 8px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+    exportHeader.className = 'prop-export-header'
     exportHeader.textContent = 'Export'
     container.appendChild(exportHeader)
 
@@ -868,9 +885,8 @@ function Properties(editor) {
   function _makeExportButton(container, label, bg, onClick) {
     const btn = document.createElement('button')
     btn.textContent = label
-    btn.style.cssText =
-      `display:block;width:calc(100% - 16px);margin:4px 8px;padding:6px;` +
-      `background:${bg};color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;`
+    btn.className = 'prop-action-btn'
+    btn.style.background = bg
     btn.addEventListener('click', onClick)
     container.appendChild(btn)
   }
@@ -879,7 +895,7 @@ function Properties(editor) {
 
   function renderViewportPropertiesTab(container, vp) {
     const header = document.createElement('div')
-    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;'
+    header.className = 'prop-section-header'
     header.textContent = 'Viewport Properties'
     container.appendChild(header)
 
@@ -929,9 +945,7 @@ function Properties(editor) {
     // Delete button
     const deleteBtn = document.createElement('button')
     deleteBtn.textContent = '🗑 Delete Viewport'
-    deleteBtn.style.cssText =
-      'display:block;width:calc(100% - 16px);margin:12px 8px 4px;padding:6px;' +
-      'background:#6a2a2a;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;'
+    deleteBtn.className = 'prop-delete-vp-btn'
     deleteBtn.addEventListener('click', () => {
       if (editor.paperEditor) editor.paperEditor.removeViewport(vp.id)
       editor.selected = []
@@ -947,13 +961,13 @@ function Properties(editor) {
     const cfg = editor.paperConfig
 
     const header = document.createElement('div')
-    header.style.cssText = 'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;'
+    header.className = 'prop-section-header'
     header.textContent = 'Color Translation (Print)'
     container.appendChild(header)
 
     // Presets row
     const presetsRow = document.createElement('div')
-    presetsRow.style.cssText = 'display:flex;gap:4px;padding:4px 8px 8px;flex-wrap:wrap;'
+    presetsRow.className = 'prop-presets-row'
     ;[
       ['Color', null],
       ['Monochrome', '#000000'],
@@ -961,8 +975,7 @@ function Properties(editor) {
     ].forEach(([label, preset]) => {
       const btn = document.createElement('button')
       btn.textContent = label
-      btn.style.cssText =
-        'flex:1;padding:4px;background:#333;color:white;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px;'
+      btn.className = 'prop-preset-btn'
       btn.addEventListener('click', () => {
         const colors = pe ? pe.getUsedColors() : []
         colors.forEach((c) => {
@@ -987,7 +1000,7 @@ function Properties(editor) {
     if (colors.length === 0) {
       const empty = document.createElement('p')
       empty.textContent = 'No colors found in model drawing'
-      empty.style.cssText = 'padding:8px;opacity:0.6;font-size:12px;'
+      empty.className = 'prop-empty-msg'
       container.appendChild(empty)
       return
     }
@@ -1014,7 +1027,8 @@ function Properties(editor) {
 
       // Source color swatch
       const srcSwatch = document.createElement('div')
-      srcSwatch.style.cssText = `width:20px;height:20px;border-radius:3px;border:1px solid #555;flex-shrink:0;background:${sourceColor};`
+      srcSwatch.className = 'prop-color-swatch'
+      srcSwatch.style.background = sourceColor
       srcSwatch.title = sourceColor
 
       const arrow = document.createElement('span')
@@ -1023,7 +1037,9 @@ function Properties(editor) {
 
       // Print color swatch (clickable)
       const printSwatch = document.createElement('div')
-      printSwatch.style.cssText = `width:20px;height:20px;border-radius:3px;border:1px solid #555;flex-shrink:0;background:${mapping.printColor};cursor:pointer;`
+      printSwatch.className = 'prop-color-swatch'
+      printSwatch.style.background = mapping.printColor
+      printSwatch.style.cursor = 'pointer'
       printSwatch.title = `Print: ${mapping.printColor}`
       printSwatch.addEventListener('click', () => {
         openColorPicker(mapping.printColor, (newColor) => {
@@ -1035,7 +1051,7 @@ function Properties(editor) {
       })
 
       const colorLabel = document.createElement('span')
-      colorLabel.style.cssText = 'font-size:10px;opacity:0.6;font-family:monospace;'
+      colorLabel.className = 'prop-color-label'
       colorLabel.textContent = sourceColor
 
       row.appendChild(cb)
@@ -1062,9 +1078,15 @@ function Properties(editor) {
     if (!data) return
 
     // Default stroke color
-    createColorProperty(container, 'Stroke', data.style.stroke || 'white', (value) => {
-      setCollectionStyle(editor, id, { stroke: value })
-    }, () => {})
+    createColorProperty(
+      container,
+      'Stroke',
+      data.style.stroke || 'white',
+      (value) => {
+        setCollectionStyle(editor, id, { stroke: value })
+      },
+      () => {},
+    )
 
     // Default stroke width
     createPropertyField(container, 'Stroke Width', data.style['stroke-width'] || 0.1, (value) => {
@@ -1081,9 +1103,15 @@ function Properties(editor) {
     })
 
     // Default fill
-    createColorProperty(container, 'Fill', data.style.fill || 'transparent', (value) => {
-      setCollectionStyle(editor, id, { fill: value })
-    }, () => {})
+    createColorProperty(
+      container,
+      'Fill',
+      data.style.fill || 'transparent',
+      (value) => {
+        setCollectionStyle(editor, id, { fill: value })
+      },
+      () => {},
+    )
   }
 
   function renderCollectionTransformTab(container, element) {
@@ -1143,9 +1171,7 @@ function Properties(editor) {
       labelEl.className = 'property-label'
 
       const select = document.createElement('select')
-      select.className = 'property-input'
-      select.style.cssText =
-        'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+      select.className = 'property-input property-select'
 
       editor.collections.forEach((data, colId) => {
         if (colId === 'paper-annotations') return
@@ -1337,9 +1363,7 @@ function Properties(editor) {
     styleLabel.className = 'property-label'
 
     const styleSelect = document.createElement('select')
-    styleSelect.className = 'property-input'
-    styleSelect.style.cssText =
-      'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+    styleSelect.className = 'property-input property-select'
 
     editor.textStyleManager.styles.forEach((styleObj, sId) => {
       const opt = document.createElement('option')
@@ -1377,8 +1401,7 @@ function Properties(editor) {
       const styleId = dimData.styleId || 'Standard'
 
       const header = document.createElement('div')
-      header.style.cssText =
-        'font-weight:bold;padding:6px 8px 4px;font-size:11px;text-transform:uppercase;opacity:0.7;letter-spacing:0.5px;'
+      header.className = 'prop-section-header'
       header.textContent = 'Dimension Style'
       container.appendChild(header)
 
@@ -1390,9 +1413,7 @@ function Properties(editor) {
       styleLabel.className = 'property-label'
 
       const styleSelect = document.createElement('select')
-      styleSelect.className = 'property-input'
-      styleSelect.style.cssText =
-        'flex:1;min-width:0;height:24px;background-color:#2a2a2a;color:white;border:1px solid #1d1d1d;border-radius:3px;cursor:pointer;'
+      styleSelect.className = 'property-input property-select'
 
       editor.dimensionManager.styles.forEach((styleObj, sId) => {
         const opt = document.createElement('option')
@@ -1444,123 +1465,124 @@ function Properties(editor) {
     }
     const overrides = inCollection ? getElementOverrides(element) : {}
 
-    // Helper: create a style property row with optional "By Collection" toggle
+    // Helper: create a style property row with consistent 3-slot controls layout:
+    // [label] [override-slot] [enable-slot] [input]
+    // Slots use spacers when not applicable, ensuring all rows align.
     function createStylableProperty(propName, label, currentValue, applyFn, isColor, liveFn) {
       const isOverridden = !!overrides[propName]
 
+      const row = document.createElement('div')
+      row.className = 'property-row'
+
+      const labelEl = document.createElement('label')
+      labelEl.textContent = label
+      labelEl.className = 'property-label'
+
+      const controls = document.createElement('div')
+      controls.className = 'prop-controls'
+      controls.style.gap = '4px'
+      controls.style.overflow = 'hidden'
+
+      // Slot 1: Override toggle (O/C) or fixed-width spacer
       if (inCollection && collectionData) {
-        const row = document.createElement('div')
-        row.className = 'property-row'
-
-        const labelEl = document.createElement('label')
-        labelEl.textContent = label
-        labelEl.className = 'property-label'
-
-        const controls = document.createElement('div')
-        controls.style.cssText = 'display:flex;align-items:center;flex:1;gap:3px;min-width:0;overflow:hidden'
-
-        // "By Collection" toggle button
         const toggleBtn = document.createElement('button')
         toggleBtn.textContent = isOverridden ? 'O' : 'C'
         toggleBtn.title = isOverridden ? 'Own style — click to inherit from collection' : 'Collection style — click to override'
-        toggleBtn.style.cssText =
-          'font-size:9px;width:18px;height:18px;flex-shrink:0;border:1px solid #555;border-radius:3px;cursor:pointer;color:#ccc;padding:0;text-align:center;background:' +
-          (isOverridden ? '#555' : 'var(--accent-color)')
+        toggleBtn.className = 'prop-style-toggle'
+        toggleBtn.style.background = isOverridden ? '#555' : 'var(--accent-color)'
+        toggleBtn.addEventListener('click', () => {
+          overrides[propName] = !isOverridden
+          setElementOverrides(element, overrides)
+          if (!overrides[propName]) applyCollectionStyleToElement(editor, element)
+          safeDispatch('updatedProperties')
+        })
         controls.appendChild(toggleBtn)
-
-        if (isColor) {
-          // Enable/disable checkbox
-          const checkbox = document.createElement('input')
-          checkbox.type = 'checkbox'
-          checkbox.checked = currentValue !== 'none' && currentValue !== 'transparent'
-          checkbox.style.cssText = 'flex-shrink:0;margin:0'
-          checkbox.disabled = !isOverridden
-
-          const colorBox = document.createElement('div')
-          colorBox.className = 'property-input'
-          colorBox.style.cssText = 'height:20px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
-
-          function updateBoxColor(color) {
-            if (color === 'none' || color === 'transparent') {
-              colorBox.style.background = 'repeating-linear-gradient(45deg, #444 0px, #444 4px, #222 4px, #222 8px)'
-            } else {
-              colorBox.style.background = rgbToHex(color)
-            }
-          }
-          updateBoxColor(currentValue)
-
-          function syncBoxState() {
-            if (!isOverridden || !checkbox.checked) {
-              colorBox.style.opacity = '0.3'
-              colorBox.style.pointerEvents = 'none'
-            } else {
-              colorBox.style.opacity = '1'
-              colorBox.style.pointerEvents = 'auto'
-            }
-          }
-          syncBoxState()
-
-          checkbox.addEventListener('change', () => {
-            syncBoxState()
-            const applyVal = checkbox.checked ? rgbToHex(colorBox.style.background) || '#000000' : 'none'
-            applyFn(applyVal)
-          })
-
-          colorBox.addEventListener('click', () => {
-            if (!isOverridden || !checkbox.checked) return
-            openColorPicker(
-              colorBox.style.background,
-              (newColor) => { updateBoxColor(newColor); applyFn(newColor) },
-              liveFn ? (newColor) => { updateBoxColor(newColor); liveFn(newColor) } : undefined,
-            )
-          })
-
-          toggleBtn.addEventListener('click', () => {
-            overrides[propName] = !isOverridden
-            setElementOverrides(element, overrides)
-            if (!overrides[propName]) applyCollectionStyleToElement(editor, element)
-            safeDispatch('updatedProperties')
-          })
-
-          controls.appendChild(checkbox)
-          controls.appendChild(colorBox)
-        } else {
-          const textInput = document.createElement('input')
-          textInput.type = 'text'
-          textInput.value = currentValue
-          textInput.className = 'property-input'
-          textInput.style.cssText = 'flex:1;min-width:0'
-          textInput.disabled = !isOverridden
-
-          textInput.addEventListener('change', (e) => applyFn(e.target.value))
-          textInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-              applyFn(e.target.value)
-              textInput.blur()
-            }
-          })
-
-          toggleBtn.addEventListener('click', () => {
-            overrides[propName] = !isOverridden
-            setElementOverrides(element, overrides)
-            if (!overrides[propName]) applyCollectionStyleToElement(editor, element)
-            safeDispatch('updatedProperties')
-          })
-
-          controls.appendChild(textInput)
-        }
-
-        row.appendChild(labelEl)
-        row.appendChild(controls)
-        container.appendChild(row)
       } else {
-        // No collection — plain property with checkbox for colors
-        if (isColor) {
-          createColorProperty(container, label, currentValue, applyFn, liveFn)
-        } else {
-          createPropertyField(container, label, currentValue, applyFn)
-        }
+        const spacer = document.createElement('div')
+        spacer.style.width = '20px'
+        spacer.style.flexShrink = '0'
+        controls.appendChild(spacer)
       }
+
+      // Slot 2 + 3: Enable checkbox + color box, or spacer + text input
+      if (isColor) {
+        const checkbox = document.createElement('input')
+        checkbox.type = 'checkbox'
+        checkbox.checked = currentValue !== 'none' && currentValue !== 'transparent'
+        checkbox.className = 'prop-checkbox-sm'
+        if (inCollection && collectionData) checkbox.disabled = !isOverridden
+
+        const colorBox = document.createElement('div')
+        colorBox.className = 'property-input prop-color-box-wide'
+
+        function updateBoxColor(color) {
+          if (color === 'none' || color === 'transparent') {
+            colorBox.style.background = 'repeating-linear-gradient(45deg, #444 0px, #444 4px, #222 4px, #222 8px)'
+          } else {
+            colorBox.style.background = rgbToHex(color)
+          }
+        }
+        updateBoxColor(currentValue)
+
+        function syncBoxState() {
+          const overrideBlocked = inCollection && collectionData && !isOverridden
+          const disabled = overrideBlocked || !checkbox.checked
+          colorBox.style.opacity = disabled ? '0.3' : '1'
+          colorBox.style.pointerEvents = disabled ? 'none' : 'auto'
+        }
+        syncBoxState()
+
+        checkbox.addEventListener('change', () => {
+          syncBoxState()
+          const applyVal = checkbox.checked ? rgbToHex(colorBox.style.background) || '#000000' : 'none'
+          applyFn(applyVal)
+        })
+
+        colorBox.addEventListener('click', () => {
+          if ((inCollection && collectionData && !isOverridden) || !checkbox.checked) return
+          openColorPicker(
+            colorBox.style.background,
+            (newColor) => {
+              updateBoxColor(newColor)
+              applyFn(newColor)
+            },
+            liveFn
+              ? (newColor) => {
+                  updateBoxColor(newColor)
+                  liveFn(newColor)
+                }
+              : undefined,
+          )
+        })
+
+        controls.appendChild(checkbox)
+        controls.appendChild(colorBox)
+      } else {
+        const spacer = document.createElement('div')
+        spacer.style.width = '14px'
+        spacer.style.flexShrink = '0'
+        controls.appendChild(spacer)
+
+        const textInput = document.createElement('input')
+        textInput.type = 'text'
+        textInput.value = currentValue
+        textInput.className = 'property-input'
+        if (inCollection && collectionData) textInput.disabled = !isOverridden
+
+        textInput.addEventListener('change', (e) => applyFn(e.target.value))
+        textInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            applyFn(e.target.value)
+            textInput.blur()
+          }
+        })
+
+        controls.appendChild(textInput)
+      }
+
+      row.appendChild(labelEl)
+      row.appendChild(controls)
+      container.appendChild(row)
     }
 
     // Helper function to apply a style to an element, and if it's a group,
@@ -1754,10 +1776,10 @@ function Properties(editor) {
     const checkbox = document.createElement('input')
     checkbox.type = 'checkbox'
     checkbox.checked = value !== 'none' && value !== 'transparent'
+    checkbox.className = 'prop-checkbox-sm'
 
     const colorBox = document.createElement('div')
-    colorBox.className = 'property-input'
-    colorBox.style.cssText = 'height:24px;width:32px;padding:0;cursor:pointer;flex:none;border:1px solid #1d1d1d;border-radius:3px;'
+    colorBox.className = 'property-input prop-color-box-wide'
 
     function updateBoxColor(color) {
       if (color === 'none' || color === 'transparent') {
@@ -1789,8 +1811,16 @@ function Properties(editor) {
       if (!checkbox.checked) return
       openColorPicker(
         colorBox.style.background,
-        (newColor) => { updateBoxColor(newColor); onChange(newColor) },
-        onLive ? (newColor) => { updateBoxColor(newColor); onLive(newColor) } : undefined,
+        (newColor) => {
+          updateBoxColor(newColor)
+          onChange(newColor)
+        },
+        onLive
+          ? (newColor) => {
+              updateBoxColor(newColor)
+              onLive(newColor)
+            }
+          : undefined,
       )
     })
 

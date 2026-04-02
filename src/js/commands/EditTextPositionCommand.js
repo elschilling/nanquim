@@ -11,11 +11,13 @@ class EditTextPositionCommand extends Command {
     }
 
     execute() {
-        this.element.attr({ x: this.newValues.x, y: this.newValues.y })
+        this.element.attr('x', this.newValues.x).attr('y', this.newValues.y)
+        this.element.rebuild()
     }
 
     undo() {
-        this.element.attr({ x: this.oldValues.x, y: this.oldValues.y })
+        this.element.attr('x', this.oldValues.x).attr('y', this.oldValues.y)
+        this.element.rebuild()
     }
 }
 

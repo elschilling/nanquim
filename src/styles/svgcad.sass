@@ -403,8 +403,8 @@ main
 .property-label
     font-size: 10px
     color: #b8b8b8
-    min-width: 50px
-    max-width: 60px
+    min-width: 70px
+    max-width: 70px
     text-align: left
     flex-shrink: 0
 
@@ -431,7 +431,7 @@ main
     &:focus
         border-color: #4d6490
         background-color: #333333
-    &:read-only
+    &[readonly]
         color: #888888
         background-color: #252525
         cursor: not-allowed
@@ -703,3 +703,185 @@ main
     color: #ccc
     &:hover
         background: #555
+
+// ── Properties panel utility classes ───────────────────────────────────────
+
+.prop-controls
+    display: flex
+    align-items: center
+    flex: 1
+    gap: 3px
+    min-width: 0
+
+.prop-inherit-toggle
+    font-size: 9px
+    width: 18px
+    height: 18px
+    flex-shrink: 0
+    border: 1px solid #555
+    border-radius: 3px
+    cursor: pointer
+    color: #ccc
+    padding: 0
+    text-align: center
+
+.prop-color-box
+    height: 20px
+    width: 32px
+    padding: 0
+    flex: none
+    border: 1px solid #1d1d1d
+    border-radius: 3px
+
+.property-select
+    height: 24px
+    cursor: pointer
+
+.prop-accordion
+    border-top: 1px solid #2a2a2a
+    margin-top: 2px
+
+.prop-accordion-header
+    display: flex
+    align-items: center
+    gap: 4px
+    padding: 5px 4px 5px 2px
+    cursor: pointer
+    user-select: none
+
+.prop-collapse-icon
+    flex-shrink: 0
+    transition: transform 0.15s
+
+.prop-section-title
+    font-size: 11px
+    text-transform: uppercase
+    opacity: 0.8
+    flex: 1
+    font-weight: bold
+
+.prop-icon-btn
+    background: none
+    border: none
+    padding: 1px
+    cursor: pointer
+    display: flex
+    align-items: center
+    opacity: 0.6
+    &:hover
+        opacity: 1
+
+.prop-new-style-btn
+    margin: 10px 4px 4px
+    padding: 4px 10px
+    border: 1px solid #555
+    border-radius: 3px
+    background: #3a3a3a
+    color: #ccc
+    cursor: pointer
+    font-size: 11px
+
+.prop-section-header
+    font-weight: bold
+    padding: 6px 8px 4px
+    font-size: 11px
+    text-transform: uppercase
+    opacity: 0.7
+    letter-spacing: 0.5px
+
+.prop-export-header
+    font-weight: bold
+    padding: 4px 8px
+    font-size: 11px
+    text-transform: uppercase
+    opacity: 0.7
+    letter-spacing: 0.5px
+
+.prop-divider
+    border: none
+    border-top: 1px solid #333
+    margin: 8px 0
+
+.prop-action-btn
+    display: block
+    width: calc(100% - 16px)
+    margin: 4px 8px
+    padding: 6px
+    color: white
+    border: none
+    border-radius: 4px
+    cursor: pointer
+    font-size: 12px
+
+.prop-delete-vp-btn
+    display: block
+    width: calc(100% - 16px)
+    margin: 12px 8px 4px
+    padding: 6px
+    background: #6a2a2a
+    color: white
+    border: none
+    border-radius: 4px
+    cursor: pointer
+    font-size: 12px
+
+.prop-presets-row
+    display: flex
+    gap: 4px
+    padding: 4px 8px 8px
+    flex-wrap: wrap
+
+.prop-preset-btn
+    flex: 1
+    padding: 4px
+    background: #333
+    color: white
+    border: 1px solid #555
+    border-radius: 3px
+    cursor: pointer
+    font-size: 11px
+
+.prop-empty-msg
+    padding: 8px
+    opacity: 0.6
+    font-size: 12px
+
+.prop-color-swatch
+    width: 20px
+    height: 20px
+    border-radius: 3px
+    border: 1px solid #555
+    flex-shrink: 0
+
+.prop-color-label
+    font-size: 10px
+    opacity: 0.6
+    font-family: monospace
+
+.prop-style-toggle
+    font-size: 9px
+    width: 20px
+    height: 20px
+    flex-shrink: 0
+    border: 1px solid #555
+    border-radius: 3px
+    cursor: pointer
+    color: #ccc
+    padding: 0
+    text-align: center
+
+.prop-checkbox-sm
+    flex-shrink: 0
+    margin: 0
+    width: 14px
+    height: 14px
+    cursor: pointer
+
+.prop-color-box-wide
+    height: 20px
+    width: 36px
+    padding: 0
+    cursor: pointer
+    flex: none
+    border: 1px solid #1d1d1d
+    border-radius: 3px
