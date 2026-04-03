@@ -61,6 +61,14 @@ function Navbar(editor) {
     // Get inner content only (no wrapping <g> tag)
     let drawingContent = editor.drawing.node.innerHTML
 
+    // Strip interaction classes — they live in the DOM and would bake into the saved file,
+    // causing elements to appear pre-hovered/selected when the file is reopened.
+    drawingContent = drawingContent
+      .replace(/\belementHover\b\s*/g, '')
+      .replace(/\belementSelected\b\s*/g, '')
+      // Clean up any class="..." attributes left empty or with only whitespace
+      .replace(/\bclass="\s*"/g, '')
+
     // Revert logic decoupled: Export relies strictly on inline rendering variables
 
     // Convert any explicit white inline strokes and fills to black for standalone SVG visibility

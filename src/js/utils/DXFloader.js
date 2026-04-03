@@ -168,6 +168,13 @@ function DXFLoader(editor) {
         markOverrides(editor.drawing)
       }
 
+      // Strip any hover/selected classes that were baked into the saved SVG.
+      // These classes live in the DOM so they survive serialization; clear them now
+      // before the editor's selection/hover state is re-established.
+      editor.drawing.node.querySelectorAll('.elementHover, .elementSelected').forEach(node => {
+        node.classList.remove('elementHover', 'elementSelected')
+      })
+
       // Hydrate data attributes recursively (including inside collection groups).
       // Must run BEFORE bakeTransforms so that arcData/splineData/etc. are
       // in-memory when applyMatrixToElement tries to transform them.

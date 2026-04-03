@@ -4,6 +4,59 @@ import { HATCH_PATTERNS, ensurePattern } from './utils/hatchPatterns'
 
 const propertiesPanel = document.getElementById('properties-panel')
 
+// ── Color Copy/Paste (Blender-style) ────────────────────────────────────────
+// A single module-level clipboard so color can be carried across any color box.
+let _colorClipboard = null
+let _hoveredColorBox = null  // { getColor, setColor, el } — whichever box the mouse is over
+
+document.addEventListener('keydown', (e) => {
+  if (!_hoveredColorBox) return
+  if (!e.ctrlKey && !e.metaKey) return
+  if (e.key === 'c' || e.key === 'C') {
+    const color = _hoveredColorBox.getColor()
+    if (!color) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+    _colorClipboard = color
+    _showColorToast(_hoveredColorBox.el, 'Copied')
+  } else if (e.key === 'v' || e.key === 'V') {
+    if (!_colorClipboard) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+    _hoveredColorBox.setColor(_colorClipboard)
+    _showColorToast(_hoveredColorBox.el, 'Pasted')
+  }
+})
+
+function _showColorToast(el, text) {
+  const old = el.querySelector('._color-toast')
+  if (old) old.remove()
+  const toast = document.createElement('span')
+  toast.className = '_color-toast'
+  toast.textContent = text
+  Object.assign(toast.style, {
+    position: 'absolute', inset: '0',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '9px', fontWeight: '600', color: '#fff',
+    textShadow: '0 1px 2px #000',
+    background: 'rgba(0,0,0,0.45)',
+    borderRadius: 'inherit',
+    pointerEvents: 'none',
+    opacity: '1',
+    transition: 'opacity 0.4s',
+    zIndex: '1',
+  })
+  // el must be position:relative for inset:0 to work
+  el.style.position = 'relative'
+  el.appendChild(toast)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { toast.style.opacity = '0' })
+  })
+  setTimeout(() => toast.remove(), 500)
+}
+
 function Properties(editor) {
   const signals = editor.signals
   let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles' | 'textstyles'
@@ -237,6 +290,12 @@ function Properties(editor) {
     syncBox(isInherit, value)
 
     let currentColor = isInherit ? '#ffffff' : value || '#ffffff'
+
+    attachColorCopyPaste(
+      colorBox,
+      () => (isInherit ? null : currentColor),
+      (hex) => { currentColor = hex; syncBox(false, hex); onChange(hex) }
+    )
 
     colorBox.addEventListener('click', () => {
       openColorPicker(
@@ -552,10 +611,18 @@ function Properties(editor) {
       colorBox.className = 'property-input prop-color-box'
       colorBox.style.cursor = 'pointer'
       colorBox.style.background = currentValue || '#ffffff'
+
+      attachColorCopyPaste(
+        colorBox,
+        () => rgbToHex(colorBox.style.background),
+        (hex) => { colorBox.style.background = hex; currentValue = hex; onChange(hex) }
+      )
+
       colorBox.addEventListener('click', () => {
         openColorPicker(
           currentValue || '#ffffff',
           (newColor) => {
+            currentValue = newColor
             colorBox.style.background = newColor
             onChange(newColor)
           },
@@ -1629,6 +1696,12 @@ function Properties(editor) {
         }
         updateBoxColor(currentValue)
 
+        attachColorCopyPaste(
+          colorBox,
+          () => (currentValue === 'none' || currentValue === 'transparent') ? null : rgbToHex(currentValue),
+          (hex) => { currentValue = hex; updateBoxColor(hex); applyFn(hex); checkbox.checked = true; syncBoxState() }
+        )
+
         function syncBoxState() {
           const overrideBlocked = inCollection && collectionData && !isOverridden
           const disabled = overrideBlocked || !checkbox.checked
@@ -1762,6 +1835,17 @@ function Properties(editor) {
         colorBox.style.background = swatchColor
         colorBox.style.cursor = fillSource === 'custom' ? 'pointer' : 'default'
         colorBox.style.opacity = fillSource === 'custom' ? '1' : '0.5'
+
+        attachColorCopyPaste(
+          colorBox,
+          () => modeSelect.value === 'custom' ? rgbToHex(colorBox.style.background) : null,
+          (hex) => {
+            if (modeSelect.value !== 'custom') return
+            element.css('fill', hex)
+            colorBox.style.background = hex
+            safeDispatch('refreshHandlers')
+          }
+        )
 
         colorBox.addEventListener('click', () => {
           if (modeSelect.value !== 'custom') return
@@ -1930,6 +2014,17 @@ function Properties(editor) {
 
   let hiddenColorPicker = null
 
+  /**
+   * Wire Blender-style Ctrl+C / Ctrl+V color copy-paste to a color swatch div.
+   * @param {HTMLElement} el       - The color box element
+   * @param {() => string} getColor - Returns the current hex color of the box
+   * @param {(hex: string) => void} setColor - Applies a new hex color to the box and fires the onChange
+   */
+  function attachColorCopyPaste(el, getColor, setColor) {
+    el.addEventListener('mouseenter', () => { _hoveredColorBox = { el, getColor, setColor } })
+    el.addEventListener('mouseleave', () => { if (_hoveredColorBox && _hoveredColorBox.el === el) _hoveredColorBox = null })
+  }
+
   function openColorPicker(initialColor, onUpdate, onLiveUpdate) {
     if (!hiddenColorPicker) {
       hiddenColorPicker = document.createElement('input')
@@ -1998,6 +2093,12 @@ function Properties(editor) {
       }
     }
     updateBoxColor(value)
+
+    attachColorCopyPaste(
+      colorBox,
+      () => (value === 'none' || value === 'transparent') ? null : rgbToHex(value),
+      (hex) => { value = hex; updateBoxColor(hex); onChange(hex); checkbox.checked = true; colorBox.style.opacity = '1'; colorBox.style.pointerEvents = 'auto' }
+    )
 
     if (!checkbox.checked) {
       colorBox.style.opacity = '0.3'

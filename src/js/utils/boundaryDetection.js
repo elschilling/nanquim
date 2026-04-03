@@ -473,69 +473,33 @@ function findBoundaryPath(clickPoint, segments) {
         adj[i] = []
     }
 
-    // Step 3: Find the nearest edge to the click point via ray cast,
-    // skipping segments whose nodes were all pruned away.
-    let bestEdgeHit = null
-    const rayDx = 1, rayDy = 0
-
-    for (let si = 0; si < segments.length; si++) {
-        const seg = segments[si]
-        let hit
-        if (seg.type === 'line') {
-            hit = rayLineIntersection(clickPoint.x, clickPoint.y, rayDx, rayDy, seg)
-        } else if (seg.type === 'arc') {
-            hit = rayArcIntersection(clickPoint.x, clickPoint.y, rayDx, rayDy, seg)
-        }
-        if (!hit) continue
-
-        // Skip segments that have no remaining active nodes after pruning
-        const segPts = segIntersections.get(si) || []
-        const hasActiveNode = segPts.some(p => {
-            const ni = nodeMap.get(snapKey(p.x, p.y))
-            return ni !== undefined && adj[ni].length > 0
-        })
-        if (!hasActiveNode) continue
-
-        if (!bestEdgeHit || hit.t < bestEdgeHit.t) {
-            bestEdgeHit = { ...hit, segIdx: si }
-        }
-    }
-
-    if (!bestEdgeHit) {
-        return null
-    }
-
-    // Try tracing from all active nodes, sorted by distance to the hit point.
-    // For each node try both incoming angle directions (the chord inside a circle creates
-    // degree-3 nodes that can cause the trace to pick the wrong sector).
-    const allNodes = []
-    for (let ni = 0; ni < nodes.length; ni++) {
-        if (adj[ni].length === 0) continue
-        const d = Math.hypot(nodes[ni].x - bestEdgeHit.x, nodes[ni].y - bestEdgeHit.y)
-        allNodes.push({ ni, d })
-    }
-    allNodes.sort((a, b) => a.d - b.d)
-
-    // Collect ALL valid candidates and return the one with the smallest enclosed area.
-    // Multiple lines crossing a circle create composite regions (circle sector + external
-    // triangle) that are larger than a pure sector. Minimum shoelace area reliably picks
-    // the tightest enclosing boundary without requiring arc direction calculations.
+    // Step 3: Try every graph edge in both orientations as a seed for traceBoundary.
+    // Ray-casting to find the "nearest" edge is unreliable for curved regions (e.g. crescents)
+    // because the click's nearest arc crossing may not bound the desired face.
+    // The graph is small (< ~20 nodes), so exhaustive seeding is fast.
     let bestResult = null
     let bestArea = Infinity
 
-    for (const { ni: startNode } of allNodes) {
-        const baseAngle = Math.atan2(
-            nodes[startNode].y - clickPoint.y,
-            nodes[startNode].x - clickPoint.x
-        )
+    for (let ni = 0; ni < nodes.length; ni++) {
+        if (adj[ni].length === 0) continue
+        for (const edge of adj[ni]) {
+            if (edge.node <= ni) continue // each undirected edge once
+            const n1 = ni, n2 = edge.node
+            const seg = segments[edge.seg]
 
-        for (const offset of [0, Math.PI]) {
-            const result = traceBoundary(nodes, adj, segments, startNode, baseAngle + offset)
-            if (result && result.length >= 2 && verifyPointInside(clickPoint, result, segments)) {
-                const area = boundaryArea(result, segments)
-                if (area < bestArea) {
-                    bestArea = area
-                    bestResult = result
+            // Both directed orientations of this edge → both adjacent faces
+            const pairs = [
+                { startNode: n1, incomingAngle: edgeDepartureAngle(n1, n2, nodes, seg) + Math.PI },
+                { startNode: n2, incomingAngle: edgeDepartureAngle(n2, n1, nodes, seg) + Math.PI },
+            ]
+            for (const { startNode, incomingAngle } of pairs) {
+                const result = traceBoundary(nodes, adj, segments, startNode, incomingAngle)
+                if (result && result.length >= 2 && verifyPointInside(clickPoint, result, segments)) {
+                    const area = boundaryArea(result, segments)
+                    if (area < bestArea) {
+                        bestArea = area
+                        bestResult = result
+                    }
                 }
             }
         }
@@ -545,35 +509,10 @@ function findBoundaryPath(clickPoint, segments) {
 }
 
 /**
- * Compute enclosed area using the shoelace formula, sampling arc edges at intermediate
- * points so arc curvature is included. Without sampling, a large arc sector has a
- * near-zero "polygon" footprint despite enclosing a large true area.
+ * Compute enclosed area using the shoelace formula on a sampled polygon.
  */
 function boundaryArea(edges, segments) {
-    const pts = []
-    for (const edge of edges) {
-        pts.push(edge.from)
-        const seg = segments[edge.segIdx]
-        if (seg.type === 'arc') {
-            const distToStart = Math.hypot(edge.from.x - seg.x1, edge.from.y - seg.y1)
-            const distToEnd   = Math.hypot(edge.from.x - seg.x2, edge.from.y - seg.y2)
-            const effectiveCCW = (distToEnd < distToStart) ? !seg.ccw : seg.ccw
-            let fa = Math.atan2(edge.from.y - seg.cy, edge.from.x - seg.cx)
-            let ta = Math.atan2(edge.to.y   - seg.cy, edge.to.x   - seg.cx)
-            if (fa < 0) fa += 2 * Math.PI
-            if (ta < 0) ta += 2 * Math.PI
-            let span = effectiveCCW ? (ta - fa) : (fa - ta)
-            if (span <= 0) span += 2 * Math.PI
-            // One sample per ~22.5° of arc is enough for a good area estimate
-            const steps = Math.max(4, Math.ceil(span / (Math.PI / 8)))
-            for (let i = 1; i < steps; i++) {
-                const a = effectiveCCW
-                    ? fa + (span * i / steps)
-                    : fa - (span * i / steps)
-                pts.push({ x: seg.cx + seg.r * Math.cos(a), y: seg.cy + seg.r * Math.sin(a) })
-            }
-        }
-    }
+    const pts = sampleBoundary(edges, segments)
     let sum = 0
     for (let i = 0; i < pts.length; i++) {
         const j = (i + 1) % pts.length
@@ -583,7 +522,67 @@ function boundaryArea(edges, segments) {
 }
 
 /**
+ * Returns true if point p lies between n1 and n2 along seg.
+ * For lines: uses dot-product parameter. For arcs: uses angular containment
+ * with traversal direction determined geometrically (nudge), avoiding arcParameter
+ * which is broken for ccw=false arcs where endAngle > startAngle.
+ */
+function subEdgeContains(seg, n1, n2, p) {
+    if (seg.type === 'line') {
+        const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1
+        const len2 = dx * dx + dy * dy
+        if (len2 < EPS) return false
+        const t1 = ((n1.x - seg.x1) * dx + (n1.y - seg.y1) * dy) / len2
+        const t2 = ((n2.x - seg.x1) * dx + (n2.y - seg.y1) * dy) / len2
+        const tp = ((p.x  - seg.x1) * dx + (p.y  - seg.y1) * dy) / len2
+        const lo = Math.min(t1, t2), hi = Math.max(t1, t2)
+        return tp >= lo - 1e-4 && tp <= hi + 1e-4
+    }
+    // Arc: determine traversal direction by sampling the CCW midpoint between n1 and n2
+    // and testing if it lies on the segment. isPointOnArc is the authoritative test —
+    // it uses the segment's own ccw/startAngle/endAngle, so it handles all conventions.
+    // A geometric nudge fails for arcs spanning ~180° (equidistant test points).
+    const { cx, cy, r } = seg
+    const fa = Math.atan2(n1.y - cy, n1.x - cx)
+    const ta = Math.atan2(n2.y - cy, n2.x - cx)
+    const pa = Math.atan2(p.y  - cy, p.x  - cx)
+    let ccwSweep = ta - fa
+    if (ccwSweep <= 0) ccwSweep += 2 * Math.PI
+    const midCCW = fa + ccwSweep / 2
+    const midPt = { x: cx + r * Math.cos(midCCW), y: cy + r * Math.sin(midCCW) }
+    const goingCCW = isPointOnArc(midPt.x, midPt.y, seg)
+    return isAngleInRange(pa, fa, ta, goingCCW)
+}
+
+/**
+ * Get the departure tangent angle leaving fromNode toward toNode along seg.
+ * For lines this is the chord direction. For arcs it is the true tangent at
+ * fromNode — chord direction is wrong for large arcs (can point nearly backward).
+ */
+function edgeDepartureAngle(fromNode, toNode, nodes, seg) {
+    if (seg.type !== 'arc') {
+        return Math.atan2(
+            nodes[toNode].y - nodes[fromNode].y,
+            nodes[toNode].x - nodes[fromNode].x
+        )
+    }
+    const { cx, cy, r } = seg
+    const fx = nodes[fromNode].x, fy = nodes[fromNode].y
+    const fa = Math.atan2(fy - cy, fx - cx)
+    const ta = Math.atan2(nodes[toNode].y - cy, nodes[toNode].x - cx)
+    // Sample CCW midpoint and test if it lies on the segment — same approach as subEdgeContains.
+    let ccwSweep = ta - fa
+    if (ccwSweep <= 0) ccwSweep += 2 * Math.PI
+    const midCCW = fa + ccwSweep / 2
+    const midPt = { x: cx + r * Math.cos(midCCW), y: cy + r * Math.sin(midCCW) }
+    const goingCCW = isPointOnArc(midPt.x, midPt.y, seg)
+    return goingCCW ? fa + Math.PI / 2 : fa - Math.PI / 2
+}
+
+/**
  * Trace boundary using rightmost-turn algorithm.
+ * Uses arc tangents (not chords) for direction comparisons so large arcs
+ * don't cause wrong face selection.
  * Returns array of edges: [{ fromNode, toNode, segIdx }]
  */
 function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
@@ -608,8 +607,8 @@ function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
             // on parallel edges, e.g. the two half-arcs of a full circle)
             if (edge.node === prevNode && edge.seg === prevSeg) continue
 
-            const nx = nodes[edge.node]
-            const edgeAngle = Math.atan2(nx.y - nodes[currentNode].y, nx.x - nodes[currentNode].x)
+            const seg = segments[edge.seg]
+            const edgeAngle = edgeDepartureAngle(currentNode, edge.node, nodes, seg)
 
             let turn = normalizeAngle(edgeAngle - reverseAngle)
             if (turn < EPS) turn += 2 * Math.PI
@@ -631,10 +630,12 @@ function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
             to: nodes[bestNext],
         })
 
-        prevAngle = Math.atan2(
-            nodes[bestNext].y - nodes[currentNode].y,
-            nodes[bestNext].x - nodes[currentNode].x
-        )
+        // Arrival angle at bestNext = tangent AT bestNext in the traversal direction.
+        // For curved arcs, the tangent rotates along the arc, so we must evaluate at
+        // the destination node — not the source. edgeDepartureAngle(bestNext, currentNode)
+        // gives the tangent at bestNext going TOWARD currentNode; adding π reverses it to
+        // give the direction we're actually traveling when we arrive at bestNext.
+        prevAngle = edgeDepartureAngle(bestNext, currentNode, nodes, segments[bestSeg]) + Math.PI
 
         prevNode = currentNode
         prevSeg = bestSeg
@@ -655,82 +656,63 @@ function traceBoundary(nodes, adj, segments, startNode, incomingAngle) {
 }
 
 /**
- * Verify that the click point is inside the boundary by counting
- * ray crossings in multiple directions.
+ * Sample a boundary into a dense polygon, including arc curvature.
+ * Returns array of {x, y} points (one point per ~22.5° for arcs).
  */
-function verifyPointInside(clickPoint, boundaryEdges, segments) {
-    // Use the boundary edges to build segment list for ray testing
-    let insideCount = 0
-    const testRays = 8
-
-    for (let i = 0; i < testRays; i++) {
-        const angle = (2 * Math.PI * i) / testRays + 0.1 // offset to avoid hitting nodes
-        const dx = Math.cos(angle)
-        const dy = Math.sin(angle)
-
-        let crossings = 0
-        for (const edge of boundaryEdges) {
-            const seg = segments[edge.segIdx]
-            // Build a sub-segment from edge.from to edge.to
-            if (seg.type === 'line') {
-                const subSeg = { type: 'line', x1: edge.from.x, y1: edge.from.y, x2: edge.to.x, y2: edge.to.y }
-                const hit = rayLineIntersection(clickPoint.x, clickPoint.y, dx, dy, subSeg)
-                if (hit) crossings++
-            } else if (seg.type === 'arc') {
-                // Determine the effective traversal direction — if the boundary edge goes from
-                // seg.x2→seg.x1 (reversed), flip ccw so the angular range check is correct.
-                const distToStart = Math.hypot(edge.from.x - seg.x1, edge.from.y - seg.y1)
-                const distToEnd = Math.hypot(edge.from.x - seg.x2, edge.from.y - seg.y2)
-                const effectiveCCW = (distToEnd < distToStart) ? !seg.ccw : seg.ccw
-                const hit = rayArcIntersectionSub(clickPoint.x, clickPoint.y, dx, dy,
-                    { ...seg, ccw: effectiveCCW }, edge.from, edge.to)
-                crossings += hit
+function sampleBoundary(edges, segments) {
+    const pts = []
+    for (const edge of edges) {
+        pts.push(edge.from)
+        const seg = segments[edge.segIdx]
+        if (seg.type === 'arc') {
+            const { cx, cy, r } = seg
+            const fa = Math.atan2(edge.from.y - cy, edge.from.x - cx)
+            const ta = Math.atan2(edge.to.y   - cy, edge.to.x   - cx)
+            // Determine traversal direction using the authoritative midpoint test
+            // (same approach as subEdgeContains/edgeDepartureAngle).
+            let ccwSweep = ta - fa
+            if (ccwSweep <= 0) ccwSweep += 2 * Math.PI
+            const midCCW = fa + ccwSweep / 2
+            const midPt = { x: cx + r * Math.cos(midCCW), y: cy + r * Math.sin(midCCW) }
+            const goingCCW = isPointOnArc(midPt.x, midPt.y, seg)
+            let span = goingCCW ? ccwSweep : (2 * Math.PI - ccwSweep)
+            if (span <= 0) span += 2 * Math.PI
+            const steps = Math.max(4, Math.ceil(span / (Math.PI / 8)))
+            for (let i = 1; i < steps; i++) {
+                const a = goingCCW
+                    ? fa + (span * i / steps)
+                    : fa - (span * i / steps)
+                pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) })
             }
         }
-
-        if (crossings % 2 === 1) insideCount++
     }
-
-    return insideCount >= testRays / 2
+    return pts
 }
 
 /**
- * Count ray crossings with an arc sub-segment (from point A to point B on the arc).
+ * Verify that the click point is inside the boundary using a polygon-based
+ * point-in-polygon test. Arcs are sampled into line segments — no arc
+ * direction logic needed, eliminating a whole class of sign bugs.
  */
-function rayArcIntersectionSub(ox, oy, dx, dy, arcSeg, fromPt, toPt) {
-    const { cx, cy, r } = arcSeg
-    const fx = ox - cx
-    const fy = oy - cy
-    const a = dx * dx + dy * dy
-    const b = 2 * (fx * dx + fy * dy)
-    const c = fx * fx + fy * fy - r * r
-    const disc = b * b - 4 * a * c
-    if (disc < 0) return 0
+function verifyPointInside(clickPoint, boundaryEdges, segments) {
+    const pts = sampleBoundary(boundaryEdges, segments)
+    if (pts.length < 3) return false
 
-    const sqrtDisc = Math.sqrt(disc)
-    let count = 0
-
-    // Compute angle range of the sub-arc from fromPt to toPt
-    let fromAngle = Math.atan2(fromPt.y - cy, fromPt.x - cx)
-    let toAngle = Math.atan2(toPt.y - cy, toPt.x - cx)
-    if (fromAngle < 0) fromAngle += 2 * Math.PI
-    if (toAngle < 0) toAngle += 2 * Math.PI
-
-    for (const sign of [-1, 1]) {
-        const t = (-b + sign * sqrtDisc) / (2 * a)
-        if (t <= EPS) continue
-        const px = ox + t * dx
-        const py = oy + t * dy
-        let angle = Math.atan2(py - cy, px - cx)
-        if (angle < 0) angle += 2 * Math.PI
-
-        // Check if angle is within the sub-arc range
-        // Use the parent arc's ccw to determine sweep direction
-        if (isAngleInRange(angle, fromAngle, toAngle, arcSeg.ccw)) {
-            count++
+    // Winding-number PIP: count sign-aware crossings of a horizontal rightward ray
+    const ox = clickPoint.x, oy = clickPoint.y
+    let crossings = 0
+    for (let i = 0; i < pts.length; i++) {
+        const a = pts[i]
+        const b = pts[(i + 1) % pts.length]
+        if ((a.y <= oy && b.y > oy) || (b.y <= oy && a.y > oy)) {
+            // Compute x-coordinate of intersection with the horizontal ray
+            const t = (oy - a.y) / (b.y - a.y)
+            if (ox < a.x + t * (b.x - a.x)) {
+                crossings++
+            }
         }
     }
-    return count
+    return (crossings % 2) === 1
 }
 
 function isAngleInRange(angle, from, to, ccw) {
