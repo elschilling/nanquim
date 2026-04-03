@@ -6,6 +6,18 @@
   <link rel="icon" type="image/svg+xml" href="/assets/img/nanquim-logo.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>nanquim v0.0.0</title>
+  <!-- Critical CSS: set dark background immediately to prevent FOUC -->
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: #1a1a1a;
+      color: rgba(255, 255, 255, 0.87);
+    }
+    body {
+      visibility: hidden;
+    }
+  </style>
   <!-- Import Inter font for consistent cross-platform UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

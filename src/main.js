@@ -33,6 +33,9 @@ LinearDimensionCommand.registerRedrawListener(editor)
 const welcomeScreen = new WelcomeScreen(editor)
 window.welcomeScreen = welcomeScreen
 
+// Reveal the app now that all modules are ready (pairs with visibility:hidden in index.html critical CSS)
+document.body.style.visibility = 'visible'
+
 window.editor = editor
 
 // ── Editor Mode Switching ─────────────────────────────────────────────────
