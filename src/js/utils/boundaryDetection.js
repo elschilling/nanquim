@@ -459,7 +459,22 @@ function findBoundaryPath(clickPoint, segments) {
         return null
     }
 
-    // Step 3: Find the nearest edge to the click point via ray cast
+    // Step 2b: Single-pass removal of degree-1 nodes (dangling endpoints that can't form a cycle).
+    // A single pass avoids cascading removals that would destroy valid boundary nodes when a
+    // line crosses the boundary (e.g. a line that exits a circle).
+    const toRemove = []
+    for (let i = 0; i < adj.length; i++) {
+        if (adj[i].length === 1) toRemove.push(i)
+    }
+    for (const i of toRemove) {
+        for (const edge of adj[i]) {
+            adj[edge.node] = adj[edge.node].filter(e => e.node !== i)
+        }
+        adj[i] = []
+    }
+
+    // Step 3: Find the nearest edge to the click point via ray cast,
+    // skipping segments whose nodes were all pruned away.
     let bestEdgeHit = null
     const rayDx = 1, rayDy = 0
 
@@ -471,7 +486,17 @@ function findBoundaryPath(clickPoint, segments) {
         } else if (seg.type === 'arc') {
             hit = rayArcIntersection(clickPoint.x, clickPoint.y, rayDx, rayDy, seg)
         }
-        if (hit && (!bestEdgeHit || hit.t < bestEdgeHit.t)) {
+        if (!hit) continue
+
+        // Skip segments that have no remaining active nodes after pruning
+        const segPts = segIntersections.get(si) || []
+        const hasActiveNode = segPts.some(p => {
+            const ni = nodeMap.get(snapKey(p.x, p.y))
+            return ni !== undefined && adj[ni].length > 0
+        })
+        if (!hasActiveNode) continue
+
+        if (!bestEdgeHit || hit.t < bestEdgeHit.t) {
             bestEdgeHit = { ...hit, segIdx: si }
         }
     }
@@ -480,38 +505,81 @@ function findBoundaryPath(clickPoint, segments) {
         return null
     }
 
-    const hitSegIdx = bestEdgeHit.segIdx
-    const pts = segIntersections.get(hitSegIdx) || []
-    const nodeDistances = []
-
-    for (const p of pts) {
-        const ni = getNodeIndex(p.x, p.y)
+    // Try tracing from all active nodes, sorted by distance to the hit point.
+    // For each node try both incoming angle directions (the chord inside a circle creates
+    // degree-3 nodes that can cause the trace to pick the wrong sector).
+    const allNodes = []
+    for (let ni = 0; ni < nodes.length; ni++) {
+        if (adj[ni].length === 0) continue
         const d = Math.hypot(nodes[ni].x - bestEdgeHit.x, nodes[ni].y - bestEdgeHit.y)
-        if (!nodeDistances.some(nd => nd.ni === ni)) {
-            nodeDistances.push({ ni, d })
-        }
+        allNodes.push({ ni, d })
     }
-    nodeDistances.sort((a, b) => a.d - b.d)
+    allNodes.sort((a, b) => a.d - b.d)
 
-    // Try tracing from multiple start nodes
-    for (const { ni: startNode } of nodeDistances.slice(0, 4)) {
-        if (adj[startNode].length === 0) continue
+    // Collect ALL valid candidates and return the one with the smallest enclosed area.
+    // Multiple lines crossing a circle create composite regions (circle sector + external
+    // triangle) that are larger than a pure sector. Minimum shoelace area reliably picks
+    // the tightest enclosing boundary without requiring arc direction calculations.
+    let bestResult = null
+    let bestArea = Infinity
 
-        const incomingAngle = Math.atan2(
+    for (const { ni: startNode } of allNodes) {
+        const baseAngle = Math.atan2(
             nodes[startNode].y - clickPoint.y,
             nodes[startNode].x - clickPoint.x
         )
 
-        const result = traceBoundary(nodes, adj, segments, startNode, incomingAngle)
-
-        if (result && result.length >= 2) {
-            if (verifyPointInside(clickPoint, result, segments)) {
-                return result
+        for (const offset of [0, Math.PI]) {
+            const result = traceBoundary(nodes, adj, segments, startNode, baseAngle + offset)
+            if (result && result.length >= 2 && verifyPointInside(clickPoint, result, segments)) {
+                const area = boundaryArea(result, segments)
+                if (area < bestArea) {
+                    bestArea = area
+                    bestResult = result
+                }
             }
         }
     }
 
-    return null
+    return bestResult
+}
+
+/**
+ * Compute enclosed area using the shoelace formula, sampling arc edges at intermediate
+ * points so arc curvature is included. Without sampling, a large arc sector has a
+ * near-zero "polygon" footprint despite enclosing a large true area.
+ */
+function boundaryArea(edges, segments) {
+    const pts = []
+    for (const edge of edges) {
+        pts.push(edge.from)
+        const seg = segments[edge.segIdx]
+        if (seg.type === 'arc') {
+            const distToStart = Math.hypot(edge.from.x - seg.x1, edge.from.y - seg.y1)
+            const distToEnd   = Math.hypot(edge.from.x - seg.x2, edge.from.y - seg.y2)
+            const effectiveCCW = (distToEnd < distToStart) ? !seg.ccw : seg.ccw
+            let fa = Math.atan2(edge.from.y - seg.cy, edge.from.x - seg.cx)
+            let ta = Math.atan2(edge.to.y   - seg.cy, edge.to.x   - seg.cx)
+            if (fa < 0) fa += 2 * Math.PI
+            if (ta < 0) ta += 2 * Math.PI
+            let span = effectiveCCW ? (ta - fa) : (fa - ta)
+            if (span <= 0) span += 2 * Math.PI
+            // One sample per ~22.5° of arc is enough for a good area estimate
+            const steps = Math.max(4, Math.ceil(span / (Math.PI / 8)))
+            for (let i = 1; i < steps; i++) {
+                const a = effectiveCCW
+                    ? fa + (span * i / steps)
+                    : fa - (span * i / steps)
+                pts.push({ x: seg.cx + seg.r * Math.cos(a), y: seg.cy + seg.r * Math.sin(a) })
+            }
+        }
+    }
+    let sum = 0
+    for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length
+        sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y
+    }
+    return Math.abs(sum) / 2
 }
 
 /**
@@ -609,8 +677,13 @@ function verifyPointInside(clickPoint, boundaryEdges, segments) {
                 const hit = rayLineIntersection(clickPoint.x, clickPoint.y, dx, dy, subSeg)
                 if (hit) crossings++
             } else if (seg.type === 'arc') {
-                // For arc edges, test against the full arc's circle and check angular range
-                const hit = rayArcIntersectionSub(clickPoint.x, clickPoint.y, dx, dy, seg, edge.from, edge.to)
+                // Determine the effective traversal direction — if the boundary edge goes from
+                // seg.x2→seg.x1 (reversed), flip ccw so the angular range check is correct.
+                const distToStart = Math.hypot(edge.from.x - seg.x1, edge.from.y - seg.y1)
+                const distToEnd = Math.hypot(edge.from.x - seg.x2, edge.from.y - seg.y2)
+                const effectiveCCW = (distToEnd < distToStart) ? !seg.ccw : seg.ccw
+                const hit = rayArcIntersectionSub(clickPoint.x, clickPoint.y, dx, dy,
+                    { ...seg, ccw: effectiveCCW }, edge.from, edge.to)
                 crossings += hit
             }
         }

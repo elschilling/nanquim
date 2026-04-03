@@ -2,6 +2,10 @@ import * as Helper from '../libs/dxf/src/Helper'
 import { rebuildCollectionsFromDOM } from '../Collection'
 import { bakeTransforms } from './transformGeometry'
 
+function _esc(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 function DXFLoader(editor) {
   this.loadFile = function (file) {
     editor.resetPaperConfig()
@@ -76,20 +80,93 @@ function DXFLoader(editor) {
       // Clear existing drawing
       editor.drawing.clear()
 
+      // Detect whether this is a Nanquim-native file (children are collection <g> groups)
+      const isNanquimFile = Array.from(svgRoot.children).some(
+        child => child.getAttribute('data-collection') === 'true'
+      )
+
+      // Non-geometry node names that should go into <defs> or be discarded
+      const NON_GEOMETRY = new Set(['defs', 'style', 'metadata', 'title', 'desc', 'script'])
+
       let svgContent = ''
-      Array.from(svgRoot.children).forEach(child => {
-        svgContent += new XMLSerializer().serializeToString(child)
-      })
 
-      // If the file was saved with white strokes/fills converted to black, revert them
-      if (convertedStrokes) {
-        svgContent = svgContent.replace(/stroke\s*=\s*(["'])#000000\1/gi, 'stroke=$1#ffffff$1')
-        svgContent = svgContent.replace(/stroke\s*:\s*#000000/gi, 'stroke: #ffffff')
+      if (isNanquimFile) {
+        // Nanquim file: serialize children as-is (they are collection groups)
+        Array.from(svgRoot.children).forEach(child => {
+          svgContent += new XMLSerializer().serializeToString(child)
+        })
 
-        svgContent = svgContent.replace(/fill\s*=\s*(["'])#000000\1/gi, 'fill=$1#ffffff$1')
-        svgContent = svgContent.replace(/fill\s*:\s*#000000/gi, 'fill: #ffffff')
+        // If the file was saved with white strokes/fills converted to black, revert them
+        if (convertedStrokes) {
+          svgContent = svgContent.replace(/stroke\s*=\s*(["'])#000000\1/gi, 'stroke=$1#ffffff$1')
+          svgContent = svgContent.replace(/stroke\s*:\s*#000000/gi, 'stroke: #ffffff')
+
+          svgContent = svgContent.replace(/fill\s*=\s*(["'])#000000\1/gi, 'fill=$1#ffffff$1')
+          svgContent = svgContent.replace(/fill\s*:\s*#000000/gi, 'fill: #ffffff')
+        }
+        editor.drawing.svg(svgContent)
+      } else {
+        // Foreign SVG: handle defs separately and wrap geometry in a collection
+
+        // 1. Move <defs> / <style> content into the main SVG's own <defs>
+        const mainSvgNode = editor.svg && editor.svg.node
+        let mainDefs = mainSvgNode && mainSvgNode.querySelector('defs')
+        if (!mainDefs && mainSvgNode) {
+          mainDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs')
+          mainSvgNode.insertBefore(mainDefs, mainSvgNode.firstChild)
+        }
+
+        Array.from(svgRoot.children).forEach(child => {
+          const name = child.localName
+          // Ignore non-SVG namespace junk (sodipodi, inkscape, etc.)
+          if (child.namespaceURI && child.namespaceURI !== 'http://www.w3.org/2000/svg') return
+          if (NON_GEOMETRY.has(name)) {
+            if (mainDefs) {
+              // Clone into our main defs so id-references still resolve
+              const clone = document.importNode(child, true)
+              mainDefs.appendChild(clone)
+            }
+          }
+        })
+
+        // 2. Build the geometry content string (skip non-geometry nodes)
+        let geometryContent = ''
+        Array.from(svgRoot.children).forEach(child => {
+          const name = child.localName
+          if (child.namespaceURI && child.namespaceURI !== 'http://www.w3.org/2000/svg') return
+          if (NON_GEOMETRY.has(name)) return
+          geometryContent += new XMLSerializer().serializeToString(child)
+        })
+
+        // 3. Wrap everything in a single collection group with a transparent/inherit style
+        //    so the Nanquim default white stroke doesn't clobber foreign colors.
+        const collectionId = 'collection-imported'
+        const collectionName = file.name.replace(/\.svg$/i, '')
+        svgContent =
+          `<g id="${collectionId}" name="${_esc(collectionName)}" ` +
+          `data-collection="true" ` +
+          `style="stroke:inherit;fill:inherit;">` +
+          geometryContent +
+          `</g>`
+
+        editor.drawing.svg(svgContent)
+
+        // 4. Mark every element that carries its own inline stroke/fill/color
+        //    as a style-override so the collection panel can't accidentally reset them.
+        const markOverrides = (svgEl) => {
+          svgEl.children().each(child => {
+            const overrides = {}
+            const style = child.node.getAttribute('style') || ''
+            if (child.node.getAttribute('stroke') || /stroke\s*:/.test(style)) overrides.stroke = true
+            if (child.node.getAttribute('fill') || /fill\s*:/.test(style)) overrides.fill = true
+            if (Object.keys(overrides).length > 0) {
+              child.attr('data-style-overrides', JSON.stringify(overrides))
+            }
+            if (child.type === 'g') markOverrides(child)
+          })
+        }
+        markOverrides(editor.drawing)
       }
-      editor.drawing.svg(svgContent)
 
       // Hydrate data attributes recursively (including inside collection groups).
       // Must run BEFORE bakeTransforms so that arcData/splineData/etc. are

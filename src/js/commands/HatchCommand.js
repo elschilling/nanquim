@@ -10,7 +10,7 @@ class HatchCommand extends Command {
         this.name = 'Hatch'
         this.hatchElement = null
         this.interactiveExecutionDone = false
-        this.patternType = editor.lastHatchPattern || 'ANSI31'
+        this.patternType = editor.lastHatchPattern || 'SOLID'
         this.hatchScale = editor.lastHatchScale || 10
     }
 
@@ -75,13 +75,13 @@ class HatchCommand extends Command {
         // Resolve fill — SVG pattern or solid
         let fillValue
         if (this.patternType === 'SOLID') {
-            fillValue = { color: fillColor, opacity: 0.3 }
+            fillValue = { color: fillColor, opacity: 1.0 }
         } else {
             const patternId = ensurePattern(this.editor.svg, this.patternType, fillColor, this.hatchScale)
             if (patternId) {
                 fillValue = `url(#${patternId})`
             } else {
-                fillValue = { color: fillColor, opacity: 0.3 }
+                fillValue = { color: fillColor, opacity: 1.0 }
             }
         }
 
