@@ -43,6 +43,7 @@ function createCollection(editor, name) {
             'stroke-width': getPreferences().defaultStrokeWidth,
             'stroke-linecap': 'round',
             fill: 'transparent',
+            opacity: 1,
         },
     }
 
@@ -444,6 +445,7 @@ function rebuildCollectionsFromDOM(editor) {
                     'stroke-width': parseFloat(child.css('stroke-width')) || 0.1,
                     'stroke-linecap': child.css('stroke-linecap') || 'round',
                     fill: child.css('fill') || 'transparent',
+                    opacity: child.node.hasAttribute('opacity') ? parseFloat(child.css('opacity')) : 1,
                 },
             }
             editor.collections.set(id, data)

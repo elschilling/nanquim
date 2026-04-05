@@ -1181,6 +1181,14 @@ function Properties(editor) {
       },
       () => {},
     )
+
+    // Default opacity
+    createPropertyField(container, 'Opacity', data.style.opacity ?? 1, (value) => {
+      const num = parseFloat(value)
+      if (!isNaN(num) && num >= 0 && num <= 1) {
+        setCollectionStyle(editor, id, { opacity: num })
+      }
+    })
   }
 
   function renderCollectionTransformTab(container, element) {

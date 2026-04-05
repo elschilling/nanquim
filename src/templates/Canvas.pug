@@ -11,61 +11,60 @@
           .menu-item.editor-mode-item(data-mode='paper' onclick='switchEditorMode("paper")')
             span.icon.icon-mode-paper
             | Paper Space
-    .layout-row
-      .align-buttons-center
-        .wgt.wgt-menu
-          .icon.icon-orthomode(onclick='handleToogleOrtho()')
-          .icon.icon-snap-off(onclick='handleToogleSnap()')
-        .wgt.wgt-menu
-          .icon.icon-snap-options(onclick='toggleSnapMenu(event)')
-          .icon.icon-dropdown(onclick='toggleSnapMenu(event)')
-          .snap-options-menu#snap-options-menu
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='endpoint' checked onchange='handleSnapTypeChange(this)')
-              | Endpoint
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='midpoint' checked onchange='handleSnapTypeChange(this)')
-              | Midpoint
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='center' checked onchange='handleSnapTypeChange(this)')
-              | Center
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='quadrant' checked onchange='handleSnapTypeChange(this)')
-              | Quadrant
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='intersection' onchange='handleSnapTypeChange(this)')
-              | Intersection
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='extension' onchange='handleSnapTypeChange(this)')
-              | Extension
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='perpendicular' onchange='handleSnapTypeChange(this)')
-              | Perpendicular
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='tangent' onchange='handleSnapTypeChange(this)')
-              | Tangent
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' data-snap='nearest' onchange='handleSnapTypeChange(this)')
-              | Nearest
-            .snap-menu-divider
-            label.snap-menu-item
-              input.snap-checkbox(type='checkbox' checked onchange='handleSnapExcludeNonSelectableChange(this)')
-              | Exclude non-selectable
-        .wgt.wgt-menu 
-          .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
-      .wgt.wgt-menu.align-buttons-right
-        .icon.icon-overlay.is-active(onclick='handleToogleOverlay()')
-        .icon.icon-dropdown(onclick='toggleOverlayMenu(event)')
-        .overlay-menu#overlay-menu
-          label.overlay-menu-item
-            input.overlay-checkbox(type='checkbox' checked onchange='handleToggleGrid(this.checked)')
-            | Grid
-          label.overlay-menu-item
-            input.overlay-checkbox(type='checkbox' checked onchange='handleToggleAxis(this.checked)')
-            | Axis
-          label.overlay-menu-item
-            input.overlay-checkbox(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
-            | Non-scaling stroke
+    .align-buttons-center
+      .wgt.wgt-menu
+        .icon.icon-orthomode(onclick='handleToogleOrtho()')
+        .icon.icon-snap-off(onclick='handleToogleSnap()')
+      .wgt.wgt-menu
+        .icon.icon-snap-options(onclick='toggleSnapMenu(event)')
+        .icon.icon-dropdown(onclick='toggleSnapMenu(event)')
+        .snap-options-menu#snap-options-menu
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='endpoint' checked onchange='handleSnapTypeChange(this)')
+            | Endpoint
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='midpoint' checked onchange='handleSnapTypeChange(this)')
+            | Midpoint
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='center' checked onchange='handleSnapTypeChange(this)')
+            | Center
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='quadrant' checked onchange='handleSnapTypeChange(this)')
+            | Quadrant
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='intersection' onchange='handleSnapTypeChange(this)')
+            | Intersection
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='extension' onchange='handleSnapTypeChange(this)')
+            | Extension
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='perpendicular' onchange='handleSnapTypeChange(this)')
+            | Perpendicular
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='tangent' onchange='handleSnapTypeChange(this)')
+            | Tangent
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='nearest' onchange='handleSnapTypeChange(this)')
+            | Nearest
+          .snap-menu-divider
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' checked onchange='handleSnapExcludeNonSelectableChange(this)')
+            | Exclude non-selectable
+      .wgt.wgt-menu 
+        .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
+    .wgt.wgt-menu.align-buttons-right
+      .icon.icon-overlay.is-active(onclick='handleToogleOverlay()')
+      .icon.icon-dropdown(onclick='toggleOverlayMenu(event)')
+      .overlay-menu#overlay-menu
+        label.overlay-menu-item
+          input.overlay-checkbox(type='checkbox' checked onchange='handleToggleGrid(this.checked)')
+          | Grid
+        label.overlay-menu-item
+          input.overlay-checkbox(type='checkbox' checked onchange='handleToggleAxis(this.checked)')
+          | Axis
+        label.overlay-menu-item
+          input.overlay-checkbox(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
+          | Non-scaling stroke
 
   .layout-editor#canvas
     include Terminal
