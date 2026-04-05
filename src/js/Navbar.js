@@ -1,4 +1,5 @@
 import { addRecentFile } from './WelcomeScreen.js'
+import { DXFExporter } from './utils/DXFexporter.js'
 
 function Navbar(editor) {
   const form = document.createElement('form')
@@ -139,6 +140,11 @@ function Navbar(editor) {
     addRecentFile(recentName, dataURL)
 
     editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Drawing successfully saved.` })
+  }
+
+  // Export DXF — convert current drawing to DXF and trigger download
+  window.saveDXF = function () {
+    new DXFExporter(editor).saveFile('drawing.dxf')
   }
 
   // Open SVG — trigger the file input
