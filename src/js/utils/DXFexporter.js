@@ -167,35 +167,55 @@ function DXFExporter(editor) {
         emit(0, 'ENDSEC')
 
         // ════════════════════════════════════════════════════════════════════
-        // TABLES
+        // TABLES  (full R2000-required set; QCad validates every table)
         // ════════════════════════════════════════════════════════════════════
         emit(0, 'SECTION')
         emit(2, 'TABLES')
 
-        // LTYPE table — only "Continuous" needed
+        // VPORT — empty but required
+        emit(0, 'TABLE')
+        emit(2, 'VPORT')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 0)
+        emit(0, 'ENDTAB')
+
+        // LTYPE — ByLayer, ByBlock, Continuous (QCad expects all three)
         emit(0, 'TABLE')
         emit(2, 'LTYPE')
         emit(5, nextHandle())
         emit(100, 'AcDbSymbolTable')
-        emit(70, 1)
-        emit(0, 'LTYPE')
-        emit(5, nextHandle())
-        emit(100, 'AcDbSymbolTableRecord')
-        emit(100, 'AcDbLinetypeTableRecord')
-        emit(2, 'Continuous')
-        emit(70, 0)
-        emit(3, 'Solid line')
-        emit(72, 65)
-        emit(73, 0)
-        emit(40, 0.0)
+        emit(70, 3)
+        for (const [name, desc] of [['ByLayer',''], ['ByBlock',''], ['Continuous','Solid line']]) {
+            emit(0, 'LTYPE')
+            emit(5, nextHandle())
+            emit(100, 'AcDbSymbolTableRecord')
+            emit(100, 'AcDbLinetypeTableRecord')
+            emit(2, name)
+            emit(70, 0)
+            emit(3, desc)
+            emit(72, 65)
+            emit(73, 0)
+            emit(40, 0.0)
+        }
         emit(0, 'ENDTAB')
 
-        // LAYER table
+        // LAYER — layer 0 is mandatory; then one entry per collection
         emit(0, 'TABLE')
         emit(2, 'LAYER')
         emit(5, nextHandle())
         emit(100, 'AcDbSymbolTable')
-        emit(70, layers.length)
+        emit(70, layers.length + 1)  // +1 for layer 0
+        // layer 0 (mandatory)
+        emit(0, 'LAYER')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTableRecord')
+        emit(100, 'AcDbLayerTableRecord')
+        emit(2, '0')
+        emit(70, 0)
+        emit(62, 7)
+        emit(6, 'Continuous')
+        // collection layers
         layers.forEach(layer => {
             emit(0, 'LAYER')
             emit(5, nextHandle())
@@ -208,7 +228,7 @@ function DXFExporter(editor) {
         })
         emit(0, 'ENDTAB')
 
-        // STYLE table — minimal Standard style for TEXT entities
+        // STYLE — Standard text style
         emit(0, 'TABLE')
         emit(2, 'STYLE')
         emit(5, nextHandle())
@@ -229,29 +249,98 @@ function DXFExporter(editor) {
         emit(4, '')
         emit(0, 'ENDTAB')
 
+        // VIEW — empty but required
+        emit(0, 'TABLE')
+        emit(2, 'VIEW')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 0)
+        emit(0, 'ENDTAB')
+
+        // UCS — empty but required
+        emit(0, 'TABLE')
+        emit(2, 'UCS')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 0)
+        emit(0, 'ENDTAB')
+
+        // APPID — QCad requires ACAD entry
+        emit(0, 'TABLE')
+        emit(2, 'APPID')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 1)
+        emit(0, 'APPID')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTableRecord')
+        emit(100, 'AcDbRegAppTableRecord')
+        emit(2, 'ACAD')
+        emit(70, 0)
+        emit(0, 'ENDTAB')
+
+        // DIMSTYLE — Standard entry required by QCad
+        emit(0, 'TABLE')
+        emit(2, 'DIMSTYLE')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 1)
+        emit(0, 'DIMSTYLE')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTableRecord')
+        emit(100, 'AcDbDimStyleTableRecord')
+        emit(2, 'Standard')
+        emit(70, 0)
+        emit(0, 'ENDTAB')
+
+        // BLOCK_RECORD — required in R2000; must list *Model_Space & *Paper_Space
+        emit(0, 'TABLE')
+        emit(2, 'BLOCK_RECORD')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTable')
+        emit(70, 2)
+        emit(0, 'BLOCK_RECORD')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTableRecord')
+        emit(100, 'AcDbBlockTableRecord')
+        emit(2, '*Model_Space')
+        emit(0, 'BLOCK_RECORD')
+        emit(5, nextHandle())
+        emit(100, 'AcDbSymbolTableRecord')
+        emit(100, 'AcDbBlockTableRecord')
+        emit(2, '*Paper_Space')
+        emit(0, 'ENDTAB')
+
         emit(0, 'ENDSEC')
 
         // ════════════════════════════════════════════════════════════════════
-        // BLOCKS — required stub for *Model_Space
+        // BLOCKS — *Model_Space + *Paper_Space stubs (both required)
         // ════════════════════════════════════════════════════════════════════
         emit(0, 'SECTION')
         emit(2, 'BLOCKS')
-        const blockHandle = nextHandle()
-        emit(0, 'BLOCK')
-        emit(5, blockHandle)
-        emit(100, 'AcDbEntity')
-        emit(8, '0')
-        emit(100, 'AcDbBlockBegin')
-        emit(2, '*Model_Space')
-        emit(70, 0)
-        emit(10, 0.0); emit(20, 0.0); emit(30, 0.0)
-        emit(3, '*Model_Space')
-        emit(1, '')
-        emit(0, 'ENDBLK')
-        emit(5, nextHandle())
-        emit(100, 'AcDbEntity')
-        emit(8, '0')
-        emit(100, 'AcDbBlockEnd')
+
+        // Helper to emit a block stub
+        function emitBlockStub(name) {
+            emit(0, 'BLOCK')
+            emit(5, nextHandle())
+            emit(100, 'AcDbEntity')
+            emit(8, '0')
+            emit(100, 'AcDbBlockBegin')
+            emit(2, name)
+            emit(70, 0)
+            emit(10, 0.0); emit(20, 0.0); emit(30, 0.0)
+            emit(3, name)
+            emit(1, '')
+            emit(0, 'ENDBLK')
+            emit(5, nextHandle())
+            emit(100, 'AcDbEntity')
+            emit(8, '0')
+            emit(100, 'AcDbBlockEnd')
+        }
+
+        emitBlockStub('*Model_Space')
+        emitBlockStub('*Paper_Space')
+
         emit(0, 'ENDSEC')
 
         // ════════════════════════════════════════════════════════════════════
