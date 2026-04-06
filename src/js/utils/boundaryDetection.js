@@ -9,6 +9,59 @@ import { getArcGeometry } from './arcUtils'
 
 const EPS = 1e-6
 const SNAP_DIGITS = 3 // Round to 1e-3 for node merging
+const SPLINE_SAMPLES_PER_SEGMENT = 8 // Line segments per Bezier curve for linearization
+
+// ─── Cubic Bezier helpers ──────────────────────────────────────────
+
+/** Evaluate a cubic Bezier at parameter t ∈ [0,1]. */
+function evalCubicBezier(p0, p1, p2, p3, t) {
+    const u = 1 - t
+    const uu = u * u, uuu = uu * u
+    const tt = t * t, ttt = tt * t
+    return {
+        x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
+        y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
+    }
+}
+
+/**
+ * Sample a Catmull-Rom spline (same conversion as DrawSplineCommand)
+ * into a polyline of points.
+ */
+function sampleCatmullRomSpline(points, samplesPerSeg) {
+    if (points.length < 2) return points.slice()
+    if (points.length === 2) return [points[0], points[1]]
+
+    // Build extended array with virtual endpoints (mirror first/last tangent)
+    const ext = []
+    ext.push({
+        x: 2 * points[0].x - points[1].x,
+        y: 2 * points[0].y - points[1].y,
+    })
+    for (const p of points) ext.push(p)
+    const n = points.length
+    ext.push({
+        x: 2 * points[n - 1].x - points[n - 2].x,
+        y: 2 * points[n - 1].y - points[n - 2].y,
+    })
+
+    const result = [points[0]]
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = ext[i]
+        const p1 = ext[i + 1]
+        const p2 = ext[i + 2]
+        const p3 = ext[i + 3]
+
+        // Catmull-Rom to Cubic Bezier control points
+        const cp1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 }
+        const cp2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 }
+
+        for (let s = 1; s <= samplesPerSeg; s++) {
+            result.push(evalCubicBezier(p1, cp1, cp2, p2, s / samplesPerSeg))
+        }
+    }
+    return result
+}
 
 // ─── Segment extraction ────────────────────────────────────────────
 
@@ -90,6 +143,7 @@ export function extractSegments(editor) {
             })
         } else if (type === 'path') {
             const arcData = el.data('arcData')
+            const splineData = el.data('splineData')
             if (arcData && arcData.p1 && arcData.p3) {
                 const geom = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
                 if (geom) {
@@ -110,6 +164,18 @@ export function extractSegments(editor) {
                         element: el,
                     })
                 }
+            } else if (splineData && splineData.points && splineData.points.length >= 2) {
+                // Linearize spline (Catmull-Rom → Cubic Bezier → line segments)
+                const pts = splineData.points
+                const sampled = sampleCatmullRomSpline(pts, SPLINE_SAMPLES_PER_SEGMENT)
+                for (let i = 0; i < sampled.length - 1; i++) {
+                    segments.push({
+                        type: 'line',
+                        x1: sampled[i].x, y1: sampled[i].y,
+                        x2: sampled[i + 1].x, y2: sampled[i + 1].y,
+                        element: el,
+                    })
+                }
             } else {
                 try {
                     const arr = el.array()
@@ -126,6 +192,24 @@ export function extractSegments(editor) {
                                 element: el,
                             })
                             lastPt = { x: seg[1], y: seg[2] }
+                        } else if (cmd === 'C' && lastPt) {
+                            // Cubic Bezier — linearize by sampling
+                            const p0 = lastPt
+                            const p1 = { x: seg[1], y: seg[2] }
+                            const p2 = { x: seg[3], y: seg[4] }
+                            const p3 = { x: seg[5], y: seg[6] }
+                            let prev = p0
+                            for (let t = 1; t <= SPLINE_SAMPLES_PER_SEGMENT; t++) {
+                                const pt = evalCubicBezier(p0, p1, p2, p3, t / SPLINE_SAMPLES_PER_SEGMENT)
+                                segments.push({
+                                    type: 'line',
+                                    x1: prev.x, y1: prev.y,
+                                    x2: pt.x, y2: pt.y,
+                                    element: el,
+                                })
+                                prev = pt
+                            }
+                            lastPt = { x: seg[5], y: seg[6] }
                         } else if (cmd === 'Z' && lastPt) {
                             lastPt = null
                         }
@@ -697,15 +781,17 @@ function sampleBoundary(edges, segments) {
 function verifyPointInside(clickPoint, boundaryEdges, segments) {
     const pts = sampleBoundary(boundaryEdges, segments)
     if (pts.length < 3) return false
+    return pointInPolygon(clickPoint, pts)
+}
 
-    // Winding-number PIP: count sign-aware crossings of a horizontal rightward ray
-    const ox = clickPoint.x, oy = clickPoint.y
+/** Point-in-polygon test (even-odd ray casting). */
+function pointInPolygon(point, polygon) {
+    const ox = point.x, oy = point.y
     let crossings = 0
-    for (let i = 0; i < pts.length; i++) {
-        const a = pts[i]
-        const b = pts[(i + 1) % pts.length]
+    for (let i = 0; i < polygon.length; i++) {
+        const a = polygon[i]
+        const b = polygon[(i + 1) % polygon.length]
         if ((a.y <= oy && b.y > oy) || (b.y <= oy && a.y > oy)) {
-            // Compute x-coordinate of intersection with the horizontal ray
             const t = (oy - a.y) / (b.y - a.y)
             if (ox < a.x + t * (b.x - a.x)) {
                 crossings++
@@ -735,6 +821,88 @@ function normalizeAngle(a) {
     while (a < 0) a += 2 * Math.PI
     while (a >= 2 * Math.PI) a -= 2 * Math.PI
     return a
+}
+
+// ─── Island (hole) detection ────────────────────────────────────────
+
+/**
+ * Return outline info for a closed element, or null if it isn't closed.
+ * Returns { samplePoints: [{x,y}], pathD: string }
+ */
+function getClosedElementInfo(el) {
+    if (el.type === 'circle') {
+        const cx = el.cx(), cy = el.cy(), r = el.attr('r') || el.radius()
+        const samplePoints = []
+        for (let i = 0; i < 24; i++) {
+            const a = (2 * Math.PI * i) / 24
+            samplePoints.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) })
+        }
+        const pathD = `M ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} Z`
+        return { samplePoints, pathD }
+    }
+
+    if (el.type === 'ellipse') {
+        const cx = el.cx(), cy = el.cy()
+        const rx = el.attr('rx') || el.rx()
+        const ry = el.attr('ry') || el.ry()
+        const samplePoints = []
+        for (let i = 0; i < 24; i++) {
+            const a = (2 * Math.PI * i) / 24
+            samplePoints.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) })
+        }
+        const pathD = `M ${cx + rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx - rx} ${cy} A ${rx} ${ry} 0 1 1 ${cx + rx} ${cy} Z`
+        return { samplePoints, pathD }
+    }
+
+    if (el.type === 'rect') {
+        const x = el.x(), y = el.y(), w = el.width(), h = el.height()
+        if (w < EPS || h < EPS) return null
+        const x2 = x + w, y2 = y + h
+        const samplePoints = [
+            { x, y }, { x: x2, y }, { x: x2, y: y2 }, { x, y: y2 },
+        ]
+        const pathD = `M ${x} ${y} L ${x2} ${y} L ${x2} ${y2} L ${x} ${y2} Z`
+        return { samplePoints, pathD }
+    }
+
+    if (el.type === 'polygon') {
+        const pts = el.array()
+        if (pts.length < 3) return null
+        const samplePoints = pts.map(p => ({ x: p[0], y: p[1] }))
+        let pathD = `M ${pts[0][0]} ${pts[0][1]}`
+        for (let i = 1; i < pts.length; i++) pathD += ` L ${pts[i][0]} ${pts[i][1]}`
+        pathD += ' Z'
+        return { samplePoints, pathD }
+    }
+
+    if (el.type === 'polyline') {
+        const pts = el.array()
+        if (pts.length < 3) return null
+        const first = pts[0], last = pts[pts.length - 1]
+        if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 0.1) return null
+        const samplePoints = pts.slice(0, -1).map(p => ({ x: p[0], y: p[1] }))
+        let pathD = `M ${pts[0][0]} ${pts[0][1]}`
+        for (let i = 1; i < pts.length - 1; i++) pathD += ` L ${pts[i][0]} ${pts[i][1]}`
+        pathD += ' Z'
+        return { samplePoints, pathD }
+    }
+
+    if (el.type === 'path') {
+        const splineData = el.data('splineData')
+        if (splineData && splineData.points && splineData.points.length >= 3) {
+            const pts = splineData.points
+            const first = pts[0], last = pts[pts.length - 1]
+            if (Math.hypot(first.x - last.x, first.y - last.y) > 0.1) return null
+            const sampled = sampleCatmullRomSpline(pts, SPLINE_SAMPLES_PER_SEGMENT)
+            const samplePoints = sampled.slice(0, -1)
+            let pathD = `M ${samplePoints[0].x} ${samplePoints[0].y}`
+            for (let i = 1; i < samplePoints.length; i++) pathD += ` L ${samplePoints[i].x} ${samplePoints[i].y}`
+            pathD += ' Z'
+            return { samplePoints, pathD }
+        }
+    }
+
+    return null
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -772,35 +940,21 @@ export function boundaryToPathD(boundaryEdges, segments) {
             // SVG arc: A rx ry x-rotation large-arc-flag sweep-flag x y
             const r = seg.r
 
-            // Check if the boundary edge traverses the arc in the same direction
-            // as the segment's original direction (x1,y1 → x2,y2) or reversed.
-            // Compare edge.from to the segment's start point (x1,y1).
-            const distToStart = Math.hypot(edge.from.x - seg.x1, edge.from.y - seg.y1)
-            const distToEnd = Math.hypot(edge.from.x - seg.x2, edge.from.y - seg.y2)
-            const isReversed = distToEnd < distToStart
+            // Determine traversal direction using the same midpoint test
+            // as sampleBoundary / edgeDepartureAngle — the endpoint-distance
+            // heuristic is unreliable for sub-arcs in the middle of a semicircle.
+            const { cx, cy } = seg
+            const fa = Math.atan2(edge.from.y - cy, edge.from.x - cx)
+            const ta = Math.atan2(edge.to.y - cy, edge.to.x - cx)
+            let ccwSweep = ta - fa
+            if (ccwSweep <= 0) ccwSweep += 2 * Math.PI
+            const midCCW = fa + ccwSweep / 2
+            const midPt = { x: cx + r * Math.cos(midCCW), y: cy + r * Math.sin(midCCW) }
+            const goingCCW = isPointOnArc(midPt.x, midPt.y, seg)
 
-            // Effective ccw for this edge direction
-            const effectiveCCW = isReversed ? !seg.ccw : seg.ccw
-
-            let fromAngle = Math.atan2(edge.from.y - seg.cy, edge.from.x - seg.cx)
-            let toAngle = Math.atan2(edge.to.y - seg.cy, edge.to.x - seg.cx)
-            if (fromAngle < 0) fromAngle += 2 * Math.PI
-            if (toAngle < 0) toAngle += 2 * Math.PI
-
-            // Calculate angular span following the effective direction
-            let angularSpan
-            if (effectiveCCW) {
-                angularSpan = toAngle - fromAngle
-                if (angularSpan < 0) angularSpan += 2 * Math.PI
-            } else {
-                angularSpan = fromAngle - toAngle
-                if (angularSpan < 0) angularSpan += 2 * Math.PI
-            }
-
+            const angularSpan = goingCCW ? ccwSweep : (2 * Math.PI - ccwSweep)
             const largeArc = angularSpan > Math.PI ? 1 : 0
-            // SVG sweep-flag: 1 = CW in screen coords (Y down)
-            // In this app Y increases downward in SVG, so CCW math = CCW SVG
-            const sweepFlag = effectiveCCW ? 1 : 0
+            const sweepFlag = goingCCW ? 1 : 0
 
             d += ` A ${r} ${r} 0 ${largeArc} ${sweepFlag} ${edge.to.x} ${edge.to.y}`
         }
@@ -808,4 +962,43 @@ export function boundaryToPathD(boundaryEdges, segments) {
 
     d += ' Z'
     return d
+}
+
+/**
+ * Find closed elements (islands) inside the outer boundary that should
+ * become holes in the hatch. Returns an array of SVG sub-path strings.
+ */
+export function findIslands(editor, outerBoundary, segments, clickPoint) {
+    const outerPoly = sampleBoundary(outerBoundary, segments)
+    if (outerPoly.length < 3) return []
+
+    // Elements that form the outer boundary should not be treated as islands
+    const boundaryElements = new Set()
+    for (const edge of outerBoundary) {
+        boundaryElements.add(segments[edge.segIdx].element)
+    }
+
+    const islands = []
+    const elements = getDrawableElements(editor)
+
+    for (const el of elements) {
+        if (el.hasClass('grid') || el.hasClass('axis') || el.hasClass('ghostLine')) continue
+        if (el.hasClass('hatch-fill')) continue
+        if (boundaryElements.has(el)) continue
+
+        const info = getClosedElementInfo(el)
+        if (!info) continue
+
+        const { samplePoints, pathD } = info
+
+        // All perimeter points must be inside the outer boundary
+        if (!samplePoints.every(p => pointInPolygon(p, outerPoly))) continue
+
+        // The click point must NOT be inside this island
+        if (pointInPolygon(clickPoint, samplePoints)) continue
+
+        islands.push(pathD)
+    }
+
+    return islands
 }

@@ -5,5 +5,6 @@
     p Type a command
   .terminal-input
     | >
-    input#terminalInput(type='text').terminal-input-field
+    input#terminalInput(type='text' autocomplete='off').terminal-input-field
+    .terminal-autocomplete#terminalAutocomplete
     span.icon.icon-editor-terminal.align-right

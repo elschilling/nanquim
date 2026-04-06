@@ -182,6 +182,7 @@ class CopyCommand extends Command {
       this.editor.execute(this)
       this.editor.lastCommand = new CopyCommand(this.editor)
       this.editor.signals.terminalLogged.dispatch({ msg: `Command finished.` })
+      this.editor.signals.updatedOutliner.dispatch()
     }
 
     this.editor.signals.clearSelection.dispatch()
@@ -241,6 +242,7 @@ class CopyCommand extends Command {
     this.allCopiedElements.forEach(el => el.remove())
     this.editor.selected = this.originalSelection.slice()
     this.editor.signals.updatedSelection.dispatch()
+    this.editor.signals.updatedOutliner.dispatch()
     this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Copies removed.' })
   }
 
@@ -251,6 +253,7 @@ class CopyCommand extends Command {
     })
     this.editor.selected = this.allCopiedElements.slice()
     this.editor.signals.updatedSelection.dispatch()
+    this.editor.signals.updatedOutliner.dispatch()
     this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Elements copied again.' })
   }
 }

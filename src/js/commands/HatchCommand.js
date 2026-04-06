@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { findEnclosingBoundary, boundaryToPathD, extractSegments } from '../utils/boundaryDetection'
+import { findEnclosingBoundary, boundaryToPathD, extractSegments, findIslands } from '../utils/boundaryDetection'
 import { applyCollectionStyleToElement } from '../Collection'
 import { ensurePattern, HATCH_PATTERNS } from '../utils/hatchPatterns'
 
@@ -50,11 +50,17 @@ class HatchCommand extends Command {
             return
         }
 
-        const pathD = boundaryToPathD(boundaryEdges, segments)
+        let pathD = boundaryToPathD(boundaryEdges, segments)
         if (!pathD) {
             this.editor.signals.terminalLogged.dispatch({ msg: 'Failed to create hatch path.' })
             this.cleanup()
             return
+        }
+
+        // Detect islands (closed shapes inside the boundary) and append as holes
+        const islandPaths = findIslands(this.editor, boundaryEdges, segments, point)
+        for (const ip of islandPaths) {
+            pathD += ' ' + ip
         }
 
         // Derive fill color from active collection stroke
@@ -89,6 +95,7 @@ class HatchCommand extends Command {
         const parent = this.editor.activeCollection || this.editor.drawing
         const hatchPath = parent.path(pathD)
         hatchPath.fill(fillValue)
+        hatchPath.attr('fill-rule', 'evenodd')
         hatchPath.stroke({ width: 0, opacity: 0 })
         hatchPath.addClass('hatch-fill')
         hatchPath.attr('id', this.editor.elementIndex++)

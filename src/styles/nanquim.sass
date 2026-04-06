@@ -165,6 +165,38 @@ main
 .align-right
   position: absolute
   right: 0
+.terminal-autocomplete
+  display: none
+  position: absolute
+  bottom: 100%
+  left: 0
+  width: 100%
+  max-height: 160px
+  overflow-y: auto
+  background: rgb(30, 30, 30)
+  border-radius: 5px 5px 0 0
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.4)
+  z-index: 20
+  &.visible
+    display: block
+  .autocomplete-item
+    padding: 3px 10px
+    color: #ccc
+    cursor: pointer
+    display: flex
+    justify-content: space-between
+    &:hover
+      background: rgba(255,255,255,0.1)
+      color: white
+    &.active
+      background: rgba(255,255,255,0.18)
+      color: white
+    .autocomplete-match
+      color: #4fc3f7
+      font-weight: bold
+    .autocomplete-alias
+      color: #888
+      font-size: 0.85em
 .terminal-input-field
   box-sizing: border-box
   margin-left: 10px

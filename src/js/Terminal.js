@@ -61,6 +61,106 @@ function Terminal(editor) {
     }
   })
 
+  // ── Autocomplete ────────────────────────────────────────────────────────
+  const autocompleteEl = document.getElementById('terminalAutocomplete')
+  let acItems = []      // current filtered suggestions
+  let acIndex = -1      // highlighted index (-1 = none)
+
+  // Build a flat list of { name, alias } entries for matching
+  const commandList = []
+  for (const [name, { aliases }] of Object.entries(commands)) {
+    commandList.push({ name, aliases })
+  }
+
+  function updateAutocomplete() {
+    const typed = terminalText.value.trim().toLowerCase()
+    autocompleteEl.innerHTML = ''
+    acItems = []
+    acIndex = -1
+
+    if (!typed || editor.isInteracting || editor.isDrawing) {
+      autocompleteEl.classList.remove('visible')
+      return
+    }
+
+    // Match commands by alias first (exact > prefix), then by name prefix
+    const scored = []
+    for (const cmd of commandList) {
+      const exactAlias = cmd.aliases.some(a => a === typed)
+      const aliasPrefix = cmd.aliases.some(a => a.startsWith(typed))
+      const namePrefix = cmd.name.toLowerCase().startsWith(typed)
+      if (exactAlias || aliasPrefix || namePrefix) {
+        // Lower score = higher priority: exact alias (0), alias prefix (1), name only (2)
+        const score = exactAlias ? 0 : aliasPrefix ? 1 : 2
+        scored.push({ cmd, score })
+      }
+    }
+    scored.sort((a, b) => a.score - b.score)
+    acItems = scored.map(s => s.cmd)
+
+    if (acItems.length === 0) {
+      autocompleteEl.classList.remove('visible')
+      return
+    }
+
+    acItems.forEach((cmd, i) => {
+      const div = document.createElement('div')
+      div.className = 'autocomplete-item' + (i === 0 ? ' active' : '')
+      // Highlight the matching portion of the command name
+      const nameLower = cmd.name.toLowerCase()
+      let nameHtml
+      if (nameLower.startsWith(typed)) {
+        nameHtml = `<span class="autocomplete-match">${cmd.name.slice(0, typed.length)}</span>${cmd.name.slice(typed.length)}`
+      } else {
+        nameHtml = cmd.name
+      }
+      // Highlight matching aliases
+      const aliasHtml = cmd.aliases.map(a => {
+        if (a.startsWith(typed)) {
+          return `<span class="autocomplete-match">${a.slice(0, typed.length)}</span>${a.slice(typed.length)}`
+        }
+        return a
+      }).join(', ')
+      div.innerHTML = `<span>${nameHtml}</span><span class="autocomplete-alias">${aliasHtml}</span>`
+      div.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        acceptAutocomplete(i)
+      })
+      autocompleteEl.appendChild(div)
+    })
+
+    acIndex = 0
+    autocompleteEl.classList.add('visible')
+  }
+
+  function highlightAcItem(newIndex) {
+    const items = autocompleteEl.querySelectorAll('.autocomplete-item')
+    if (items[acIndex]) items[acIndex].classList.remove('active')
+    acIndex = newIndex
+    if (items[acIndex]) {
+      items[acIndex].classList.add('active')
+      items[acIndex].scrollIntoView({ block: 'nearest' })
+    }
+  }
+
+  function acceptAutocomplete(index) {
+    const cmd = acItems[index >= 0 ? index : 0]
+    if (!cmd) return
+    // Use the shortest alias for convenience
+    terminalText.value = cmd.aliases[0]
+    autocompleteEl.classList.remove('visible')
+    acItems = []
+    acIndex = -1
+  }
+
+  function hideAutocomplete() {
+    autocompleteEl.classList.remove('visible')
+    acItems = []
+    acIndex = -1
+  }
+
+  terminalText.addEventListener('input', updateAutocomplete)
+
   document.addEventListener('keydown', handleInput)
   document.addEventListener('keyup', handleKeyUp)
 
@@ -83,6 +183,38 @@ function Terminal(editor) {
   })
 
   function handleInput(e) {
+    // ── Autocomplete navigation ──
+    if (acItems.length > 0 && autocompleteEl.classList.contains('visible')) {
+      if (e.code === 'ArrowDown') {
+        e.preventDefault()
+        highlightAcItem(acIndex < acItems.length - 1 ? acIndex + 1 : 0)
+        return
+      }
+      if (e.code === 'ArrowUp') {
+        e.preventDefault()
+        highlightAcItem(acIndex > 0 ? acIndex - 1 : acItems.length - 1)
+        return
+      }
+      if (e.code === 'Tab') {
+        e.preventDefault()
+        if (acIndex >= 0) {
+          acceptAutocomplete(acIndex)
+        } else if (acItems.length === 1) {
+          acceptAutocomplete(0)
+        } else {
+          highlightAcItem(0)
+        }
+        return
+      }
+      // Space/Enter with autocomplete visible: accept suggestion so alias matches
+      const isAcConfirm = (e.code === 'Enter' || e.code === 'NumpadEnter') || (e.code === 'Space' && !editor.isTypingText)
+      if (isAcConfirm) {
+        const idx = acIndex >= 0 ? acIndex : 0
+        acceptAutocomplete(idx)
+        // fall through to normal command execution with the filled-in alias
+      }
+    }
+
     if (e.code === 'F2' || e.code === 'F3' || e.code === 'F8' || e.code === 'F9' || e.code === 'F10') {
       e.preventDefault()
     }
@@ -184,6 +316,7 @@ function Terminal(editor) {
           }
         }
         terminalText.value = ''
+        hideAutocomplete()
         return
       }
     } else {
@@ -207,6 +340,7 @@ function Terminal(editor) {
               editor.selected = validPrev
               editor.signals.updatedSelection.dispatch()
               terminalText.value = ''
+              hideAutocomplete()
               e.stopImmediatePropagation()
               return
             }
@@ -218,6 +352,7 @@ function Terminal(editor) {
               editor.lastCommand = { execute: () => execute(editor) }
               execute(editor)
               terminalText.value = ''
+              hideAutocomplete()
               return
             }
           }
@@ -281,6 +416,7 @@ function Terminal(editor) {
       }
 
       terminalText.value = ''
+      hideAutocomplete()
       editor.isDrawing = false
       editor.isSelecting = false
       editor.isInteracting = false
