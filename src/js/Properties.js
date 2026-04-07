@@ -1538,18 +1538,30 @@ function Properties(editor) {
     section.appendChild(patRow)
 
     // Color picker
+    let currentColor = hd.fillColor || '#888888'
     const colorRow = document.createElement('div')
     colorRow.className = 'property-row'
     const colorLabel = document.createElement('label')
     colorLabel.textContent = 'Color'
     colorLabel.className = 'property-label'
-    const colorInput = document.createElement('input')
-    colorInput.type = 'color'
-    colorInput.className = 'property-input'
-    colorInput.style.flex = '1'
-    colorInput.value = hd.fillColor || '#888888'
+    const colorBox = document.createElement('div')
+    colorBox.className = 'property-input prop-color-box'
+    colorBox.style.cursor = 'pointer'
+    colorBox.style.background = currentColor
+    attachColorCopyPaste(
+      colorBox,
+      () => currentColor,
+      (hex) => { currentColor = hex; colorBox.style.background = hex; applyFill() }
+    )
+    colorBox.addEventListener('click', () => {
+      openColorPicker(
+        currentColor,
+        (newColor) => { currentColor = newColor; colorBox.style.background = newColor; applyFill() },
+        (newColor) => { colorBox.style.background = newColor }
+      )
+    })
     colorRow.appendChild(colorLabel)
-    colorRow.appendChild(colorInput)
+    colorRow.appendChild(colorBox)
     section.appendChild(colorRow)
 
     // Scale
@@ -1576,12 +1588,10 @@ function Properties(editor) {
     opacityLabel.textContent = 'Opacity'
     opacityLabel.className = 'property-label'
     const opacityInput = document.createElement('input')
-    opacityInput.type = 'range'
+    opacityInput.type = 'text'
     opacityInput.className = 'property-input'
     opacityInput.style.flex = '1'
-    opacityInput.min = 0
-    opacityInput.max = 100
-    opacityInput.value = Math.round((hd.opacity ?? 0.3) * 100)
+    opacityInput.value = (hd.opacity ?? 0.3).toFixed(2)
     opacityRow.appendChild(opacityLabel)
     opacityRow.appendChild(opacityInput)
     opacityRow.style.display = (hd.patternType || 'ANSI31') === 'SOLID' ? '' : 'none'
@@ -1589,28 +1599,28 @@ function Properties(editor) {
 
     function applyFill() {
       const type = patSelect.value
-      const color = colorInput.value
+      const color = currentColor
       const scale = Number(scaleInput.value) || 10
-      const opacity = Number(opacityInput.value) / 100
+      const opacity = parseFloat(opacityInput.value)
+      const safeOpacity = isNaN(opacity) ? 0.3 : Math.min(1, Math.max(0, opacity))
 
       let fillValue
       if (type === 'SOLID') {
-        fillValue = { color, opacity }
+        fillValue = { color, opacity: safeOpacity }
       } else {
         const patternId = ensurePattern(editor.svg, type, color, scale)
         fillValue = patternId ? `url(#${patternId})` : { color, opacity: 0.3 }
       }
 
       element.fill(fillValue)
-      element.data('hatchData', { ...hd, patternType: type, fillColor: color, hatchScale: scale, opacity })
+      element.data('hatchData', { ...hd, patternType: type, fillColor: color, hatchScale: scale, opacity: safeOpacity })
       opacityRow.style.display = type === 'SOLID' ? '' : 'none'
       safeDispatch('refreshHandlers')
     }
 
     patSelect.addEventListener('change', applyFill)
-    colorInput.addEventListener('input', applyFill)
     scaleInput.addEventListener('change', applyFill)
-    opacityInput.addEventListener('input', applyFill)
+    opacityInput.addEventListener('change', applyFill)
   }
 
   function renderStyleTab(container, element, node) {

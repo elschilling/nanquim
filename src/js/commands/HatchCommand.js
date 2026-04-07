@@ -105,6 +105,7 @@ class HatchCommand extends Command {
             fillColor,
             patternType: this.patternType,
             hatchScale: this.hatchScale,
+            opacity: 1.0,
         })
 
         hatchPath.back()
