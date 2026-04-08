@@ -25,6 +25,8 @@ import { createViewportCommand } from './CreateViewportCommand'
 import { linearDimensionCommand, LinearDimensionCommand } from './LinearDimensionCommand'
 import { alignedDimensionCommand } from './AlignedDimensionCommand'
 import { areaCommand } from './AreaCommand'
+import { blockCommand } from './BlockCommand'
+import { insertCommand } from './InsertCommand'
 
 // Mapping commands to their respective functions
 const commands = {
@@ -135,6 +137,14 @@ const commands = {
   AREA: {
     execute: areaCommand,
     aliases: ['ar', 'area'],
+  },
+  BLOCK: {
+    execute: blockCommand,
+    aliases: ['b', 'block'],
+  },
+  INSERT: {
+    execute: insertCommand,
+    aliases: ['i', 'insert'],
   },
   // Add more commands and functions as needed
 }

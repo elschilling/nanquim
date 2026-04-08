@@ -213,6 +213,12 @@ class RotateCommand extends Command {
         height: element.height(),
         ...data
       }
+    } else if (element.type === 'use') {
+      return {
+        type: 'use',
+        transform: element.transform(),
+        ...data
+      }
     } else if (element.type === 'text' || element.type === 'g') {
       return {
         type: element.type,
@@ -344,6 +350,13 @@ class RotateCommand extends Command {
           element.transform({ rotate: this.angle })
         }
       }
+    } else if (originalCoords.type === 'use') {
+      // Block instances: restore decomposed transform, compose rotation
+      // Matches the ghost preview path (transform → rotate) exactly
+      element.transform(originalCoords.transform)
+      element.rotate(this.angle, centerPoint.x, centerPoint.y)
+      this.editor.spatialIndex.markDirty()
+      this.editor.fullSpatialIndex.markDirty()
     } else if (originalCoords.type === 'text' || originalCoords.type === 'g') {
       // Use pure Matrix transformation for text and block groups to avoid coordinate lock bugs
       const matrix = new Matrix(originalCoords.transform)
@@ -503,6 +516,11 @@ class RotateCommand extends Command {
         height: element.height(),
         attrs: { ...element.attr() }, // Copy all attributes
       }
+    } else if (element.type === 'use') {
+      return {
+        type: 'use',
+        transform: element.transform(),
+      }
     } else if (element.type === 'text' || element.type === 'g') {
       return {
         type: element.type,
@@ -560,6 +578,10 @@ class RotateCommand extends Command {
         } else {
           element.move(originalState.x, originalState.y)
         }
+      } else if (originalState.type === 'use') {
+        element.transform(originalState.transform)
+        this.editor.spatialIndex.markDirty()
+        this.editor.fullSpatialIndex.markDirty()
       } else if (originalState.type === 'text' || originalState.type === 'g') {
         const matrix = originalState.transform
         element.transform(matrix)

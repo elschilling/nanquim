@@ -123,6 +123,9 @@ function Editor() {
   // Initialize Text Style Manager
   this.textStyleManager = new TextStyleManager(this)
 
+  // Block definitions: Map<name, { defId, basePoint, elementCount }>
+  this.blockDefinitions = new Map()
+
   // Spatial index for fast hit-testing (R-tree) — selectable elements only
   this.spatialIndex = new SpatialIndex()
   // Second index covering ALL elements (used for snapping when excludeNonSelectable is off)

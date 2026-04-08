@@ -178,6 +178,10 @@ class ScaleCommand extends Command {
       pos.width = element.width()
       pos.height = element.height()
       pos.attrs = { ...element.attr() }
+    } else if (element.type === 'use') {
+      pos.x = element.x()
+      pos.y = element.y()
+      pos.transform = element.transform()
     } else if (element.type === 'text' || element.type === 'g') {
       pos.transform = element.transform()
     } else {
@@ -206,6 +210,16 @@ class ScaleCommand extends Command {
       
       vp.refreshGeometry()
       vp._editor.signals.paperViewportsChanged.dispatch()
+      return element
+    }
+
+    // Block instances: restore decomposed transform, compose scale, skip bake
+    // Matches the ghost preview path (transform → scale) exactly
+    if (element.type === 'use' && element.attr('data-block-instance') === 'true') {
+      element.transform(originalPos.transform)
+      element.scale(factor, factor, this.basePoint.x, this.basePoint.y)
+      this.editor.spatialIndex.markDirty()
+      this.editor.fullSpatialIndex.markDirty()
       return element
     }
 
@@ -263,6 +277,10 @@ class ScaleCommand extends Command {
       } else if (originalPos.type === 'image') {
         element.move(originalPos.x, originalPos.y)
         element.size(originalPos.width, originalPos.height)
+      } else if (originalPos.type === 'use') {
+        element.transform(originalPos.transform)
+        this.editor.spatialIndex.markDirty()
+        this.editor.fullSpatialIndex.markDirty()
       } else if (originalPos.type === 'text' || originalPos.type === 'g') {
         element.transform(originalPos.transform)
       } else {

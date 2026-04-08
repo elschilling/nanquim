@@ -109,6 +109,18 @@ function Navbar(editor) {
     // Serialize Text Styles
     const textStylesStr = JSON.stringify(editor.textStyleManager.toJSON()).replace(/"/g, '&quot;')
 
+    // Serialize block definitions from <defs>
+    let blockDefsContent = ''
+    const blockDefEls = editor.svg.defs().find('[data-block-def="true"]')
+    if (blockDefEls.length > 0) {
+      blockDefsContent = '<defs>' + blockDefEls.map(d => d.node.outerHTML).join('') + '</defs>'
+    }
+
+    // Serialize block definitions metadata
+    const blockDefsMetaStr = JSON.stringify(
+      Array.from(editor.blockDefinitions.entries())
+    ).replace(/"/g, '&quot;')
+
     const svgString = [
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs"`,
@@ -119,7 +131,9 @@ function Navbar(editor) {
       `  data-paper-viewports="${viewportsStr}"`,
       `  data-dim-styles="${dimStylesStr}"`,
       `  data-text-styles="${textStylesStr}"`,
+      `  data-block-definitions="${blockDefsMetaStr}"`,
       convertStrokes ? `  data-nanquim-converted-strokes="true">` : `>`,
+      blockDefsContent,
       drawingContent,
       `</svg>`,
     ].join('\n')

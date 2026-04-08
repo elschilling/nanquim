@@ -362,4 +362,4 @@ function moveCommand(editor) {
   moveCommand.execute()
 }
 
-export { moveCommand }
+export { moveCommand, MoveCommand }

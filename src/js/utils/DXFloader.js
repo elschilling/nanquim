@@ -1,6 +1,7 @@
 import * as Helper from '../libs/dxf/src/Helper'
 import { rebuildCollectionsFromDOM } from '../Collection'
 import { bakeTransforms } from './transformGeometry'
+import { rebuildBlockDefinitionsFromDOM } from '../BlockManager'
 
 function _esc(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -50,6 +51,9 @@ function DXFLoader(editor) {
       // Read Text Styles
       const savedTextStylesStr = svgRoot.getAttribute('data-text-styles')
 
+      // Read Block Definitions metadata
+      const savedBlockDefsStr = svgRoot.getAttribute('data-block-definitions')
+
       if (savedPaperConfigStr) {
         try {
           const parsedConfig = JSON.parse(savedPaperConfigStr)
@@ -91,9 +95,18 @@ function DXFLoader(editor) {
       let svgContent = ''
 
       if (isNanquimFile) {
-        // Nanquim file: serialize children as-is (they are collection groups)
+        // Nanquim file: extract block definitions from <defs> before serializing
         Array.from(svgRoot.children).forEach(child => {
-          svgContent += new XMLSerializer().serializeToString(child)
+          if (child.localName === 'defs') {
+            // Move block definition groups into editor's <defs>
+            const blockDefs = child.querySelectorAll('[data-block-def="true"]')
+            blockDefs.forEach(defNode => {
+              const imported = document.importNode(defNode, true)
+              editor.svg.defs().node.appendChild(imported)
+            })
+          } else {
+            svgContent += new XMLSerializer().serializeToString(child)
+          }
         })
 
         // If the file was saved with white strokes/fills converted to black, revert them
@@ -248,6 +261,17 @@ function DXFLoader(editor) {
 
       // Rebuild collections from DOM (handles legacy and new files)
       rebuildCollectionsFromDOM(editor)
+
+      // Rebuild block definitions from <defs> DOM and/or saved metadata
+      if (savedBlockDefsStr) {
+        try {
+          const entries = JSON.parse(savedBlockDefsStr)
+          editor.blockDefinitions = new Map(entries)
+        } catch (e) {
+          console.warn('Failed to parse block definitions metadata', e)
+        }
+      }
+      rebuildBlockDefinitionsFromDOM(editor)
 
       // Collapse all collections and group elements in the outliner on load
       editor.collections.forEach(data => {

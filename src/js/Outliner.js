@@ -719,6 +719,32 @@ function Outliner(editor) {
         return
       }
 
+      // Block instance: show handler at base point (insertion point).
+      // <use> x/y attrs are in the parent's coordinate space (not included in the
+      // element's own CTM), so we resolve via the parent's screenCTM.
+      if (el.type === 'use' && el.attr('data-block-instance') === 'true') {
+        const bx = parseFloat(el.attr('x') || 0)
+        const by = parseFloat(el.attr('y') || 0)
+        const pt = localToWorld(el.parent(), bx, by)
+        editor.handlers
+          .rect(handlerWorldSize, handlerWorldSize)
+          .center(pt.x, pt.y)
+          .addClass('selection-handler')
+          .mousedown((e) => {
+            e.stopPropagation()
+            import('./commands/MoveCommand.js').then(({ MoveCommand }) => {
+              const cmd = new MoveCommand(editor)
+              cmd.execute()
+              // execute() registered pointCaptured.addOnce(onBasePoint) — remove it
+              // before calling onBasePoint directly so it doesn't fire a second time
+              editor.signals.pointCaptured.remove(cmd.onBasePoint, cmd)
+              editor.signals.coordinateInput.remove(cmd.boundOnBaseCoordinateInput, cmd)
+              cmd.onBasePoint(pt)
+            })
+          })
+        return
+      }
+
       if (el.type === 'line') {
         const pt1 = localToWorld(el, el.node.x1.baseVal.value, el.node.y1.baseVal.value)
         const pt2 = localToWorld(el, el.node.x2.baseVal.value, el.node.y2.baseVal.value)
@@ -1102,7 +1128,8 @@ function Outliner(editor) {
         const elTypeIcon = document.createElement('div')
         elTypeIcon.className = 'icon '
         const elType = child.type || child.node.nodeName.toLowerCase()
-        if (elType === 'line') elTypeIcon.className += 'icon-element-line'
+        if (elType === 'use' && child.attr('data-block-instance') === 'true') elTypeIcon.className += 'icon-group'
+        else if (elType === 'line') elTypeIcon.className += 'icon-element-line'
         else if (elType === 'circle') elTypeIcon.className += 'icon-element-circle'
         else if (elType === 'path') elTypeIcon.className += 'icon-element-arc'
         else if (elType === 'rect') elTypeIcon.className += 'icon-element-rect'

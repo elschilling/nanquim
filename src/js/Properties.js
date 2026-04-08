@@ -1390,6 +1390,16 @@ function Properties(editor) {
       createPropertyField(transformBody, 'Y', bbox.y.toFixed(2), null, true)
       createPropertyField(transformBody, 'Width', bbox.width.toFixed(2), null, true)
       createPropertyField(transformBody, 'Height', bbox.height.toFixed(2), null, true)
+    } else if (node.nodeName === 'use' && element.attr('data-block-instance') === 'true') {
+      createPropertyField(transformBody, 'Block', element.attr('data-block-name') || '', null, true)
+      createPropertyField(transformBody, 'X', parseFloat(element.x()).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num)) { element.x(num); editor.spatialIndex.markDirty(); editor.fullSpatialIndex.markDirty(); safeDispatch('refreshHandlers') }
+      })
+      createPropertyField(transformBody, 'Y', parseFloat(element.y()).toFixed(2), (value) => {
+        const num = parseFloat(value)
+        if (!isNaN(num)) { element.y(num); editor.spatialIndex.markDirty(); editor.fullSpatialIndex.markDirty(); safeDispatch('refreshHandlers') }
+      })
     }
 
     if (element.transform) {
