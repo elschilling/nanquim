@@ -225,7 +225,7 @@ function Outliner(editor) {
 
     const nameSpan = document.createElement('span')
     nameSpan.className = 'collection-name'
-    nameSpan.textContent = (child.attr('name') || 'Collection')
+    nameSpan.textContent = child.attr('name') || 'Collection'
     nameSpan.style.opacity = '0.6'
 
     leftSide.appendChild(toggleIcon)
@@ -498,19 +498,18 @@ function Outliner(editor) {
     editor.handlers.clear()
 
     const selectedItems = drawingTree.querySelectorAll('.outliner-selected')
-    selectedItems.forEach(li => li.classList.remove('outliner-selected'))
+    selectedItems.forEach((li) => li.classList.remove('outliner-selected'))
 
     // Only remove elementSelected from previously-selected elements (O(k) not O(n))
     const removeSelectedRecursive = (el) => {
       if (!el.removeClass) return // Viewport wrappers don't have removeClass
       el.removeClass('elementSelected')
       if (el.type === 'g' && el.children) {
-        el.children().each(child => removeSelectedRecursive(child))
+        el.children().each((child) => removeSelectedRecursive(child))
       }
     }
-    editor.selected.forEach(el => removeSelectedRecursive(el))
+    editor.selected.forEach((el) => removeSelectedRecursive(el))
   }
-
 
   function drawHandlers() {
     // Clear existing handlers
@@ -570,12 +569,17 @@ function Outliner(editor) {
           const pLeft = localToWorld(s, cx - r, cy)
 
           // Check Center
-          if (Math.abs(pCenter.x - x) < tolerance && Math.abs(pCenter.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
+          if (Math.abs(pCenter.x - x) < tolerance && Math.abs(pCenter.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { cx, cy, r } })
           // Check Quadrants
-          if (Math.abs(pTop.x - x) < tolerance && Math.abs(pTop.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
-          if (Math.abs(pRight.x - x) < tolerance && Math.abs(pRight.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
-          if (Math.abs(pBottom.x - x) < tolerance && Math.abs(pBottom.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
-          if (Math.abs(pLeft.x - x) < tolerance && Math.abs(pLeft.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
+          if (Math.abs(pTop.x - x) < tolerance && Math.abs(pTop.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: { cx, cy, r } })
+          if (Math.abs(pRight.x - x) < tolerance && Math.abs(pRight.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 2, originalPosition: { cx, cy, r } })
+          if (Math.abs(pBottom.x - x) < tolerance && Math.abs(pBottom.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 3, originalPosition: { cx, cy, r } })
+          if (Math.abs(pLeft.x - x) < tolerance && Math.abs(pLeft.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 4, originalPosition: { cx, cy, r } })
         } else if (s.type === 'ellipse') {
           const cx = s.node.cx.baseVal.value
           const cy = s.node.cy.baseVal.value
@@ -590,7 +594,7 @@ function Outliner(editor) {
             { pt: localToWorld(s, cx, cy - ry), index: 4 },
           ]
 
-          pts.forEach(p => {
+          pts.forEach((p) => {
             if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { cx, cy, rx, ry } })
             }
@@ -609,10 +613,10 @@ function Outliner(editor) {
             { pt: localToWorld(s, rx + rw / 2, ry), index: 4 },
             { pt: localToWorld(s, rx + rw, ry + rh / 2), index: 5 },
             { pt: localToWorld(s, rx + rw / 2, ry + rh), index: 6 },
-            { pt: localToWorld(s, rx, ry + rh / 2), index: 7 }
+            { pt: localToWorld(s, rx, ry + rh / 2), index: 7 },
           ]
 
-          rectPoints.forEach(p => {
+          rectPoints.forEach((p) => {
             if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { x: rx, y: ry, width: rw, height: rh } })
             }
@@ -623,27 +627,32 @@ function Outliner(editor) {
           const pt2 = localToWorld(s, arc.p2.x, arc.p2.y)
           const pt3 = localToWorld(s, arc.p3.x, arc.p3.y)
 
-          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: arc })
-          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: arc })
-          if (Math.abs(pt3.x - x) < tolerance && Math.abs(pt3.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 2, originalPosition: arc })
+          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: arc })
+          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: arc })
+          if (Math.abs(pt3.x - x) < tolerance && Math.abs(pt3.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 2, originalPosition: arc })
         } else if (s.type === 'path' && s.data('circleTrimData')) {
           const arc = s.data('circleTrimData')
           const pt1 = localToWorld(s, arc.startPt.x, arc.startPt.y)
           const pt2 = localToWorld(s, arc.endPt.x, arc.endPt.y)
 
-          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
-          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
+          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: arc.startPt.x, y: arc.startPt.y } })
+          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance)
+            vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: arc.endPt.x, y: arc.endPt.y } })
         } else if (s.type === 'path' && s.data('splineData')) {
           const spline = s.data('splineData')
           spline.points.forEach((sp, idx) => {
             const wPt = localToWorld(s, sp.x, sp.y)
             if (Math.abs(wPt.x - x) < tolerance && Math.abs(wPt.y - y) < tolerance) {
-              vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: spline.points.map(p => ({ x: p.x, y: p.y })) } })
+              vertices.push({ element: s, vertexIndex: idx, originalPosition: { points: spline.points.map((p) => ({ x: p.x, y: p.y })) } })
             }
           })
         } else if (s.type === 'polyline') {
           const pts = s.array()
-          const snapshot = pts.map(p => [p[0], p[1]])
+          const snapshot = pts.map((p) => [p[0], p[1]])
           pts.forEach((pt, idx) => {
             const wPt = localToWorld(s, pt[0], pt[1])
             if (Math.abs(wPt.x - x) < tolerance && Math.abs(wPt.y - y) < tolerance) {
@@ -661,23 +670,23 @@ function Outliner(editor) {
           try {
             const dimData = JSON.parse(s.attr('data-dim-data'))
             const textCenter = s.attr('data-dim-text-center') ? JSON.parse(s.attr('data-dim-text-center')) : null
-            
+
             // p1, p2, p3, text
             const pts = [
-                { idx: 0, pt: localToWorld(s, dimData.p1.x, dimData.p1.y) },
-                { idx: 1, pt: localToWorld(s, dimData.p2.x, dimData.p2.y) },
-                { idx: 2, pt: localToWorld(s, dimData.p3.x, dimData.p3.y) }
+              { idx: 0, pt: localToWorld(s, dimData.p1.x, dimData.p1.y) },
+              { idx: 1, pt: localToWorld(s, dimData.p2.x, dimData.p2.y) },
+              { idx: 2, pt: localToWorld(s, dimData.p3.x, dimData.p3.y) },
             ]
             if (textCenter) {
-                pts.push({ idx: 3, pt: localToWorld(s, textCenter.x, textCenter.y) })
+              pts.push({ idx: 3, pt: localToWorld(s, textCenter.x, textCenter.y) })
             }
-            
+
             pts.forEach((p) => {
-                if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
-                    vertices.push({ element: s, vertexIndex: p.idx, originalPosition: dimData })
-                }
+              if (Math.abs(p.pt.x - x) < tolerance && Math.abs(p.pt.y - y) < tolerance) {
+                vertices.push({ element: s, vertexIndex: p.idx, originalPosition: dimData })
+              }
             })
-          } catch(e) {}
+          } catch (e) {}
         }
       })
       return vertices
@@ -687,29 +696,29 @@ function Outliner(editor) {
     editor.selected.forEach((el) => {
       if (el.type === 'g' && el.attr('data-element-type') === 'dimension') {
         try {
-            const dimData = JSON.parse(el.attr('data-dim-data'))
-            const textCenter = el.attr('data-dim-text-center') ? JSON.parse(el.attr('data-dim-text-center')) : null
-            
-            const points = [
-                { pt: localToWorld(el, dimData.p1.x, dimData.p1.y) },
-                { pt: localToWorld(el, dimData.p2.x, dimData.p2.y) },
-                { pt: localToWorld(el, dimData.p3.x, dimData.p3.y) }
-            ]
-            if (textCenter) {
-                points.push({ pt: localToWorld(el, textCenter.x, textCenter.y) })
-            }
-            
-            points.forEach((p) => {
-                editor.handlers
-                    .rect(handlerWorldSize, handlerWorldSize)
-                    .center(p.pt.x, p.pt.y)
-                    .addClass('selection-handler')
-                    .mousedown((e) => {
-                        e.stopPropagation()
-                        signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
-                    })
-            })
-        } catch(e) {}
+          const dimData = JSON.parse(el.attr('data-dim-data'))
+          const textCenter = el.attr('data-dim-text-center') ? JSON.parse(el.attr('data-dim-text-center')) : null
+
+          const points = [
+            { pt: localToWorld(el, dimData.p1.x, dimData.p1.y) },
+            { pt: localToWorld(el, dimData.p2.x, dimData.p2.y) },
+            { pt: localToWorld(el, dimData.p3.x, dimData.p3.y) },
+          ]
+          if (textCenter) {
+            points.push({ pt: localToWorld(el, textCenter.x, textCenter.y) })
+          }
+
+          points.forEach((p) => {
+            editor.handlers
+              .rect(handlerWorldSize, handlerWorldSize)
+              .center(p.pt.x, p.pt.y)
+              .addClass('selection-handler')
+              .mousedown((e) => {
+                e.stopPropagation()
+                signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+              })
+          })
+        } catch (e) {}
         return
       }
 
@@ -768,7 +777,6 @@ function Outliner(editor) {
             e.stopPropagation()
             signals.vertexEditStarted.dispatch(getCoincidentVertices(pt2.x, pt2.y))
           })
-
       } else if (el.type === 'circle') {
         const cx = el.node.cx.baseVal.value
         const cy = el.node.cy.baseVal.value
@@ -799,11 +807,11 @@ function Outliner(editor) {
         const ry = el.node.ry.baseVal.value
 
         const points = [
-          { pt: localToWorld(el, cx, cy), index: 0 },         // Center
-          { pt: localToWorld(el, cx + rx, cy), index: 1 },    // Right
-          { pt: localToWorld(el, cx, cy + ry), index: 2 },    // Bottom
-          { pt: localToWorld(el, cx - rx, cy), index: 3 },    // Left
-          { pt: localToWorld(el, cx, cy - ry), index: 4 },    // Top
+          { pt: localToWorld(el, cx, cy), index: 0 }, // Center
+          { pt: localToWorld(el, cx + rx, cy), index: 1 }, // Right
+          { pt: localToWorld(el, cx, cy + ry), index: 2 }, // Bottom
+          { pt: localToWorld(el, cx - rx, cy), index: 3 }, // Left
+          { pt: localToWorld(el, cx, cy - ry), index: 4 }, // Top
         ]
 
         points.forEach((p) => {
@@ -813,15 +821,16 @@ function Outliner(editor) {
             .addClass('selection-handler-circle')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch([{
-                element: el,
-                vertexIndex: p.index,
-                originalPosition: { cx, cy, rx, ry },
-              }])
+              signals.vertexEditStarted.dispatch([
+                {
+                  element: el,
+                  vertexIndex: p.index,
+                  originalPosition: { cx, cy, rx, ry },
+                },
+              ])
             })
         })
       } else if (el.type === 'rect' || el._paperVp) {
-
         let rx, ry, rw, rh, s
         if (el._paperVp) {
           const vp = el._paperVp
@@ -846,7 +855,7 @@ function Outliner(editor) {
           { pt: localToWorld(s, rx + rw / 2, ry), index: 4, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
           { pt: localToWorld(s, rx + rw, ry + rh / 2), index: 5, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
           { pt: localToWorld(s, rx + rw / 2, ry + rh), index: 6, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
-          { pt: localToWorld(s, rx, ry + rh / 2), index: 7, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } }
+          { pt: localToWorld(s, rx, ry + rh / 2), index: 7, isCorner: false, _vpOriginal: { x: rx, y: ry, width: rw, height: rh } },
         ]
 
         points.forEach((p) => {
@@ -877,7 +886,7 @@ function Outliner(editor) {
         const points = [
           { pt: localToWorld(el, arc.p1.x, arc.p1.y) },
           { pt: localToWorld(el, arc.p2.x, arc.p2.y) },
-          { pt: localToWorld(el, arc.p3.x, arc.p3.y) }
+          { pt: localToWorld(el, arc.p3.x, arc.p3.y) },
         ]
 
         points.forEach((p) => {
@@ -892,10 +901,7 @@ function Outliner(editor) {
         })
       } else if (el.type === 'path' && el.data('circleTrimData')) {
         const arc = el.data('circleTrimData')
-        const points = [
-          { pt: localToWorld(el, arc.startPt.x, arc.startPt.y) },
-          { pt: localToWorld(el, arc.endPt.x, arc.endPt.y) }
-        ]
+        const points = [{ pt: localToWorld(el, arc.startPt.x, arc.startPt.y) }, { pt: localToWorld(el, arc.endPt.x, arc.endPt.y) }]
 
         points.forEach((p) => {
           editor.handlers
@@ -922,7 +928,7 @@ function Outliner(editor) {
         })
       } else if (el.type === 'polyline') {
         const pts = el.array()
-        const snapshot = pts.map(p => [p[0], p[1]])
+        const snapshot = pts.map((p) => [p[0], p[1]])
         pts.forEach((pt, idx) => {
           const wPt = localToWorld(el, pt[0], pt[1])
           editor.handlers
@@ -931,11 +937,13 @@ function Outliner(editor) {
             .addClass('selection-handler')
             .mousedown((e) => {
               e.stopPropagation()
-              signals.vertexEditStarted.dispatch([{
-                element: el,
-                vertexIndex: idx,
-                originalPosition: { points: snapshot },
-              }])
+              signals.vertexEditStarted.dispatch([
+                {
+                  element: el,
+                  vertexIndex: idx,
+                  originalPosition: { points: snapshot },
+                },
+              ])
             })
         })
       } else if (el.type === 'text') {
@@ -948,16 +956,17 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch([{
-              element: el,
-              vertexIndex: 0,
-              originalPosition: { x: tx, y: ty, worldX: pt.x, worldY: pt.y },
-            }])
+            signals.vertexEditStarted.dispatch([
+              {
+                element: el,
+                vertexIndex: 0,
+                originalPosition: { x: tx, y: ty, worldX: pt.x, worldY: pt.y },
+              },
+            ])
           })
       }
     })
   }
-
 
   signals.clearSelection.add(() => {
     clearSelectionVisuals()
@@ -982,7 +991,7 @@ function Outliner(editor) {
   signals.toogledSelect.add((el) => {
     if (editor.preventSelection || editor.isInteracting) return
 
-    const isElementSelected = editor.selected.some(item => {
+    const isElementSelected = editor.selected.some((item) => {
       if (item._paperVp) return false
       return item.node.id === el.node.id
     })
@@ -1023,7 +1032,7 @@ function Outliner(editor) {
       leftSide.style.display = 'flex'
       leftSide.style.alignItems = 'center'
       leftSide.style.flex = '1'
-      leftSide.style.paddingLeft = (level * 10) + 'px'
+      leftSide.style.paddingLeft = level * 10 + 'px'
 
       // Chevron toggle icon
       const toggleIcon = document.createElement('div')
@@ -1122,13 +1131,13 @@ function Outliner(editor) {
         leftSide.style.display = 'flex'
         leftSide.style.alignItems = 'center'
         leftSide.style.flex = '1'
-        leftSide.style.paddingLeft = (20 + level * 10) + 'px'
+        leftSide.style.paddingLeft = 20 + level * 10 + 'px'
 
         // Element type icon
         const elTypeIcon = document.createElement('div')
         elTypeIcon.className = 'icon '
         const elType = child.type || child.node.nodeName.toLowerCase()
-        if (elType === 'use' && child.attr('data-block-instance') === 'true') elTypeIcon.className += 'icon-group'
+        if (elType === 'use' && child.attr('data-block-instance') === 'true') elTypeIcon.className += 'icon-block'
         else if (elType === 'line') elTypeIcon.className += 'icon-element-line'
         else if (elType === 'circle') elTypeIcon.className += 'icon-element-circle'
         else if (elType === 'path') elTypeIcon.className += 'icon-element-arc'

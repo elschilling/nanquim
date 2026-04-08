@@ -1119,6 +1119,28 @@ function Viewport(editor) {
           }
           distance = minDist
         }
+      } else if (el.type === 'use') {
+        // Block instances: hit-test against bounding box edges/interior
+        try {
+          const bbox = el.node.getBBox()
+          // getBBox returns local coords — transform corners to root space via the element's CTM
+          const corners = [
+            toRootSpace(bbox.x, bbox.y),
+            toRootSpace(bbox.x + bbox.width, bbox.y),
+            toRootSpace(bbox.x + bbox.width, bbox.y + bbox.height),
+            toRootSpace(bbox.x, bbox.y + bbox.height),
+          ]
+          if (isPolygonIntersectingRect(corners, { x: coordinates.x, y: coordinates.y, width: 0, height: 0 })) {
+            distance = 0
+          } else {
+            let minDist = Infinity
+            for (let i = 0; i < 4; i++) {
+              const d = distanceFromPointToLine(coordinates, corners[i], corners[(i + 1) % 4])
+              if (d < minDist) minDist = d
+            }
+            distance = minDist
+          }
+        } catch (e) { /* getBBox may throw for invisible elements */ }
       }
 
       if (distance !== undefined && distance < hoverThresholdWorld) {
