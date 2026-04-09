@@ -181,7 +181,7 @@ class MoveCommand extends Command {
         x: element._paperVp.x,
         y: element._paperVp.y
       }
-    } else if (element.type === 'text') {
+    } else if (element.type === 'text' || (element.type === 'use' && element.attr('data-block-instance') === 'true')) {
       return {
         type: 'text',
         transform: element.transform(),

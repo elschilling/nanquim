@@ -211,6 +211,153 @@ function translateElement(el, dx, dy) {
   }
 }
 
+/**
+ * Enter block-edit mode: clone the definition contents into a temporary edit
+ * group positioned at the instance's insertion point, and fade everything else.
+ *
+ * @param {object} editor
+ * @param {SVG.Use} useElement - the block instance to edit
+ * @returns {{ name, useElement, defGroup, editGroup }} editing state
+ */
+function enterBlockEdit(editor, useElement) {
+  const name = useElement.attr('data-block-name')
+  const defId = 'block-' + name
+  const defGroup = editor.svg.defs().findOne('#' + CSS.escape(defId))
+  if (!defGroup) return null
+
+  const posX = useElement.x()
+  const posY = useElement.y()
+
+  // Create a temporary editing group inside the drawing group so it shares
+  // panzoom with the rest of the canvas.  Marked as a collection so that
+  // applyCollectionStyleToElement() can resolve styles for new elements.
+  const editGroup = editor.drawing.group()
+    .attr('id', 'block-edit-group')
+    .attr('data-block-edit', 'true')
+    .attr('data-collection', 'true')
+
+  // Inherit style from the instance's parent collection
+  const parentCollection = useElement.parent()
+  const parentData = editor.collections.get(parentCollection.attr('id'))
+  const editStyle = parentData
+    ? { ...parentData.style }
+    : { stroke: 'white', 'stroke-width': 0.1, 'stroke-linecap': 'round', fill: 'transparent', opacity: 1 }
+
+  // Register as a temporary collection so style lookups work
+  editor.collections.set('block-edit-group', {
+    group: editGroup,
+    visible: true,
+    locked: false,
+    style: editStyle,
+  })
+
+  // Apply the instance's transform (rotation/scale) to the edit group so that
+  // cloned content and newly drawn elements share the same coordinate space.
+  const instanceTransform = useElement.transform()
+  editGroup.transform(instanceTransform)
+
+  // Clone definition children into the edit group, translated to instance position
+  defGroup.children().each(child => {
+    const clone = child.clone()
+    const id = editor.elementIndex++
+    clone.attr('id', id)
+    translateElement(clone, posX, posY)
+    editGroup.add(clone)
+  })
+
+  // Hide the instance being edited
+  useElement.hide()
+
+  // Clear selection
+  editor.signals.clearSelection.dispatch()
+
+  // Add fade class to all collections
+  editor.svg.node.classList.add('block-edit-mode')
+  editGroup.node.classList.add('block-edit-active')
+
+  // Redirect new draw elements into the edit group
+  const savedActiveCollection = editor.activeCollection
+  editor.activeCollection = editGroup
+
+  editor.editingBlock = { name, useElement, defGroup, editGroup, savedActiveCollection }
+  editor.spatialIndex.markDirty()
+  editor.fullSpatialIndex.markDirty()
+  editor.signals.updatedOutliner.dispatch()
+  editor.signals.updatedProperties.dispatch()
+
+  return editor.editingBlock
+}
+
+/**
+ * Save block edits: update the definition from the edit group contents,
+ * then refresh all instances.
+ */
+function saveBlockEdit(editor) {
+  const state = editor.editingBlock
+  if (!state) return
+
+  const { name, useElement, defGroup, editGroup, savedActiveCollection } = state
+  const meta = editor.blockDefinitions.get(name)
+  const posX = useElement.x()
+  const posY = useElement.y()
+
+  // Clear the old definition contents
+  defGroup.clear()
+
+  // Copy edit group children into the definition, translated back to origin
+  editGroup.children().each(child => {
+    const clone = child.clone()
+    clone.removeClass('elementHover')
+    clone.removeClass('elementSelected')
+    translateElement(clone, -posX, -posY)
+    defGroup.add(clone)
+  })
+
+  // Update metadata
+  if (meta) {
+    meta.elementCount = defGroup.children().length
+  }
+
+  // Clean up
+  editor.collections.delete('block-edit-group')
+  editGroup.remove()
+  useElement.show()
+  editor.svg.node.classList.remove('block-edit-mode')
+  editor.activeCollection = savedActiveCollection
+  editor.editingBlock = null
+
+  editor.spatialIndex.markDirty()
+  editor.fullSpatialIndex.markDirty()
+  editor.signals.clearSelection.dispatch()
+  editor.signals.updatedOutliner.dispatch()
+  editor.signals.updatedProperties.dispatch()
+  editor.signals.refreshHandlers.dispatch()
+}
+
+/**
+ * Discard block edits and exit edit mode.
+ */
+function discardBlockEdit(editor) {
+  const state = editor.editingBlock
+  if (!state) return
+
+  const { useElement, editGroup, savedActiveCollection } = state
+
+  editor.collections.delete('block-edit-group')
+  editGroup.remove()
+  useElement.show()
+  editor.svg.node.classList.remove('block-edit-mode')
+  editor.activeCollection = savedActiveCollection
+  editor.editingBlock = null
+
+  editor.spatialIndex.markDirty()
+  editor.fullSpatialIndex.markDirty()
+  editor.signals.clearSelection.dispatch()
+  editor.signals.updatedOutliner.dispatch()
+  editor.signals.updatedProperties.dispatch()
+  editor.signals.refreshHandlers.dispatch()
+}
+
 export {
   createBlockDefinition,
   insertBlockInstance,
@@ -218,4 +365,7 @@ export {
   rebuildBlockDefinitionsFromDOM,
   explodeBlockInstance,
   translateElement,
+  enterBlockEdit,
+  saveBlockEdit,
+  discardBlockEdit,
 }

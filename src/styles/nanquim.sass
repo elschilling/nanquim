@@ -222,6 +222,11 @@ use[data-block-instance].elementHover
     opacity: .6 !important
 use[data-block-instance].elementSelected
     opacity: .6 !important
+// Block edit mode: fade everything except the edit group
+.block-edit-mode [data-collection="true"]:not([data-block-edit])
+    opacity: 0.15 !important
+    pointer-events: none !important
+
 .ghostLine
     stroke: #F44336 !important
     stroke-width: var(--hover-stroke-width, 0.4) !important

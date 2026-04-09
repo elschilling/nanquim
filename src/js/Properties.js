@@ -1,6 +1,7 @@
 import { setCollectionStyle, getElementOverrides, setElementOverrides, applyCollectionStyleToElement } from './Collection'
 import { Matrix } from '@svgdotjs/svg.js'
 import { HATCH_PATTERNS, ensurePattern } from './utils/hatchPatterns'
+import { enterBlockEdit, saveBlockEdit, discardBlockEdit } from './BlockManager'
 
 const propertiesPanel = document.getElementById('properties-panel')
 
@@ -217,6 +218,16 @@ function Properties(editor) {
       p.style.opacity = '0.6'
       content.appendChild(p)
       return
+    }
+
+    // ── BLOCK EDIT MODE ────────────────────────────────────────────────────
+    if (editor.editingBlock) {
+      const blockEditContent = document.createElement('div')
+      blockEditContent.className = 'properties-content'
+      propertiesPanel.appendChild(blockEditContent)
+      renderBlockEditTab(blockEditContent)
+
+      if (editor.selected.length === 0) return
     }
 
     // ── MODEL MODE ──────────────────────────────────────────────────────────
@@ -1255,6 +1266,18 @@ function Properties(editor) {
       return body
     }
 
+    // ── Edit Block button (above accordions) ───────────────────────────────
+    if (node.nodeName === 'use' && element.attr('data-block-instance') === 'true') {
+      const editBtn = document.createElement('button')
+      editBtn.textContent = 'Edit Block'
+      editBtn.className = 'prop-action-btn'
+      editBtn.style.background = '#2a4a6a'
+      editBtn.addEventListener('click', () => {
+        enterBlockEdit(editor, element)
+      })
+      container.appendChild(editBtn)
+    }
+
     // ── General ──────────────────────────────────────────────────────────────
     const generalBody = makeAccordion('General', 'general')
 
@@ -1400,6 +1423,7 @@ function Properties(editor) {
         const num = parseFloat(value)
         if (!isNaN(num)) { element.y(num); editor.spatialIndex.markDirty(); editor.fullSpatialIndex.markDirty(); safeDispatch('refreshHandlers') }
       })
+
     }
 
     if (element.transform) {
@@ -1423,6 +1447,44 @@ function Properties(editor) {
         }
       })
     }
+  }
+
+  function renderBlockEditTab(container) {
+    const state = editor.editingBlock
+    if (!state) return
+
+    const header = document.createElement('div')
+    header.className = 'prop-section-header'
+    header.textContent = 'Editing Block: ' + state.name
+    container.appendChild(header)
+
+    const info = document.createElement('p')
+    info.textContent = 'Modify the block contents, then save or discard.'
+    info.style.cssText = 'padding:4px 8px;opacity:0.6;font-size:11px;margin:0;'
+    container.appendChild(info)
+
+    const btnRow = document.createElement('div')
+    btnRow.style.cssText = 'display:flex;gap:6px;padding:8px;'
+
+    const saveBtn = document.createElement('button')
+    saveBtn.textContent = 'Save'
+    saveBtn.className = 'prop-action-btn'
+    saveBtn.style.background = '#2a6a3a'
+    saveBtn.addEventListener('click', () => {
+      saveBlockEdit(editor)
+    })
+
+    const discardBtn = document.createElement('button')
+    discardBtn.textContent = 'Discard'
+    discardBtn.className = 'prop-action-btn'
+    discardBtn.style.background = '#6a2a2a'
+    discardBtn.addEventListener('click', () => {
+      discardBlockEdit(editor)
+    })
+
+    btnRow.appendChild(saveBtn)
+    btnRow.appendChild(discardBtn)
+    container.appendChild(btnRow)
   }
 
   function renderTextStylePicker(container, element) {

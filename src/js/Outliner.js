@@ -39,11 +39,47 @@ function Outliner(editor) {
   })
 
   function renderCollections() {
-    if (editor.mode === 'paper') {
+    if (editor.editingBlock) {
+      renderBlockEditOutliner()
+    } else if (editor.mode === 'paper') {
       renderPaperModeOutliner()
     } else {
       renderModelModeCollections()
     }
+  }
+
+  function renderBlockEditOutliner() {
+    const state = editor.editingBlock
+    if (!state) return
+
+    const collectionUl = document.createElement('ul')
+    collectionUl.className = 'outliner-collection'
+
+    const collectionLi = document.createElement('li')
+    collectionLi.className = 'collection-row collection-active'
+
+    const leftSide = document.createElement('div')
+    leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
+
+    const folderIcon = document.createElement('div')
+    folderIcon.className = 'icon icon-block'
+    folderIcon.style.marginRight = '6px'
+
+    const nameSpan = document.createElement('span')
+    nameSpan.className = 'collection-name'
+    nameSpan.textContent = 'Block: ' + state.name
+
+    leftSide.appendChild(folderIcon)
+    leftSide.appendChild(nameSpan)
+    collectionLi.appendChild(leftSide)
+    collectionUl.appendChild(collectionLi)
+
+    // Render edit group children
+    const childrenDiv = document.createElement('div')
+    childElements(state.editGroup, childrenDiv, 1)
+    collectionUl.appendChild(childrenDiv)
+
+    drawingTree.appendChild(collectionUl)
   }
 
   // ── Paper-mode outliner ────────────────────────────────────────────────────
@@ -732,9 +768,15 @@ function Outliner(editor) {
       // <use> x/y attrs are in the parent's coordinate space (not included in the
       // element's own CTM), so we resolve via the parent's screenCTM.
       if (el.type === 'use' && el.attr('data-block-instance') === 'true') {
+        // <use> x/y attrs are an implicit translation applied before the element's
+        // transform.  Compute the insertion point in parent space by transforming
+        // (bx, by) through the element's own matrix, then convert to world via parent.
         const bx = parseFloat(el.attr('x') || 0)
         const by = parseFloat(el.attr('y') || 0)
-        const pt = localToWorld(el.parent(), bx, by)
+        const m = el.matrix()
+        const parentX = m.a * bx + m.c * by + m.e
+        const parentY = m.b * bx + m.d * by + m.f
+        const pt = localToWorld(el.parent(), parentX, parentY)
         editor.handlers
           .rect(handlerWorldSize, handlerWorldSize)
           .center(pt.x, pt.y)

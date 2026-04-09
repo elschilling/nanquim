@@ -307,6 +307,13 @@ function getSelectableElements(editor) {
             }
         })
     }
+
+    // In block-edit mode, only the edit group contents are selectable
+    if (editor.editingBlock && editor.editingBlock.editGroup) {
+        collectLeaves(editor.editingBlock.editGroup)
+        return elements
+    }
+
     editor.collections.forEach((data) => {
         if (!data.visible || data.locked) return
         collectLeaves(data.group)

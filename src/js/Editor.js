@@ -126,6 +126,9 @@ function Editor() {
   // Block definitions: Map<name, { defId, basePoint, elementCount }>
   this.blockDefinitions = new Map()
 
+  // Block editing state: null | { name, useElement, defGroup, editGroup }
+  this.editingBlock = null
+
   // Spatial index for fast hit-testing (R-tree) — selectable elements only
   this.spatialIndex = new SpatialIndex()
   // Second index covering ALL elements (used for snapping when excludeNonSelectable is off)
