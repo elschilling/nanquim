@@ -5,6 +5,33 @@
  * A block definition is a <g> inside SVG <defs>. Instances are <use> elements.
  */
 
+// CSS properties managed by the collection style system
+const COLLECTION_STYLE_PROPS = ['stroke', 'fill', 'stroke-width', 'stroke-linecap', 'opacity']
+
+/**
+ * Strip non-overridden collection style properties from an element so it
+ * inherits them from the <use> host (and thus from the parent collection).
+ * Element-level overrides (data-style-overrides) are kept.
+ */
+function stripCollectionStyles(el) {
+  let overrides = {}
+  try {
+    const raw = el.attr('data-style-overrides')
+    if (raw) overrides = JSON.parse(raw)
+  } catch (e) { /* ignore */ }
+
+  COLLECTION_STYLE_PROPS.forEach(prop => {
+    if (!overrides[prop]) {
+      el.node.style.removeProperty(prop)
+      el.node.removeAttribute(prop)
+    }
+  })
+
+  if (el.type === 'g') {
+    el.children().each(child => stripCollectionStyles(child))
+  }
+}
+
 /**
  * Create a block definition from the given elements.
  * Clones each element into a <g> inside <defs>, translated so that
@@ -43,9 +70,11 @@ function createBlockDefinition(editor, name, elements, basePoint) {
     defGroup.add(clone)
   })
 
-  // Translate all children so base point becomes origin
+  // Translate all children so base point becomes origin, and strip collection
+  // styles so instances inherit from their parent collection via CSS cascade.
   defGroup.children().each(child => {
     translateElement(child, -basePoint.x, -basePoint.y)
+    stripCollectionStyles(child)
   })
 
   // Store metadata
@@ -304,12 +333,14 @@ function saveBlockEdit(editor) {
   // Clear the old definition contents
   defGroup.clear()
 
-  // Copy edit group children into the definition, translated back to origin
+  // Copy edit group children into the definition, translated back to origin.
+  // Strip non-override styles so instances inherit from their collection.
   editGroup.children().each(child => {
     const clone = child.clone()
     clone.removeClass('elementHover')
     clone.removeClass('elementSelected')
     translateElement(clone, -posX, -posY)
+    stripCollectionStyles(clone)
     defGroup.add(clone)
   })
 

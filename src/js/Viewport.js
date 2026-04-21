@@ -934,7 +934,7 @@ function Viewport(editor) {
   }
 
   function checkHover() {
-    if (editor.isDrawing || editor.isTypingText) {
+    if (editor.isDrawing || editor.isTypingText || editor.mode === 'paper') {
       clearHover()
       return
     }

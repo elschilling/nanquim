@@ -53,6 +53,14 @@ function PaperEditor(editor) {
   // ── Activation / Deactivation ───────────────────────────────────────────────
 
   function activate() {
+    // Capture drawing bounding box before hiding the model SVG (getBBox returns zeros on hidden elements)
+    try {
+      const rawBBox = editor.drawing.node.getBBox()
+      editor._drawingBBox = (rawBBox.width > 0 || rawBBox.height > 0) ? rawBBox : null
+    } catch (_) {
+      editor._drawingBBox = null
+    }
+
     // Hide the draw SVG (preserving the terminal inside editor.canvas)
     editor.svg.node.style.display = 'none'
 
@@ -219,13 +227,24 @@ function PaperEditor(editor) {
    * @param {number} scale - drawing scale denominator (e.g. 100 for 1:100)
    */
   function createViewport(x, y, w, h, scale = 100) {
+    // Compute model origin so that the drawing content is centered in the viewport
+    let modelOriginX = 0
+    let modelOriginY = 0
+    const bbox = editor._drawingBBox
+    if (bbox) {
+      const cx = bbox.x + bbox.width / 2
+      const cy = bbox.y + bbox.height / 2
+      modelOriginX = cx - (w / 2) * scale
+      modelOriginY = cy - (h / 2) * scale
+    }
+
     viewportCounter++
     const vp = new PaperViewport(editor, viewportsGroup, {
       id: 'vp-' + viewportCounter,
       x, y, w, h,
       scale,
-      modelOriginX: 0,
-      modelOriginY: 0,
+      modelOriginX,
+      modelOriginY,
     })
     viewports.push(vp)
     editor.paperViewports = viewports

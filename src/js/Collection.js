@@ -149,7 +149,6 @@ function setCollectionStyle(editor, id, style) {
                     child.css(prop, value)
                     applyToChildren(child) // Recurse into groups
                 } else {
-                    // For leaves, we just apply the css. 
                     child.css(prop, value)
                 }
             })

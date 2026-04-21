@@ -39,7 +39,7 @@ class InsertCommand extends Command {
     // Get bounding box of the definition content
     // The def group lives inside <defs> so getBBox may not work — serialize and measure
     let inner = ''
-    defEl.children().each(child => {
+    defEl.children().each((child) => {
       inner += new XMLSerializer().serializeToString(child.node)
     })
 
@@ -50,7 +50,10 @@ class InsertCommand extends Command {
     tempSvg.innerHTML = inner
     document.body.appendChild(tempSvg)
 
-    let vbX = 0, vbY = 0, vbW = 100, vbH = 100
+    let vbX = 0,
+      vbY = 0,
+      vbW = 100,
+      vbH = 100
     try {
       const bbox = tempSvg.getBBox()
       if (bbox.width > 0 && bbox.height > 0) {
@@ -60,10 +63,12 @@ class InsertCommand extends Command {
         vbW = bbox.width + padding * 2
         vbH = bbox.height + padding * 2
       }
-    } catch (e) { /* use defaults */ }
+    } catch (e) {
+      /* use defaults */
+    }
     document.body.removeChild(tempSvg)
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" style="width:100%;height:100%;">${inner}</svg>`
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" style="width:100%;height:100%;stroke:white;stroke-width:.05;fill:none;stroke-linecap:round;">${inner}</svg>`
   }
 
   _showModal(names) {
@@ -86,7 +91,7 @@ class InsertCommand extends Command {
     const grid = document.createElement('div')
     grid.className = 'insert-modal-grid'
 
-    names.forEach(name => {
+    names.forEach((name) => {
       const card = document.createElement('div')
       card.className = 'insert-modal-card'
 
@@ -176,11 +181,7 @@ class InsertCommand extends Command {
     if (!defEl) return
 
     const parent = this.editor.activeCollection
-    this._ghost = parent.use(defEl)
-      .attr('data-block-ghost', 'true')
-      .move(0, 0)
-      .opacity(0.4)
-      .addClass('ghostLine')
+    this._ghost = parent.use(defEl).attr('data-block-ghost', 'true').move(0, 0).opacity(0.4).addClass('ghostLine')
 
     // Ghost follows cursor from origin — basePoint = (0,0) since the def is
     // already centered on its base point
@@ -224,11 +225,7 @@ class InsertCommand extends Command {
   }
 
   onInsertStop(event) {
-    if (
-      event.code === 'Space' ||
-      event.code === 'Enter' ||
-      event.code === 'NumpadEnter'
-    ) {
+    if (event.code === 'Space' || event.code === 'Enter' || event.code === 'NumpadEnter') {
       this.cleanup()
     }
   }
@@ -257,7 +254,7 @@ class InsertCommand extends Command {
   }
 
   undo() {
-    this.allInsertedInstances.forEach(el => el.remove())
+    this.allInsertedInstances.forEach((el) => el.remove())
     this.editor.spatialIndex.markDirty()
     this.editor.fullSpatialIndex.markDirty()
     this.editor.signals.clearSelection.dispatch()
@@ -267,7 +264,7 @@ class InsertCommand extends Command {
   }
 
   redo() {
-    this.allInsertedInstances.forEach(el => {
+    this.allInsertedInstances.forEach((el) => {
       const parent = el.parent() || this.editor.activeCollection
       parent.add(el)
     })
