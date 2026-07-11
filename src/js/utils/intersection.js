@@ -165,9 +165,10 @@ export function getLineCircleIntersections(line, circle) {
   const C = (line.x1 - cx) * (line.x1 - cx) + (line.y1 - cy) * (line.y1 - cy) - r * r;
 
   const det = B * B - 4 * A * C;
-  if (A <= 0.0000001 || det < 0) {
+  const detEpsilon = 1e-8 * A * Math.max(r * r, 1);
+  if (A <= 0.0000001 || det < -detEpsilon) {
     return []; // No intersection
-  } else if (det === 0) {
+  } else if (Math.abs(det) <= detEpsilon) {
     // One intersection (tangent)
     const t = -B / (2 * A);
     return [{ x: line.x1 + t * dx, y: line.y1 + t * dy }];
@@ -222,10 +223,11 @@ export function getCircleCircleIntersections(c1, c2) {
   const dx = c2.cx - c1.cx;
   const dy = c2.cy - c1.cy;
   const d = Math.sqrt(dx * dx + dy * dy);
+  const eps = 1e-8 * Math.max(c1.r, c2.r, 1);
 
-  if (d > (c1.r + c2.r)) return [];
-  if (d < Math.abs(c1.r - c2.r)) return [];
-  if (d === 0 && c1.r === c2.r) return [];
+  if (d > (c1.r + c2.r) + eps) return [];
+  if (d < Math.abs(c1.r - c2.r) - eps) return [];
+  if (d < eps && Math.abs(c1.r - c2.r) < eps) return [];
 
   const a = (c1.r * c1.r - c2.r * c2.r + d * d) / (2 * d);
   const h = Math.sqrt(Math.max(0, c1.r * c1.r - a * a));
@@ -236,7 +238,7 @@ export function getCircleCircleIntersections(c1, c2) {
   const int1 = { x: cx2 + (h * dy) / d, y: cy2 - (h * dx) / d };
   const int2 = { x: cx2 - (h * dy) / d, y: cy2 + (h * dx) / d };
 
-  if (h === 0) return [int1];
+  if (h <= eps) return [int1];
   return [int1, int2];
 }
 

@@ -126,6 +126,81 @@ export function circleCircleIntersectPts(ca, cb) {
   ]
 }
 
+/** Tangent points from an external point to a circle. Returns 0, 1, or 2 points. */
+export function tangentPtsFromPointToCircle(from, cx, cy, r) {
+  const vx = from.x - cx
+  const vy = from.y - cy
+  const d2 = vx * vx + vy * vy
+  const r2 = r * r
+  if (d2 < r2 - 1e-10 || d2 < 1e-10) return []
+
+  if (Math.abs(d2 - r2) < 1e-10) {
+    return [{ x: from.x, y: from.y }]
+  }
+
+  const offsetScale = r * Math.sqrt(d2 - r2) / d2
+  const baseScale = r2 / d2
+  const bx = cx + baseScale * vx
+  const by = cy + baseScale * vy
+  const ox = -vy * offsetScale
+  const oy = vx * offsetScale
+
+  return [
+    { x: bx + ox, y: by + oy },
+    { x: bx - ox, y: by - oy },
+  ]
+}
+
+function getArcSnapGeometry(el) {
+  if (el.type !== 'path') return null
+
+  const circleTrimData = el.data('circleTrimData')
+  if (circleTrimData) {
+    return {
+      cx: circleTrimData.cx,
+      cy: circleTrimData.cy,
+      r: circleTrimData.r,
+      theta1: circleTrimData.theta2,
+      theta3: circleTrimData.theta1,
+      ccw: true,
+    }
+  }
+
+  const arcData = el.data('arcData')
+  if (!arcData) return null
+  const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
+  if (!geo) return null
+
+  return {
+    cx: arcData.cx !== undefined ? arcData.cx : geo.cx,
+    cy: arcData.cx !== undefined ? arcData.cy : geo.cy,
+    r: arcData.r !== undefined ? arcData.r : geo.radius,
+    theta1: geo.theta1,
+    theta3: geo.theta3,
+    ccw: geo.ccw,
+  }
+}
+
+function getEditingVertexSnapBase(editor) {
+  if (!editor.isEditingVertex || !editor.editingVertices || editor.editingVertices.length === 0) return null
+
+  const lineVertex = editor.editingVertices.find(v => v.element && v.element.type === 'line')
+  if (!lineVertex) return null
+
+  const line = lineVertex.element
+  if (lineVertex.vertexIndex === 0) {
+    return { x: line.node.x2.baseVal.value, y: line.node.y2.baseVal.value }
+  }
+  if (lineVertex.vertexIndex === 1) {
+    return { x: line.node.x1.baseVal.value, y: line.node.y1.baseVal.value }
+  }
+  return null
+}
+
+function getSnapBasePoint(editor) {
+  return getEditingVertexSnapBase(editor) || editor.lastClick
+}
+
 // ---- Extension snap helpers -----------------------------------------------------
 
 /** Returns extension directions for each endpoint of a line element. */
@@ -382,9 +457,10 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
   }
 
   // ---- PERPENDICULAR SNAP ----
-  // Requires a base point: finds the foot where a line FROM lastClick TO the element is perpendicular.
-  if (st.perpendicular && editor.lastClick) {
-    const from = editor.lastClick
+  // Requires a base point: finds the foot where a line FROM the active base TO the element is perpendicular.
+  const snapBasePoint = getSnapBasePoint(editor)
+  if (st.perpendicular && snapBasePoint) {
+    const from = snapBasePoint
     const pushPerp = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'perpendicular' })
 
     snapCandidates.forEach(el => {
@@ -467,6 +543,31 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           const t = Math.max(0, Math.min(1, ((from.x - p1.x) * dx + (from.y - p1.y) * dy) / len2))
           pushPerp({ x: p1.x + t * dx, y: p1.y + t * dy })
         }
+      }
+    })
+  }
+
+  // ---- TANGENT SNAP ----
+  // Requires a base point: finds the point(s) on a circle/arc where a line
+  // FROM the active base TO the element is tangent.
+  if (st.tangent && snapBasePoint) {
+    const from = snapBasePoint
+    const pushTangent = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'tangent' })
+
+    snapCandidates.forEach(el => {
+      if (el.type === 'circle') {
+        const cx = el.node.cx.baseVal.value
+        const cy = el.node.cy.baseVal.value
+        const r = el.node.r.baseVal.value
+        tangentPtsFromPointToCircle(from, cx, cy, r).forEach(pushTangent)
+
+      } else if (el.type === 'path' && (el.data('arcData') || el.data('circleTrimData'))) {
+        const arcGeo = getArcSnapGeometry(el)
+        if (!arcGeo) return
+
+        tangentPtsFromPointToCircle(from, arcGeo.cx, arcGeo.cy, arcGeo.r)
+          .filter(pt => isPointInArc(pt, arcGeo.cx, arcGeo.cy, arcGeo.theta1, arcGeo.theta3, arcGeo.ccw))
+          .forEach(pushTangent)
       }
     })
   }
@@ -636,6 +737,10 @@ export function drawSnap(point, zoom, svgInstance, snapType) {
     snapGroup.line(corner.x, corner.y, corner.x + s, corner.y).stroke({ color, width: sw })
     snapGroup.line(corner.x, corner.y, corner.x, corner.y - s).stroke({ color, width: sw })
     snapGroup.rect(sq, sq).move(corner.x, corner.y - sq).fill(color).stroke('none')
+
+  } else if (snapType === 'tangent') {
+    snapGroup.circle(s * 1.4).center(cx, cy).fill('none').stroke({ color, width: sw })
+    snapGroup.line(cx - s, cy + s * 0.7, cx + s, cy + s * 0.7).stroke({ color, width: sw })
 
   } else if (snapType === 'extension') {
     // Small cross for extension snap point
