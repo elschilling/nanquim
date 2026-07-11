@@ -23,6 +23,7 @@ class TrimCommand extends Command {
         this.boundOnElementSelected = this.onElementSelected.bind(this)
         this.boundOnLineClicked = this.onLineClicked.bind(this)
         this.boundOnMouseMove = this.onMouseMove.bind(this)
+        this.boundOnRightClick = this.onRightClick.bind(this)
         this.cleanup = this.cleanup.bind(this)
         this.isTrimming = false
         this.ghostLine = null
@@ -39,6 +40,7 @@ class TrimCommand extends Command {
         this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
         this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
         document.addEventListener('keydown', this.boundOnKeyDown)
+        document.addEventListener('contextmenu', this.boundOnRightClick, true)
 
         if (this.editor.selected.length > 0) {
             this.boundaryElements = [...this.editor.selected]
@@ -60,7 +62,9 @@ class TrimCommand extends Command {
     }
 
     onKeyDown(event) {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.code === 'Enter' || event.code === 'Space' || event.code === 'NumpadEnter') {
+            event.preventDefault()
+            event.stopPropagation()
             if (!this.isTrimming) {
                 if (this.boundaryElements.length === 0) {
                     this.autoTrimMode = true
@@ -76,10 +80,33 @@ class TrimCommand extends Command {
 
                 this.startTrimmingLines()
                 this.editor.signals.requestHoverCheck.dispatch()
+            } else {
+                this.finishCommand()
             }
         } else if (event.key === 'Escape') {
             this.cleanup()
         }
+    }
+
+    finishCommand() {
+        this.cleanup()
+        this.editor.isInteracting = false
+        this.editor.isDrawing = false
+        this.editor.isSelecting = false
+        this.editor.isTypingText = false
+        this.editor.selectSingleElement = false
+        this.editor.signals.commandCancelled.dispatch()
+        this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
+        setTimeout(() => {
+            const terminalInput = document.getElementById('terminalInput')
+            if (terminalInput) terminalInput.focus()
+        }, 0)
+    }
+
+    onRightClick(event) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.finishCommand()
     }
 
     onElementSelected(el) {
@@ -163,6 +190,34 @@ class TrimCommand extends Command {
 
         const candidateBoundaries = this.getCandidateBoundaries(originalEl)
 
+        const getArcBoundaryData = (boundary) => {
+            const circleTrimData = boundary.data('circleTrimData')
+            if (circleTrimData) {
+                return {
+                    cx: circleTrimData.cx,
+                    cy: circleTrimData.cy,
+                    r: circleTrimData.r,
+                    startAngle: circleTrimData.theta2,
+                    endAngle: circleTrimData.theta1,
+                    ccw: circleTrimData.ccw !== undefined ? circleTrimData.ccw : true,
+                }
+            }
+
+            const arcData = boundary.data('arcData')
+            if (!arcData) return null
+            const arcGeo = this.getArcGeometry(arcData)
+            if (!arcGeo) return null
+
+            return {
+                cx: arcGeo.cx,
+                cy: arcGeo.cy,
+                r: arcGeo.r,
+                startAngle: arcGeo.theta2,
+                endAngle: arcGeo.theta1,
+                ccw: arcGeo.ccw,
+            }
+        }
+
         const checkAndAddIntersection = (intersect) => {
             if (!intersect) return
             const minX = Math.min(lineEq.x1, lineEq.x2) - 1e-4
@@ -204,6 +259,18 @@ class TrimCommand extends Command {
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, rectBounds).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
+                const arcBoundary = getArcBoundaryData(boundary)
+                if (arcBoundary) {
+                    getLineCircleIntersections(
+                        { x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 },
+                        { cx: arcBoundary.cx, cy: arcBoundary.cy, r: arcBoundary.r }
+                    ).forEach(pt => {
+                        if (isPointInArc(pt, arcBoundary.cx, arcBoundary.cy, arcBoundary.startAngle, arcBoundary.endAngle, arcBoundary.ccw)) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
+                }
             } else if (boundary.type === 'path') {
                 getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'polyline') {
@@ -338,6 +405,8 @@ class TrimCommand extends Command {
 
         const candidateBoundaries = this.getCandidateBoundaries(el)
         const intersections = []
+        const segmentTolerance = Math.max(1e-4, r * 1e-6)
+        const tangentTolerance = Math.max(segmentTolerance * 5, r * 1e-5)
 
         const checkPointOnArc = (pt) => {
             if (!isArc) return true
@@ -354,6 +423,54 @@ class TrimCommand extends Command {
             intersections.push({ theta, x: intersect.x, y: intersect.y })
         }
 
+        const isPointOnSegment = (pt, seg, tolerance = segmentTolerance) => {
+            const dx = seg.x2 - seg.x1
+            const dy = seg.y2 - seg.y1
+            const len2 = dx * dx + dy * dy
+            if (len2 < 1e-12) return Math.hypot(pt.x - seg.x1, pt.y - seg.y1) <= tolerance
+
+            const t = ((pt.x - seg.x1) * dx + (pt.y - seg.y1) * dy) / len2
+            const paramTolerance = Math.max(1e-4, tolerance / Math.sqrt(len2))
+            if (t < -paramTolerance || t > 1 + paramTolerance) return false
+
+            const clampedT = Math.max(0, Math.min(1, t))
+            const closestX = seg.x1 + clampedT * dx
+            const closestY = seg.y1 + clampedT * dy
+            return Math.hypot(pt.x - closestX, pt.y - closestY) <= tolerance
+        }
+
+        const checkLineCircleBoundary = (seg) => {
+            const hits = getLineCircleIntersections(seg, { cx, cy, r })
+            let accepted = 0
+            hits.forEach(pt => {
+                if (isPointOnSegment(pt, seg, tangentTolerance)) {
+                    accepted++
+                    checkAndAddIntersection(pt)
+                }
+            })
+
+            if (accepted > 0) return
+
+            const dx = seg.x2 - seg.x1
+            const dy = seg.y2 - seg.y1
+            const len2 = dx * dx + dy * dy
+            if (len2 < 1e-12) return
+
+            const tRaw = ((cx - seg.x1) * dx + (cy - seg.y1) * dy) / len2
+            const paramTolerance = Math.max(1e-4, tangentTolerance / Math.sqrt(len2))
+            if (tRaw < -paramTolerance || tRaw > 1 + paramTolerance) return
+
+            const t = Math.max(0, Math.min(1, tRaw))
+            const closest = { x: seg.x1 + t * dx, y: seg.y1 + t * dy }
+            const dist = Math.hypot(closest.x - cx, closest.y - cy)
+            if (Math.abs(dist - r) > tangentTolerance || dist < 1e-12) return
+
+            checkAndAddIntersection({
+                x: cx + ((closest.x - cx) / dist) * r,
+                y: cy + ((closest.y - cy) / dist) * r,
+            })
+        }
+
         // Add endpoints if it's an arc
         if (isArc) {
             intersections.push({ theta: arcGeo.theta2, x: arcGeo.startPt ? arcGeo.startPt.x : (cx + r * Math.cos(arcGeo.theta2)), y: arcGeo.startPt ? arcGeo.startPt.y : (cy + r * Math.sin(arcGeo.theta2)) })
@@ -365,15 +482,7 @@ class TrimCommand extends Command {
 
             if (boundary.type === 'line') {
                 const bEq = getLineEquation(boundary)
-                getLineCircleIntersections(bEq, { cx, cy, r }).forEach(pt => {
-                    const intersectMinX = Math.min(bEq.x1, bEq.x2) - 1e-4;
-                    const intersectMaxX = Math.max(bEq.x1, bEq.x2) + 1e-4;
-                    const intersectMinY = Math.min(bEq.y1, bEq.y2) - 1e-4;
-                    const intersectMaxY = Math.max(bEq.y1, bEq.y2) + 1e-4;
-                    if (pt.x >= intersectMinX && pt.x <= intersectMaxX && pt.y >= intersectMinY && pt.y <= intersectMaxY) {
-                        checkAndAddIntersection(pt)
-                    }
-                })
+                checkLineCircleBoundary(bEq)
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 const h = rectBounds.height;
@@ -385,15 +494,7 @@ class TrimCommand extends Command {
                     { x1: rectBounds.x, y1: rectBounds.y + h, x2: rectBounds.x, y2: rectBounds.y }
                 ]
                 rectSegments.forEach(seg => {
-                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
-                        const intersectMinX = Math.min(seg.x1, seg.x2) - 1e-4;
-                        const intersectMaxX = Math.max(seg.x1, seg.x2) + 1e-4;
-                        const intersectMinY = Math.min(seg.y1, seg.y2) - 1e-4;
-                        const intersectMaxY = Math.max(seg.y1, seg.y2) + 1e-4;
-                        if (pt.x >= intersectMinX && pt.x <= intersectMaxX && pt.y >= intersectMinY && pt.y <= intersectMaxY) {
-                            checkAndAddIntersection(pt)
-                        }
-                    })
+                    checkLineCircleBoundary(seg)
                 })
             } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
                 const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
@@ -406,15 +507,7 @@ class TrimCommand extends Command {
                 getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'polyline') {
                 getPolylineSegments(boundary).forEach(seg => {
-                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
-                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
-                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
-                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
-                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
-                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
-                            checkAndAddIntersection(pt)
-                        }
-                    })
+                    checkLineCircleBoundary(seg)
                 })
             } else if (boundary.type === 'circle') {
                 const bcx = boundary.cx(), bcy = boundary.cy(), br = parseFloat(boundary.radius ? boundary.radius() : (boundary.attr('r') || boundary.attr('rx')))
@@ -430,13 +523,7 @@ class TrimCommand extends Command {
                         x1: ecx + erx * Math.cos(a1), y1: ecy + ery * Math.sin(a1),
                         x2: ecx + erx * Math.cos(a2), y2: ecy + ery * Math.sin(a2),
                     }
-                    getLineCircleIntersections(seg, { cx, cy, r }).forEach(pt => {
-                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
-                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
-                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
-                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
-                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) checkAndAddIntersection(pt)
-                    })
+                    checkLineCircleBoundary(seg)
                 }
             }
 
@@ -1014,7 +1101,10 @@ class TrimCommand extends Command {
         if (!this.isTrimming || !this.editor.isInteracting) return
 
         const hoveredList = this.editor.hoveredElements || []
-        let targetEl = null
+        const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
+        if (!activeSvg) return
+        const pt = activeSvg.point(e.pageX, e.pageY)
+        let trimData = null
 
         for (const item of hoveredList) {
             const el = window.SVG(item.node)
@@ -1024,20 +1114,17 @@ class TrimCommand extends Command {
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValidHover = true
 
             if (isValidHover) {
-                targetEl = el
-                break
+                trimData = this.calculateTrim(el, pt)
+                if (trimData && trimData.preview) break
             }
         }
 
-        if (!targetEl) {
+        if (!trimData || !trimData.preview) {
             this.clearGhost()
             return
         }
 
-        const pt = this.editor.svg.point(e.clientX, e.clientY)
-        const trimData = this.calculateTrim(targetEl, pt)
-
-        if (trimData && trimData.preview) {
+        if (trimData.preview) {
             const p = trimData.preview
 
             if (p.type === 'arc') {
@@ -1138,9 +1225,11 @@ class TrimCommand extends Command {
 
     cleanup() {
         document.removeEventListener('keydown', this.boundOnKeyDown)
+        document.removeEventListener('contextmenu', this.boundOnRightClick, true)
         document.removeEventListener('mousemove', this.boundOnMouseMove)
         this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.signals.preferencesChanged.remove(this.boundOnPreferencesChanged)
 
         if (this.ghostLine) this.ghostLine.remove()
