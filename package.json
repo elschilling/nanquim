@@ -11,7 +11,7 @@
   "devDependencies": {
     "@vue/language-plugin-pug": "^1.8.27",
     "sass": "^1.69.5",
-    "vite": "^5.0.8",
+    "vite": "^6.4.3",
     "vite-plugin-pug": "^0.3.2"
   },
   "dependencies": {
