@@ -133,6 +133,7 @@ class OffsetCommand extends Command {
     // Stop ghosting for this element and allow another selection
     // Do this BEFORE executing AddElementCommand to prevent ghost from appearing in Outliner
     this.editor.signals.offsetGhostingStopped.dispatch()
+    this.clearInteractionStyles(this.selectedElement)
 
     // Record into history for undo/redo
     this.editor.execute(new AddElementCommand(this.editor, clone))
@@ -141,7 +142,6 @@ class OffsetCommand extends Command {
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element. Select next element or press Esc to finish.` })
 
     // Continue: loop back to element selection with the same distance
-    this.editor.selected = []
     this.selectedElement = null
     this.startSelection()
   }
@@ -160,12 +160,22 @@ class OffsetCommand extends Command {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     this.editor.signals.pointCaptured.remove(this.boundOnConfirmPoint)
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    this.clearInteractionStyles(this.selectedElement)
     this.editor.isInteracting = false
     setTimeout(() => {
       this.editor.selectSingleElement = false
     }, 10)
     this.editor.distance = null
     this.selectedElement = null
+  }
+
+  clearInteractionStyles(element) {
+    if (!element) return
+    element.removeClass('elementHover')
+    element.removeClass('elementSelected')
+    if (element.type === 'g' && element.children) {
+      element.children().each(child => this.clearInteractionStyles(child))
+    }
   }
 
   undo() { }
