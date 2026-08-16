@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement, setElementOverrides } from '../Collection'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class LinearDimensionCommand extends Command {
     constructor(editor) {
@@ -34,7 +35,7 @@ class LinearDimensionCommand extends Command {
 
         this.boundOnFirstCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnFirstPoint)
-            this.onFirstPoint(this.editor.inputCoord)
+            this.onFirstPoint(resolveInputCoordinate(this.editor))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnFirstCoordinateInput)
 
@@ -84,7 +85,7 @@ class LinearDimensionCommand extends Command {
 
         this.boundOnSecondCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnSecondPoint)
-            this.onSecondPoint(this.editor.inputCoord)
+            this.onSecondPoint(resolveInputCoordinate(this.editor, this.p1))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnSecondCoordinateInput)
     }
@@ -138,7 +139,7 @@ class LinearDimensionCommand extends Command {
 
         this.boundOnThirdCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnThirdPoint)
-            this.onThirdPoint(this.editor.inputCoord)
+            this.onThirdPoint(resolveInputCoordinate(this.editor, this.p2))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnThirdCoordinateInput)
     }

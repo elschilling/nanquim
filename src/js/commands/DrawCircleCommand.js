@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement } from '../Collection'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class DrawCircleCommand extends Command {
   constructor(editor) {
@@ -63,7 +64,7 @@ class DrawCircleCommand extends Command {
       // Handle @x,y coordinate input for center point
       activeSvg.on('coordinateInput', (e) => {
         if (circle) {
-          const coord = this.editor.inputCoord
+          const coord = resolveInputCoordinate(this.editor, centerPoint)
           circle.off()
           circle.draw('cancel')
           circle = null

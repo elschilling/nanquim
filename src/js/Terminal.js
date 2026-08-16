@@ -283,13 +283,15 @@ function Terminal(editor) {
             editor.signals.inputValue.dispatch(inputVal)
           } else if (isNumericString(inputVal)) {
             editor.signals.inputValue.dispatch(inputVal)
-          } else if (inputVal.startsWith('@') || inputVal.includes(',')) {
-            const raw = inputVal.startsWith('@') ? inputVal.substring(1) : inputVal
+          } else if (inputVal.startsWith('@') || inputVal.startsWith('#') || inputVal.includes(',')) {
+            // `#x,y` explicitly denotes an absolute coordinate for interactive commands.
+            const raw = (inputVal.startsWith('@') || inputVal.startsWith('#')) ? inputVal.substring(1) : inputVal
             const coords = raw.split(',')
             if (coords.length === 2) {
               const x = parseFloat(coords[0]), y = parseFloat(coords[1])
               if (!isNaN(x) && !isNaN(y)) {
                 editor.inputCoord = { x, y }
+                editor.inputCoordMode = inputVal.startsWith('@') ? 'relative' : 'absolute'
                 editor.signals.coordinateInput.dispatch()
               }
             }
@@ -304,12 +306,14 @@ function Terminal(editor) {
           if (isNumericString(inputVal)) {
             editor.length = inputVal
             activeSvg.fire('valueInput')
-          } else if (inputVal.startsWith('@')) {
-            const coords = inputVal.substring(1).split(',')
+          } else if (inputVal.startsWith('@') || inputVal.startsWith('#') || inputVal.includes(',')) {
+            const raw = (inputVal.startsWith('@') || inputVal.startsWith('#')) ? inputVal.substring(1) : inputVal
+            const coords = raw.split(',')
             if (coords.length === 2) {
               const x = parseFloat(coords[0]), y = parseFloat(coords[1])
               if (!isNaN(x) && !isNaN(y)) {
                 editor.inputCoord = { x, y }
+                editor.inputCoordMode = inputVal.startsWith('@') ? 'relative' : 'absolute'
                 activeSvg.fire('coordinateInput')
               }
             }

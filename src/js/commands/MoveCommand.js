@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class MoveCommand extends Command {
   constructor(editor) {
@@ -68,7 +69,7 @@ class MoveCommand extends Command {
     // Listen for coordinate input for base point
     this.boundOnBaseCoordinateInput = () => {
       this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
-      this.onBasePoint(this.editor.inputCoord)
+      this.onBasePoint(resolveInputCoordinate(this.editor))
     }
     this.editor.signals.coordinateInput.addOnce(this.boundOnBaseCoordinateInput, this)
   }
@@ -79,7 +80,7 @@ class MoveCommand extends Command {
     }
     this.basePoint = point
     this.editor.signals.terminalLogged.dispatch({ msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}` })
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point or type a distance.' })
+    this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point, type a distance, @x,y for a relative offset, or #x,y for an absolute destination.' })
     this.editor.signals.moveGhostingStarted.dispatch(this.editor.selected, this.basePoint)
     this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
 
@@ -97,13 +98,13 @@ class MoveCommand extends Command {
     }
     this.editor.signals.inputValue.addOnce(this.boundOnDistanceInput, this)
 
-    // Listen for absolute coordinate input for second point
+    // `@x,y` is relative to the base point; `#x,y` is an absolute world point.
     this.boundOnSecondCoordinateInput = () => {
       this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
       if (this.boundOnDistanceInput) {
         this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
       }
-      this.onSecondPoint(this.editor.inputCoord)
+      this.onSecondPoint(resolveInputCoordinate(this.editor, this.basePoint))
     }
     this.editor.signals.coordinateInput.addOnce(this.boundOnSecondCoordinateInput, this)
   }
@@ -200,6 +201,9 @@ class MoveCommand extends Command {
   // Cleanup method to properly reset state and remove listeners
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
+    this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
+    this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
     if (this.boundOnBaseCoordinateInput) {
       this.editor.signals.coordinateInput.remove(this.boundOnBaseCoordinateInput, this)
     }
@@ -210,10 +214,10 @@ class MoveCommand extends Command {
       this.editor.signals.coordinateInput.remove(this.boundOnSecondCoordinateInput, this)
     }
     this.editor.isInteracting = false
+    this.editor.isDrawing = false
+    this.editor.isSelecting = false
     this.editor.suppressHandlers = false
-    setTimeout(() => {
-      this.editor.selectSingleElement = false
-    }, 10)
+    this.editor.selectSingleElement = false
     this.editor.signals.moveGhostingStopped.dispatch()
   }
 
@@ -256,6 +260,11 @@ class MoveCommand extends Command {
 
       this.updateArcData(element, originalPos, ldx, ldy)
     })
+
+    // Moving changes element bounds. Keep hit-testing and rectangle selection
+    // in sync without requiring a subsequent cancellation to refresh the index.
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
 
     this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
     this.editor.isInteracting = false

@@ -2,6 +2,7 @@ import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement } from '../Collection'
 import { LinearDimensionCommand } from './LinearDimensionCommand'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class AlignedDimensionCommand extends Command {
     constructor(editor) {
@@ -35,7 +36,7 @@ class AlignedDimensionCommand extends Command {
 
         this.boundOnFirstCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnFirstPoint)
-            this.onFirstPoint(this.editor.inputCoord)
+            this.onFirstPoint(resolveInputCoordinate(this.editor))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnFirstCoordinateInput)
 
@@ -85,7 +86,7 @@ class AlignedDimensionCommand extends Command {
 
         this.boundOnSecondCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnSecondPoint)
-            this.onSecondPoint(this.editor.inputCoord)
+            this.onSecondPoint(resolveInputCoordinate(this.editor, this.p1))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnSecondCoordinateInput)
     }
@@ -139,7 +140,7 @@ class AlignedDimensionCommand extends Command {
 
         this.boundOnThirdCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.boundOnThirdPoint)
-            this.onThirdPoint(this.editor.inputCoord)
+            this.onThirdPoint(resolveInputCoordinate(this.editor, this.p2))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnThirdCoordinateInput)
     }

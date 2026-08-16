@@ -12,6 +12,8 @@
  *  5. "Enter scale (e.g. 100 for 1:100):" → sets scale, defaults to 100
  */
 
+import { resolveInputCoordinate } from '../utils/coordinateInput'
+
 async function createViewportCommand(editor, args) {
   const signals = editor.signals
 
@@ -57,7 +59,7 @@ async function createViewportCommand(editor, args) {
 
     let p2
     try {
-      p2 = await _capturePointOnPaper(editor)
+      p2 = await _capturePointOnPaper(editor, p1)
     } finally {
       if (ghostRect) ghostRect.remove()
       if (ghostUpdater) editor.paperSvg.node.removeEventListener('mousemove', ghostUpdater)
@@ -102,7 +104,7 @@ async function createViewportCommand(editor, args) {
 /**
  * Capture a single click on the paper SVG canvas, returning SVG coordinates.
  */
-function _capturePointOnPaper(editor) {
+function _capturePointOnPaper(editor, referencePoint) {
   return new Promise((resolve, reject) => {
     const paperSvgNode = editor.paperSvg.node
 
@@ -121,7 +123,7 @@ function _capturePointOnPaper(editor) {
 
     const onCoord = () => {
       cleanup()
-      resolve(editor.inputCoord)
+      resolve(resolveInputCoordinate(editor, referencePoint))
     }
 
     const cleanup = () => {

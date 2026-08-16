@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { calculateDistance } from '../utils/calculateDistance'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class MeasureDistanceCommand extends Command {
     constructor(editor) {
@@ -32,7 +33,7 @@ class MeasureDistanceCommand extends Command {
         // Listen for coordinate input for first point
         this.boundOnFirstCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.onFirstPoint, this)
-            this.onFirstPoint(this.editor.inputCoord)
+            this.onFirstPoint(resolveInputCoordinate(this.editor))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnFirstCoordinateInput, this)
 
@@ -102,7 +103,7 @@ class MeasureDistanceCommand extends Command {
         // Listen for coordinate input for second point
         this.boundOnSecondCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
-            this.onSecondPoint(this.editor.inputCoord)
+            this.onSecondPoint(resolveInputCoordinate(this.editor, this.firstPoint))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnSecondCoordinateInput, this)
     }

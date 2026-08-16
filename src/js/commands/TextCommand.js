@@ -1,4 +1,5 @@
 import { Command } from '../Command'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement, setElementOverrides } from '../Collection'
 
@@ -30,7 +31,7 @@ class TextCommand extends Command {
         // Listen for coordinate input for insertion point
         this.boundOnCoordinateInput = () => {
             this.editor.signals.pointCaptured.remove(this.onInsertionPoint, this)
-            this.onInsertionPoint(this.editor.inputCoord)
+            this.onInsertionPoint(resolveInputCoordinate(this.editor))
         }
         this.editor.signals.coordinateInput.addOnce(this.boundOnCoordinateInput, this)
         this.editor.signals.commandCancelled.addOnce(this.cleanup, this)

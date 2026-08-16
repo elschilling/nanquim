@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement } from '../Collection'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class DrawLineCommand extends Command {
   constructor(editor) {
@@ -49,7 +50,7 @@ class DrawLineCommand extends Command {
       })
       activeSvg.on('coordinateInput', (e) => {
         if (line) {
-          const coord = this.editor.inputCoord
+          const coord = resolveInputCoordinate(this.editor, startPoint)
           line.off()
           line.draw('cancel')
           line = null

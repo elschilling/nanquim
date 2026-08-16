@@ -1,6 +1,7 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import { applyCollectionStyleToElement } from '../Collection'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 
 class DrawEllipseCommand extends Command {
     constructor(editor) {
@@ -74,8 +75,7 @@ class DrawEllipseCommand extends Command {
             if (centerHandled) return
             centerHandled = true
             this.editor.signals.pointCaptured.remove(onPoint, this)
-            const coord = this.editor.inputCoord
-            this.setRx({ x: coord.x, y: coord.y })
+            this.setRx(resolveInputCoordinate(this.editor))
         }
 
         const onCancel = () => {
