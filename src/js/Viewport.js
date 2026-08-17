@@ -16,6 +16,7 @@ import { EditViewportCommand } from './commands/EditViewportCommand'
 import { updateGrid as updateGridDraw } from './utils/gridDraw'
 import { checkSnap as checkSnapSystem, drawSnap, clearSnap, drawExtensionLines } from './utils/snapSystem'
 import { initToolbarHandlers } from './utils/toolbarHandlers'
+import { updateEllipseArcData, renderEllipseArc } from './utils/ellipseArcUtils'
 
 function Viewport(editor) {
   const signals = editor.signals
@@ -341,6 +342,12 @@ function Viewport(editor) {
     let baseX = 0, baseY = 0
     const { element, vertexIndex, originalPosition } = vertexData
 
+    // Radius grips are constrained to their own axis; applying the general
+    // ortho rule would incorrectly constrain them relative to the origin.
+    if (element.type === 'path' && element.data('ellipseArcData') && vertexIndex !== 0) {
+      return point
+    }
+
     // Determine base point for ortho constraint
     if (element.type === 'line') {
       baseX = originalPosition.x
@@ -362,6 +369,14 @@ function Viewport(editor) {
       else if (vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
       else if (vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
       else if (vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
+    } else if (element.type === 'ellipse') {
+      const { cx, cy } = originalPosition
+      baseX = cx
+      baseY = cy
+    } else if (element.type === 'path' && element.data('ellipseArcData') && vertexIndex === 0) {
+      const { cx, cy } = originalPosition
+      baseX = cx
+      baseY = cy
     }
 
     const dx = point.x - baseX
@@ -500,8 +515,10 @@ function Viewport(editor) {
     if (editor.isEditingVertex && editor.editingVertices.length > 0) {
       let point = editor.snapPoint || coordinates
 
-      if (editor.ortho) {
-        const v0 = editor.editingVertices[0]
+      const v0 = editor.editingVertices[0]
+      const isEllipseArcRadiusGrip = v0.element.type === 'path' &&
+        v0.element.data('ellipseArcData') && v0.vertexIndex !== 0
+      if (editor.ortho && !isEllipseArcRadiusGrip) {
         let baseX = 0, baseY = 0
 
         // Determine base point for ortho constraint
@@ -536,6 +553,9 @@ function Viewport(editor) {
           else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
           else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
         } else if (v0.element.type === 'ellipse') {
+          baseX = v0.originalPosition.cx
+          baseY = v0.originalPosition.cy
+        } else if (v0.element.type === 'path' && v0.element.data('ellipseArcData') && v0.vertexIndex === 0) {
           baseX = v0.originalPosition.cx
           baseY = v0.originalPosition.cy
         }
@@ -698,6 +718,8 @@ function Viewport(editor) {
           }
 
           element.data('arcData', values)
+        } else if (element.type === 'path' && element.data('ellipseArcData')) {
+          renderEllipseArc(element, updateEllipseArcData(vertexData.originalPosition, vertexIndex, point))
         } else if (element.type === 'path' && element.data('splineData')) {
           const splineData = element.data('splineData')
           const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
@@ -1072,19 +1094,29 @@ function Viewport(editor) {
         }
 
         if (distance === undefined) {
-          const pathLength = el.length()
+          const pathLength = el.node.getTotalLength()
           if (pathLength === 0) {
             distance = Infinity
           } else {
+            // Test against sampled curve segments, rather than isolated points.
+            // This is particularly important for splines: a sparse set of points
+            // leaves large gaps where the cursor cannot hover the visible curve.
+            const segmentCount = Math.min(500, Math.max(
+              24,
+              Math.ceil(pathLength / Math.max(hoverThresholdWorld / 2, 0.01))
+            ))
             let minDistance = Infinity
-            const step = Math.min(5, Math.max(1, pathLength / 20))
-            for (let i = 0; i <= pathLength; i += step) {
-              const p = el.pointAt(i)
-              const rp = toRootSpace(p.x, p.y)
-              const d = calculateDistance(coordinates, rp)
+            let previousPoint = null
+            for (let i = 0; i <= segmentCount; i++) {
+              const p = el.node.getPointAtLength((i / segmentCount) * pathLength)
+              const point = toRootSpace(p.x, p.y)
+              const d = previousPoint
+                ? distanceFromPointToLine(coordinates, previousPoint, point)
+                : calculateDistance(coordinates, point)
               if (d < minDistance) {
                 minDistance = d
               }
+              previousPoint = point
             }
             distance = minDistance
           }
@@ -1225,6 +1257,7 @@ function Viewport(editor) {
       const lineUpdates = []
       const circleUpdates = []
       const ellipseUpdates = []
+      const ellipseArcUpdates = []
       const arcUpdates = []
       const splineUpdates = []
       const polylineUpdates = []
@@ -1278,6 +1311,13 @@ function Viewport(editor) {
             element: v.element,
             oldValues: { cx: original.cx, cy: original.cy, rx: original.rx, ry: original.ry },
             newValues: { cx: newCx, cy: newCy, rx: newRx, ry: newRy }
+          })
+        } else if (v.element.type === 'path' && v.element.data('ellipseArcData')) {
+          const oldData = JSON.parse(JSON.stringify(v.originalPosition))
+          ellipseArcUpdates.push({
+            element: v.element,
+            oldData,
+            newData: updateEllipseArcData(oldData, v.vertexIndex, point),
           })
         } else if (v.element.type === 'path' && v.element.data('arcData')) {
           const arcData = v.element.data('arcData')
@@ -1366,6 +1406,15 @@ function Viewport(editor) {
         import('./commands/EditEllipseCommand.js').then(({ EditEllipseCommand }) => {
           ellipseUpdates.forEach(update => {
             editor.execute(new EditEllipseCommand(editor, update.element, update.oldValues, update.newValues))
+          })
+          signals.updatedSelection.dispatch()
+        })
+      }
+
+      if (ellipseArcUpdates.length > 0) {
+        import('./commands/EditEllipseArcCommand.js').then(({ EditEllipseArcCommand }) => {
+          ellipseArcUpdates.forEach(update => {
+            editor.execute(new EditEllipseArcCommand(editor, update.element, update.oldData, update.newData))
           })
           signals.updatedSelection.dispatch()
         })
@@ -1584,19 +1633,34 @@ function Viewport(editor) {
             const pts = [toRootSpace(x, y), toRootSpace(x + w, y), toRootSpace(x + w, y + h), toRootSpace(x, y + h)]
             isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
           } else if (el.type === 'path' || el.type === 'polyline' || el.type === 'polygon') {
-            // Approximate path/polygon as a points array
+            // Approximate paths as line segments. Splines need more samples than
+            // ordinary paths so narrow selection windows catch their curved parts.
             const pts = []
             if (el.type === 'path') {
-              const len = el.length()
-              const step = Math.min(10, Math.max(1, len / 20))
-              for (let i = 0; i <= len; i += step) {
-                const p = el.pointAt(i)
+              const len = el.node.getTotalLength()
+              const sampleCount = el.data('splineData') ? 200 : 50
+              for (let i = 0; i <= sampleCount; i++) {
+                const p = el.node.getPointAtLength((i / sampleCount) * len)
                 pts.push(toRootSpace(p.x, p.y))
               }
             } else {
               el.array().forEach(p => pts.push(toRootSpace(p[0], p[1])))
             }
-            isInsideOrIntersecting = isPolygonIntersectingRect(pts, rect)
+            isInsideOrIntersecting = pts.some(point =>
+              point.x >= rect.x && point.x <= rect.x + rect.width &&
+              point.y >= rect.y && point.y <= rect.y + rect.height
+            )
+            if (!isInsideOrIntersecting) {
+              for (let i = 1; i < pts.length; i++) {
+                if (isLineIntersectingRect({
+                  x1: pts[i - 1].x, y1: pts[i - 1].y,
+                  x2: pts[i].x, y2: pts[i].y,
+                }, rect)) {
+                  isInsideOrIntersecting = true
+                  break
+                }
+              }
+            }
           } else if (el.type === 'text') {
             const bbox = el.bbox()
             const pts = [

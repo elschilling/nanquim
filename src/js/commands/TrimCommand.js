@@ -256,6 +256,31 @@ class TrimCommand extends Command {
                 const cx = boundary.cx(), cy = boundary.cy()
                 const rx = parseFloat(boundary.attr('rx')), ry = parseFloat(boundary.attr('ry'))
                 getLineEllipseIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
+            } else if (boundary.type === 'path' && boundary.data('ellipseArcData')) {
+                const arc = boundary.data('ellipseArcData')
+                const arcSpan = (arc.theta2 - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                const lineDX = lineEq.x2 - lineEq.x1
+                const lineDY = lineEq.y2 - lineEq.y1
+                const lineLength = Math.hypot(lineDX, lineDY)
+                const isOnLineSegment = (pt) => {
+                    const crossDistance = Math.abs(lineDX * (pt.y - lineEq.y1) - lineDY * (pt.x - lineEq.x1)) / lineLength
+                    const projection = ((pt.x - lineEq.x1) * lineDX + (pt.y - lineEq.y1) * lineDY) / (lineLength * lineLength)
+                    return crossDistance <= 1e-3 && projection >= -1e-4 && projection <= 1 + 1e-4
+                }
+                getLineEllipseIntersections(
+                    { x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 },
+                    { cx: arc.cx, cy: arc.cy, rx: arc.rx, ry: arc.ry }
+                ).forEach(pt => {
+                    const theta = getEllipseAngle(pt, arc)
+                    const distanceFromStart = (theta - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                    if (distanceFromStart <= arcSpan + 1e-4) checkAndAddIntersection(pt)
+                })
+                // The arc endpoints are valid trim boundaries too. Include them
+                // explicitly so a line ending exactly on an ellipse arc splits on
+                // both sides even when the analytic solver loses an endpoint.
+                ;[arc.startPt, arc.endPt].forEach(pt => {
+                    if (isOnLineSegment(pt)) checkAndAddIntersection(pt)
+                })
             } else if (boundary.type === 'rect') {
                 const rectBounds = { x: boundary.x(), y: boundary.y(), width: boundary.width(), height: boundary.height() }
                 getLineRectIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, rectBounds).forEach(checkAndAddIntersection)
@@ -649,11 +674,22 @@ class TrimCommand extends Command {
         }
     }
 
-    calculateEllipseTrim(el, point) {
-        const cx = el.cx ? el.cx() : parseFloat(el.attr('cx'))
-        const cy = el.cy ? el.cy() : parseFloat(el.attr('cy'))
-        const rx = parseFloat(el.attr('rx'))
-        const ry = parseFloat(el.attr('ry'))
+    calculateEllipseTrim(el, point, ellipseArcData = null) {
+        const isEllipseArc = Boolean(ellipseArcData)
+        const cx = isEllipseArc ? ellipseArcData.cx : (el.cx ? el.cx() : parseFloat(el.attr('cx')))
+        const cy = isEllipseArc ? ellipseArcData.cy : (el.cy ? el.cy() : parseFloat(el.attr('cy')))
+        const rx = isEllipseArc ? ellipseArcData.rx : parseFloat(el.attr('rx'))
+        const ry = isEllipseArc ? ellipseArcData.ry : parseFloat(el.attr('ry'))
+        const arcStartTheta = isEllipseArc ? ellipseArcData.theta1 : 0
+        const arcSpan = isEllipseArc
+            ? ((ellipseArcData.theta2 - ellipseArcData.theta1 + 2 * Math.PI) % (2 * Math.PI))
+            : 2 * Math.PI
+
+        const isWithinArc = (theta) => {
+            if (!isEllipseArc) return true
+            const distance = (theta - arcStartTheta + 2 * Math.PI) % (2 * Math.PI)
+            return distance <= arcSpan + 1e-4
+        }
 
         const candidateBoundaries = this.getCandidateBoundaries(el)
         const intersections = []
@@ -661,7 +697,7 @@ class TrimCommand extends Command {
         const checkAndAddIntersection = (intersect) => {
             if (!intersect) return
             const theta = getEllipseAngle(intersect, { cx, cy, rx, ry })
-            intersections.push({ theta, x: intersect.x, y: intersect.y })
+            if (isWithinArc(theta)) intersections.push({ theta, x: intersect.x, y: intersect.y })
         }
 
         for (const boundary of candidateBoundaries) {
@@ -751,8 +787,13 @@ class TrimCommand extends Command {
             }
         }
 
-        const ccw = true
-        const startTheta = 0
+        const boundaryIntersectionCount = intersections.length
+        if (isEllipseArc) {
+            intersections.push({ theta: ellipseArcData.theta1, x: ellipseArcData.startPt.x, y: ellipseArcData.startPt.y })
+            intersections.push({ theta: ellipseArcData.theta2, x: ellipseArcData.endPt.x, y: ellipseArcData.endPt.y })
+        }
+
+        const startTheta = arcStartTheta
 
         const getDist = (theta) => {
             let d = theta - startTheta
@@ -770,7 +811,7 @@ class TrimCommand extends Command {
             }
         }
 
-        if (uniqueIntersects.length < 2) return null
+        if (uniqueIntersects.length < 2 || (isEllipseArc && boundaryIntersectionCount === 0)) return null
 
         let theta_mouse = getEllipseAngle(point, { cx, cy, rx, ry })
         let dist_mouse = getDist(theta_mouse)
@@ -785,7 +826,7 @@ class TrimCommand extends Command {
             }
         }
 
-        if (mouseSegIdx === -1) {
+        if (mouseSegIdx === -1 && !isEllipseArc) {
             // Wrap-around segment
             p1 = uniqueIntersects[uniqueIntersects.length - 1]
             p2 = uniqueIntersects[0]
@@ -816,7 +857,7 @@ class TrimCommand extends Command {
             }
         }
 
-        if (mouseSegIdx !== uniqueIntersects.length - 1) {
+        if (!isEllipseArc && mouseSegIdx !== uniqueIntersects.length - 1) {
             const s1 = uniqueIntersects[uniqueIntersects.length - 1], s2 = uniqueIntersects[0]
             if (isAngleSignificant(s1.theta, s2.theta)) {
                 arcsToKeep.push({
@@ -1092,6 +1133,7 @@ class TrimCommand extends Command {
         if (el.type === 'rect') return this.calculateRectTrim(el, point)
         if (el.type === 'circle' || (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData')))) return this.calculateCircleTrim(el, point)
         if (el.type === 'ellipse') return this.calculateEllipseTrim(el, point)
+        if (el.type === 'path' && el.data('ellipseArcData')) return this.calculateEllipseTrim(el, point, el.data('ellipseArcData'))
         if (el.type === 'path' && el.data('splineData')) return this.calculateSplineTrim(el, point)
         if (el.type === 'polyline') return this.calculatePolylineTrim(el, point)
         return null
@@ -1111,7 +1153,7 @@ class TrimCommand extends Command {
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
 
             let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
-            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValidHover = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValidHover = true
 
             if (isValidHover) {
                 trimData = this.calculateTrim(el, pt)
@@ -1173,7 +1215,7 @@ class TrimCommand extends Command {
         try {
             if (!el || el.hasClass('ghostLine')) return
             let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
-            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('splineData'))) isValid = true
+            if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValid = true
 
             if (!isValid) {
                 this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, circles/arcs, ellipses, splines, and polylines can be trimmed.' })

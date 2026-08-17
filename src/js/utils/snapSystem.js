@@ -283,7 +283,9 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
 
   let snapCandidates = nearbyCandidates.map(item => item.element)
   if (editor.isDrawing) {
-    snapCandidates = snapCandidates.filter(el => el.attr('id') !== undefined && el.attr('id') !== null)
+    snapCandidates = snapCandidates.filter(el =>
+      (el.attr('id') !== undefined && el.attr('id') !== null) || el.data('ellipseArcData')
+    )
   }
   if (editor.isEditingVertex && editor.editingVertices.length > 0) {
     const editingNodes = editor.editingVertices.map(v => v.element.node)
@@ -340,6 +342,22 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           taggedTargets.push({ screenPoint: worldToScreen({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r }, activeSvg, ctm), snapType: 'nearest' })
         }
       }
+    } else if (el.type === 'ellipse') {
+      const cx = el.node.cx.baseVal.value
+      const cy = el.node.cy.baseVal.value
+      const rx = el.node.rx.baseVal.value
+      const ry = el.node.ry.baseVal.value
+      if (st.center) {
+        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg, ctm), snapType: 'center' })
+      }
+      if (st.quadrant) {
+        ;[
+          { x: cx + rx, y: cy }, { x: cx, y: cy + ry },
+          { x: cx - rx, y: cy }, { x: cx, y: cy - ry },
+        ].forEach(point => {
+          taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType: 'quadrant' })
+        })
+      }
     } else if (el.type === 'rect') {
       const rx = el.node.x.baseVal.value
       const ry = el.node.y.baseVal.value
@@ -395,9 +413,36 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       if (totalLength <= 0) return
       const ptAt = len => { const p = node.getPointAtLength(len); return { x: p.x, y: p.y } }
       const splineData = el.data('splineData')
+      const ellipseArcData = el.data('ellipseArcData')
+
+      if (ellipseArcData && st.center) {
+        taggedTargets.push({
+          screenPoint: worldToScreen({ x: ellipseArcData.cx, y: ellipseArcData.cy }, activeSvg, ctm),
+          snapType: 'center',
+        })
+      }
+
+      if (ellipseArcData && st.quadrant) {
+        const arcSpan = (ellipseArcData.theta2 - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+        const isOnArc = (theta) => {
+          const distanceFromStart = (theta - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+          return distanceFromStart <= arcSpan + 1e-4
+        }
+        ;[
+          { theta: 0, x: ellipseArcData.cx + ellipseArcData.rx, y: ellipseArcData.cy },
+          { theta: Math.PI / 2, x: ellipseArcData.cx, y: ellipseArcData.cy + ellipseArcData.ry },
+          { theta: Math.PI, x: ellipseArcData.cx - ellipseArcData.rx, y: ellipseArcData.cy },
+          { theta: Math.PI * 1.5, x: ellipseArcData.cx, y: ellipseArcData.cy - ellipseArcData.ry },
+        ].filter(point => isOnArc(point.theta)).forEach(point => {
+          taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType: 'quadrant' })
+        })
+      }
 
       if (st.endpoint) {
-        if (splineData) {
+        if (ellipseArcData) {
+          taggedTargets.push({ screenPoint: worldToScreen(ellipseArcData.startPt, activeSvg, ctm), snapType: 'endpoint' })
+          taggedTargets.push({ screenPoint: worldToScreen(ellipseArcData.endPt, activeSvg, ctm), snapType: 'endpoint' })
+        } else if (splineData) {
           splineData.points.forEach(sp => {
             taggedTargets.push({ screenPoint: worldToScreen(sp, activeSvg, ctm), snapType: 'endpoint' })
           })
@@ -670,11 +715,20 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     })
   }
 
+  const targetsInRange = taggedTargets.filter(item =>
+    calculateDistance(screenCoords, item.screenPoint) < snapTolerance
+  )
+
+  // Nearest is a fallback snap: when another enabled snap target is available,
+  // prefer that type even if the projected nearest point is slightly closer.
+  const nonNearestTargets = targetsInRange.filter(item => item.snapType !== 'nearest')
+  const prioritizedTargets = nonNearestTargets.length > 0 ? nonNearestTargets : targetsInRange
+
   let closestTagged
   let minDistance = Infinity
-  for (let item of taggedTargets) {
+  for (const item of prioritizedTargets) {
     const distance = calculateDistance(screenCoords, item.screenPoint)
-    if (distance < snapTolerance && distance < minDistance) {
+    if (distance < minDistance) {
       minDistance = distance
       closestTagged = item
     }

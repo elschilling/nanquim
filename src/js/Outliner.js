@@ -579,7 +579,7 @@ function Outliner(editor) {
     }
 
     // Helper to find all selected vertices at a given position
-    function getCoincidentVertices(x, y) {
+    function getCoincidentVertices(x, y, activeVertex = null) {
       const vertices = []
       const tolerance = 0.1
       editor.selected.forEach((s) => {
@@ -587,10 +587,16 @@ function Outliner(editor) {
           const pt1 = localToWorld(s, s.node.x1.baseVal.value, s.node.y1.baseVal.value)
           const pt2 = localToWorld(s, s.node.x2.baseVal.value, s.node.y2.baseVal.value)
 
-          if (Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance) {
+          if (
+            Math.abs(pt1.x - x) < tolerance && Math.abs(pt1.y - y) < tolerance &&
+            !(activeVertex && activeVertex.element === s && activeVertex.vertexIndex !== 0)
+          ) {
             vertices.push({ element: s, vertexIndex: 0, originalPosition: { x: s.node.x1.baseVal.value, y: s.node.y1.baseVal.value } })
           }
-          if (Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance) {
+          if (
+            Math.abs(pt2.x - x) < tolerance && Math.abs(pt2.y - y) < tolerance &&
+            !(activeVertex && activeVertex.element === s && activeVertex.vertexIndex !== 1)
+          ) {
             vertices.push({ element: s, vertexIndex: 1, originalPosition: { x: s.node.x2.baseVal.value, y: s.node.y2.baseVal.value } })
           }
         } else if (s.type === 'circle') {
@@ -807,7 +813,7 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt1.x, pt1.y))
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt1.x, pt1.y, { element: el, vertexIndex: 0 }))
           })
 
         // Draw handler at second vertex
@@ -817,7 +823,7 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt2.x, pt2.y))
+            signals.vertexEditStarted.dispatch(getCoincidentVertices(pt2.x, pt2.y, { element: el, vertexIndex: 1 }))
           })
       } else if (el.type === 'circle') {
         const cx = el.node.cx.baseVal.value
@@ -953,6 +959,30 @@ function Outliner(editor) {
             .mousedown((e) => {
               e.stopPropagation()
               signals.vertexEditStarted.dispatch(getCoincidentVertices(p.pt.x, p.pt.y))
+            })
+        })
+      } else if (el.type === 'path' && el.data('ellipseArcData')) {
+        const arc = el.data('ellipseArcData')
+        const points = [
+          { pt: localToWorld(el, arc.cx, arc.cy), index: 0 },
+          { pt: localToWorld(el, arc.startPt.x, arc.startPt.y), index: 1 },
+          { pt: localToWorld(el, arc.endPt.x, arc.endPt.y), index: 2 },
+          { pt: localToWorld(el, arc.cx + arc.rx, arc.cy), index: 3 },
+          { pt: localToWorld(el, arc.cx, arc.cy + arc.ry), index: 4 },
+        ]
+
+        points.forEach((p) => {
+          editor.handlers
+            .rect(handlerWorldSize, handlerWorldSize)
+            .center(p.pt.x, p.pt.y)
+            .addClass('selection-handler-circle')
+            .mousedown((e) => {
+              e.stopPropagation()
+              signals.vertexEditStarted.dispatch([{
+                element: el,
+                vertexIndex: p.index,
+                originalPosition: JSON.parse(JSON.stringify(arc)),
+              }])
             })
         })
       } else if (el.type === 'path' && el.data('splineData')) {

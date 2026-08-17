@@ -163,6 +163,7 @@ class MirrorCommand extends Command {
         // Draw a ghost line for the mirror axis
         this.ghostLine = this.editor.svg.line(this.basePoint.x, this.basePoint.y, this.basePoint.x, this.basePoint.y)
             .addClass('ghostLine')
+            .addClass('mirror-axis-helper')
             .stroke({ color: '#fff', width: .1, dasharray: '.1,.1' })
             .attr('pointer-events', 'none')
 

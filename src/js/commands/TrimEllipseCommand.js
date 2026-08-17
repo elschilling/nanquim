@@ -54,6 +54,7 @@ class TrimEllipseCommand extends Command {
                 let newArc = this.parent.path(d)
 
                 newArc.data('ellipseArcData', arc)
+                newArc.attr('id', this.editor.elementIndex++)
                 newArc.attr('name', 'EllipseArc')
 
                 this.copyStyles(this.element, newArc)
