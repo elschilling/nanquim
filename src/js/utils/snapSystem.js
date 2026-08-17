@@ -747,6 +747,14 @@ export function drawSnap(point, zoom, svgInstance, snapType) {
     snapGroup.line(cx - s, cy, cx + s, cy).stroke({ color, width: sw })
     snapGroup.line(cx, cy - s, cx, cy + s).stroke({ color, width: sw })
 
+  } else if (snapType === 'grid') {
+    // Grid intersections are shown as a small four-point marker.
+    const r = sw * 0.75
+    ;[
+      [cx - h, cy - h], [cx + h, cy - h],
+      [cx - h, cy + h], [cx + h, cy + h],
+    ].forEach(([x, y]) => snapGroup.circle(r * 2).center(x, y).fill(color).stroke('none'))
+
   } else {
     // Default: endpoint — square
     snapGroup.rect(s * 2, s * 2).center(cx, cy).fill('none').stroke({ color, width: sw })

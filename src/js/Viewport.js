@@ -30,6 +30,7 @@ function Viewport(editor) {
   const prefs = getPreferences()
   let hoverTreshold = prefs.hoverThreshold
   let gridSpacing = prefs.gridSize
+  editor.gridSpacing = gridSpacing
   let hoveredElements = []
   let disambiguationMenu = null
   let disambiguationCleanup = null
@@ -48,6 +49,14 @@ function Viewport(editor) {
   let offsetDistance = null
   let centerPoint = null
   let referencePoint = null
+
+  signals.preferencesChanged.add((preferences) => {
+    if (Number.isFinite(preferences.gridSize) && preferences.gridSize > 0) {
+      gridSpacing = preferences.gridSize
+      editor.gridSpacing = gridSpacing
+      updateGrid()
+    }
+  })
 
   signals.moveGhostingStarted.add(onMoveGhostingStarted)
   signals.moveGhostingStopped.add(onMoveGhostingStopped)
@@ -368,8 +377,9 @@ function Viewport(editor) {
   function _doHandleMove(e) {
     const activeSvgMove = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     clearSnap(editor, activeSvgMove)
+    const canSnapPoint = (editor.isDrawing && !editor.isSelecting) || editor.isInteracting || editor.isEditingVertex
     if (editor.isSnapping) {
-      if ((editor.isDrawing && !editor.isSelecting) || editor.isInteracting || editor.isEditingVertex) {
+      if (canSnapPoint) {
         checkSnap({ x: e.pageX, y: e.pageY })
       } else {
         editor.snapPoint = null
@@ -382,6 +392,16 @@ function Viewport(editor) {
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (!activeSvg) return
     coordinates = activeSvg.point(e.pageX, e.pageY)
+
+    // Object snaps take priority. When there is no object snap, constrain the
+    // active point to the nearest intersection of the configured drawing grid.
+    if (editor.gridSnap && canSnapPoint && !editor.snapPoint && gridSpacing > 0) {
+      editor.snapPoint = {
+        x: Math.round(coordinates.x / gridSpacing) * gridSpacing,
+        y: Math.round(coordinates.y / gridSpacing) * gridSpacing,
+      }
+      drawSnap(editor.snapPoint, activeSvg.zoom(), activeSvg, 'grid')
+    }
 
     // Polar tracking: project cursor onto the nearest polar angle ray
     if (editor.polarTracking && !editor.ortho && !editor.suppressPolarTracking &&
@@ -756,7 +776,7 @@ function Viewport(editor) {
       // Redraw handlers to follow the vertex
       signals.updatedSelection.dispatch()
     }
-    updateCoordinates(coordinates)
+    updateCoordinates(editor.snapPoint || coordinates)
     scheduleHoverCheck()
   }
 

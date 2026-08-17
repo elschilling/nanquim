@@ -58,6 +58,8 @@ function Editor() {
   this.selectSingleElement = false
   this.isSelecting = false
   this.isSnapping = false
+  // Grid snapping is independent from object snapping and uses the configured grid size.
+  this.gridSnap = false
   this.snapTypes = {
     endpoint: true,
     midpoint: true,

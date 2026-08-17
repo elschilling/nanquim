@@ -46,6 +46,9 @@
           label.snap-menu-item
             input.snap-checkbox(type='checkbox' data-snap='nearest' onchange='handleSnapTypeChange(this)')
             | Nearest
+          label.snap-menu-item
+            input.snap-checkbox(type='checkbox' data-snap='grid' onchange='handleGridSnapChange(this)')
+            | Grid snap
           .snap-menu-divider
           label.snap-menu-item
             input.snap-checkbox(type='checkbox' checked onchange='handleSnapExcludeNonSelectableChange(this)')
@@ -57,7 +60,7 @@
       .icon.icon-dropdown(onclick='toggleOverlayMenu(event)')
       .overlay-menu#overlay-menu
         label.overlay-menu-item
-          input.overlay-checkbox(type='checkbox' checked onchange='handleToggleGrid(this.checked)')
+          input.overlay-checkbox(type='checkbox' data-overlay='grid' checked onchange='handleToggleGrid(this.checked)')
           | Grid
         label.overlay-menu-item
           input.overlay-checkbox(type='checkbox' checked onchange='handleToggleAxis(this.checked)')

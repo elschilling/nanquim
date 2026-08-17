@@ -87,7 +87,22 @@ export function initToolbarHandlers(editor) {
     const grid = editor.overlays.find('.grid')
     if (enabled) grid.show()
     else grid.hide()
+
+    const checkbox = document.querySelector('.overlay-checkbox[data-overlay="grid"]')
+    if (checkbox) checkbox.checked = enabled
   }
+
+  function handleGridOverlayShortcut(event) {
+    if ((event.key !== 'F7' && event.code !== 'F7') || event.ctrlKey || event.metaKey || event.altKey) return
+
+    event.preventDefault()
+    const checkbox = document.querySelector('.overlay-checkbox[data-overlay="grid"]')
+    handleToggleGrid(!(checkbox && checkbox.checked))
+  }
+
+  // Capture this shortcut before drawing commands or focused controls can stop
+  // the bubbling key event.
+  document.addEventListener('keydown', handleGridOverlayShortcut, true)
 
   function handleToggleAxis(enabled) {
     const axis = editor.overlays.find('.axis-group')
@@ -130,6 +145,23 @@ export function initToolbarHandlers(editor) {
     }
   }
 
+  function setGridSnap(enabled) {
+    editor.gridSnap = enabled
+    editor.snapPoint = null
+
+    const checkbox = document.querySelector('.snap-checkbox[data-snap="grid"]')
+    if (checkbox) checkbox.checked = enabled
+
+    editor.signals.terminalLogged.dispatch({
+      type: 'strong',
+      msg: `Grid Snap ${enabled ? 'ON' : 'OFF'}`
+    })
+  }
+
+  function handleGridSnapChange(checkbox) {
+    setGridSnap(checkbox.checked)
+  }
+
   function handleSnapExcludeNonSelectableChange(checkbox) {
     editor.snapExcludeNonSelectable = checkbox.checked
     // Full index must be rebuilt whenever this toggles (element set changes)
@@ -162,6 +194,7 @@ export function initToolbarHandlers(editor) {
   window.handleToggleNonScalingStroke = handleToggleNonScalingStroke
   window.toggleSnapMenu = toggleSnapMenu
   window.handleSnapTypeChange = handleSnapTypeChange
+  window.handleGridSnapChange = handleGridSnapChange
   window.handleSnapExcludeNonSelectableChange = handleSnapExcludeNonSelectableChange
   window.handleToggleGrid = handleToggleGrid
   window.handleToggleAxis = handleToggleAxis
