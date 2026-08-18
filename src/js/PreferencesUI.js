@@ -5,6 +5,7 @@ function Preferences(editor) {
 
     // Apply CSS variable for hover stroke width on init
     document.documentElement.style.setProperty('--hover-stroke-width', prefs.hoverStrokeWidth)
+    document.documentElement.style.setProperty('--helper-stroke-width', prefs.helperStrokeWidth)
 
     // Create modal overlay
     const overlay = document.createElement('div')
@@ -28,6 +29,7 @@ function Preferences(editor) {
         { key: 'handlerSize', label: 'Handler Size (px)', step: 1, min: 4 },
         { key: 'defaultStrokeWidth', label: 'Default Stroke Width', step: 0.01, min: 0.01 },
         { key: 'hoverStrokeWidth', label: 'Hover Stroke Width', step: 0.1, min: 0.1 },
+        { key: 'helperStrokeWidth', label: 'Helper Stroke Width', step: 0.05, min: 0.05 },
         { key: 'hoverThreshold', label: 'Hover Threshold (px)', step: 1, min: 1 },
         { key: 'snapIconSize', label: 'Snap Icon Size (px)', step: 1, min: 4 },
     ]
@@ -71,6 +73,7 @@ function Preferences(editor) {
 
         // Apply CSS variable immediately
         document.documentElement.style.setProperty('--hover-stroke-width', newPrefs.hoverStrokeWidth)
+        document.documentElement.style.setProperty('--helper-stroke-width', newPrefs.helperStrokeWidth)
 
         // Notify all modules
         editor.signals.preferencesChanged.dispatch(newPrefs)

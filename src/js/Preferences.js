@@ -5,6 +5,7 @@ const DEFAULTS = {
     handlerSize: 16,
     defaultStrokeWidth: 0.1,
     hoverStrokeWidth: 0.4,
+    helperStrokeWidth: 0.2,
     hoverThreshold: 10,
     snapIconSize: 15,
 }

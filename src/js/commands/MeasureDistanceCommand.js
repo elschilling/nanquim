@@ -62,6 +62,7 @@ class MeasureDistanceCommand extends Command {
         this.ghostLine = this.ghostGroup
             .line(point.x, point.y, point.x, point.y)
             .addClass('measure-ghost')
+            .attr('stroke-dasharray', '6 4')
         this.ghostText = this.ghostGroup
             .text('')
             .addClass('measure-text')
@@ -151,7 +152,9 @@ class MeasureDistanceCommand extends Command {
 
         const zoom = this.editor.svg.zoom() || 1
         const fontSize = 14 / zoom
-        const strokeWidth = 1.5 / zoom
+        // Measurement lines use non-scaling strokes, so their width and dash
+        // pattern are already screen-space values and must not be divided by zoom.
+        const strokeWidth = 1.5
 
         this.measureGroup = this.editor.overlays.group().addClass('measure-overlay')
 
@@ -159,7 +162,8 @@ class MeasureDistanceCommand extends Command {
         this.measureGroup
             .line(p1.x, p1.y, p2.x, p2.y)
             .addClass('measure-line')
-            .stroke({ width: strokeWidth, dasharray: `${6 / zoom} ${4 / zoom}` })
+            .stroke({ width: strokeWidth })
+            .attr('stroke-dasharray', '6 4')
 
         // Small cross markers at each point
         const crossSize = 6 / zoom

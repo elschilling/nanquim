@@ -111,7 +111,7 @@ class DrawRectangleCommand extends Command {
       .fill('none')
       .attr({
         stroke: '#8ab4f8',
-        'stroke-width': 1,
+        'stroke-width': 'var(--helper-stroke-width, 0.2)',
         'stroke-dasharray': '4 4',
         'vector-effect': 'non-scaling-stroke',
         opacity: 0.7,

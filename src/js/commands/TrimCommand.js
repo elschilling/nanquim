@@ -9,7 +9,6 @@ import { TrimPolylineCommand } from './TrimPolylineCommand'
 import { TrimEllipseCommand } from './TrimEllipseCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments, getPolylineSegments, getLineEllipseIntersections, getEllipseAngle } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
-import { getPreferences } from '../Preferences'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
 
 class TrimCommand extends Command {
@@ -29,11 +28,6 @@ class TrimCommand extends Command {
         this.ghostLine = null
         this.ghostArc = null
 
-        this.boundOnPreferencesChanged = (prefs) => {
-            if (this.ghostLine) this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${prefs.hoverStrokeWidth}) !important; pointer-events: none;`)
-            if (this.ghostArc) this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${prefs.hoverStrokeWidth}) !important; pointer-events: none; fill: none !important;`)
-        }
-        this.editor.signals.preferencesChanged.add(this.boundOnPreferencesChanged)
     }
 
     execute() {
@@ -123,21 +117,21 @@ class TrimCommand extends Command {
 
     initGhosts() {
         if (!this.ghostLine) {
-            const width = getPreferences().hoverStrokeWidth
+            const width = 'var(--helper-stroke-width, 0.2)'
             this.ghostLine = this.editor.overlays.line(0, 0, 0, 0)
                 .stroke({ color: '#F44336', width: width, opacity: 0.8, linecap: 'round' })
                 .addClass('ghostLine')
             this.ghostLine.node.style.pointerEvents = 'none'
-            this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${width}) !important; pointer-events: none;`)
+            this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: ${width} !important; pointer-events: none;`)
             this.ghostLine.hide()
         }
         if (!this.ghostArc) {
-            const width = getPreferences().hoverStrokeWidth
+            const width = 'var(--helper-stroke-width, 0.2)'
             this.ghostArc = this.editor.overlays.path('M 0 0')
                 .stroke({ color: '#F44336', width: width, opacity: 0.8, linecap: 'round' }).fill('none')
                 .addClass('ghostLine')
             this.ghostArc.node.style.pointerEvents = 'none'
-            this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, ${width}) !important; pointer-events: none; fill: none !important;`)
+            this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: ${width} !important; pointer-events: none; fill: none !important;`)
             this.ghostArc.hide()
         }
     }
@@ -258,7 +252,10 @@ class TrimCommand extends Command {
                 getLineEllipseIntersections({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, { cx, cy, rx, ry }).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'path' && boundary.data('ellipseArcData')) {
                 const arc = boundary.data('ellipseArcData')
-                const arcSpan = (arc.theta2 - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                const arcCcw = arc.ccw !== false
+                const arcSpan = arcCcw
+                    ? (arc.theta2 - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                    : (arc.theta1 - arc.theta2 + 2 * Math.PI) % (2 * Math.PI)
                 const lineDX = lineEq.x2 - lineEq.x1
                 const lineDY = lineEq.y2 - lineEq.y1
                 const lineLength = Math.hypot(lineDX, lineDY)
@@ -272,7 +269,9 @@ class TrimCommand extends Command {
                     { cx: arc.cx, cy: arc.cy, rx: arc.rx, ry: arc.ry }
                 ).forEach(pt => {
                     const theta = getEllipseAngle(pt, arc)
-                    const distanceFromStart = (theta - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                    const distanceFromStart = arcCcw
+                        ? (theta - arc.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                        : (arc.theta1 - theta + 2 * Math.PI) % (2 * Math.PI)
                     if (distanceFromStart <= arcSpan + 1e-4) checkAndAddIntersection(pt)
                 })
                 // The arc endpoints are valid trim boundaries too. Include them
@@ -298,7 +297,7 @@ class TrimCommand extends Command {
                 }
             } else if (boundary.type === 'path') {
                 getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'polyline') {
+            } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
                 getPolylineSegments(boundary).forEach(seg => {
                     const intersect = getLineIntersection({ x1: lineEq.x1, y1: lineEq.y1, x2: lineEq.x2, y2: lineEq.y2 }, seg)
                     if (intersect) {
@@ -530,7 +529,7 @@ class TrimCommand extends Command {
                 })
             } else if (boundary.type === 'path' && boundary.data('splineData')) {
                 getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'polyline') {
+            } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
                 getPolylineSegments(boundary).forEach(seg => {
                     checkLineCircleBoundary(seg)
                 })
@@ -681,13 +680,18 @@ class TrimCommand extends Command {
         const rx = isEllipseArc ? ellipseArcData.rx : parseFloat(el.attr('rx'))
         const ry = isEllipseArc ? ellipseArcData.ry : parseFloat(el.attr('ry'))
         const arcStartTheta = isEllipseArc ? ellipseArcData.theta1 : 0
+        const arcCcw = !isEllipseArc || ellipseArcData.ccw !== false
         const arcSpan = isEllipseArc
-            ? ((ellipseArcData.theta2 - ellipseArcData.theta1 + 2 * Math.PI) % (2 * Math.PI))
+            ? (arcCcw
+                ? ((ellipseArcData.theta2 - ellipseArcData.theta1 + 2 * Math.PI) % (2 * Math.PI))
+                : ((ellipseArcData.theta1 - ellipseArcData.theta2 + 2 * Math.PI) % (2 * Math.PI)))
             : 2 * Math.PI
 
         const isWithinArc = (theta) => {
             if (!isEllipseArc) return true
-            const distance = (theta - arcStartTheta + 2 * Math.PI) % (2 * Math.PI)
+            const distance = arcCcw
+                ? (theta - arcStartTheta + 2 * Math.PI) % (2 * Math.PI)
+                : (arcStartTheta - theta + 2 * Math.PI) % (2 * Math.PI)
             return distance <= arcSpan + 1e-4
         }
 
@@ -774,7 +778,7 @@ class TrimCommand extends Command {
                 }
             } else if (boundary.type === 'path' && boundary.data('splineData')) {
                 getPathIntersections(boundary, el).forEach(checkAndAddIntersection)
-            } else if (boundary.type === 'polyline') {
+            } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
                 getPolylineSegments(boundary).forEach(seg => {
                     getLineEllipseIntersections(seg, { cx, cy, rx, ry }).forEach(pt => {
                         const minX = Math.min(seg.x1, seg.x2) - 1e-4
@@ -796,9 +800,9 @@ class TrimCommand extends Command {
         const startTheta = arcStartTheta
 
         const getDist = (theta) => {
-            let d = theta - startTheta
-            if (d < 0) d += 2 * Math.PI
-            return d
+            return arcCcw
+                ? (theta - startTheta + 2 * Math.PI) % (2 * Math.PI)
+                : (startTheta - theta + 2 * Math.PI) % (2 * Math.PI)
         }
 
         intersections.forEach(inter => inter.dist = getDist(inter.theta))
@@ -851,6 +855,7 @@ class TrimCommand extends Command {
                     cx, cy, rx, ry,
                     theta1: s1.theta,
                     theta2: s2.theta,
+                    ccw: arcCcw,
                     startPt: { x: cx + rx * Math.cos(s1.theta), y: cy + ry * Math.sin(s1.theta) },
                     endPt: { x: cx + rx * Math.cos(s2.theta), y: cy + ry * Math.sin(s2.theta) },
                 })
@@ -864,6 +869,7 @@ class TrimCommand extends Command {
                     cx, cy, rx, ry,
                     theta1: s1.theta,
                     theta2: s2.theta,
+                    ccw: arcCcw,
                     startPt: { x: cx + rx * Math.cos(s1.theta), y: cy + ry * Math.sin(s1.theta) },
                     endPt: { x: cx + rx * Math.cos(s2.theta), y: cy + ry * Math.sin(s2.theta) },
                 })
@@ -882,6 +888,7 @@ class TrimCommand extends Command {
                 cx, cy, rx, ry,
                 theta1: p1.theta,
                 theta2: p2.theta,
+                ccw: arcCcw,
                 startPt: { x: p1.x, y: p1.y },
                 endPt: { x: p2.x, y: p2.y },
             }
@@ -999,7 +1006,9 @@ class TrimCommand extends Command {
     }
 
     calculatePolylineTrim(el, point) {
-        const pts = el.array().map(p => [p[0], p[1]])
+        const sourcePts = el.array().map(p => [p[0], p[1]])
+        const isClosed = el.type === 'polygon'
+        const pts = isClosed ? [...sourcePts, [...sourcePts[0]]] : sourcePts
         if (pts.length < 2) return null
 
         const distToSeg = (p, seg) => {
@@ -1073,7 +1082,7 @@ class TrimCommand extends Command {
                         if (intersect.x >= minX && intersect.x <= maxX && intersect.y >= minY && intersect.y <= maxY) checkAndAdd(intersect)
                     }
                 })
-            } else if (boundary.type === 'polyline') {
+            } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
                 getPolylineSegments(boundary).forEach(ps => {
                     const intersect = getLineIntersection(seg, ps)
                     if (intersect) {
@@ -1106,17 +1115,28 @@ class TrimCommand extends Command {
         const I1 = unique[i1Idx]
         const I2 = unique[i2Idx]
 
-        // Build result polylines: everything before I1, and everything after I2
-        const partA = pts.slice(0, k + 1).map(p => [p[0], p[1]])
-        if (I1.t > 1e-4) partA.push([I1.x, I1.y])
-
-        const partB = []
-        if (I2.t < 1 - 1e-4) partB.push([I2.x, I2.y])
-        pts.slice(k + 1).forEach(p => partB.push([p[0], p[1]]))
-
         const resultPolylines = []
-        if (partA.length >= 2) resultPolylines.push(partA)
-        if (partB.length >= 2) resultPolylines.push(partB)
+        if (isClosed) {
+            // A polygon becomes one open polyline following the remaining edges.
+            const remaining = [[I2.x, I2.y]]
+            for (let step = 1; step <= sourcePts.length; step++) {
+                const vertex = sourcePts[(k + step) % sourcePts.length]
+                remaining.push([vertex[0], vertex[1]])
+            }
+            remaining.push([I1.x, I1.y])
+            resultPolylines.push(remaining)
+        } else {
+            // Open polylines retain the two portions on either side of the cut.
+            const partA = pts.slice(0, k + 1).map(p => [p[0], p[1]])
+            if (I1.t > 1e-4) partA.push([I1.x, I1.y])
+
+            const partB = []
+            if (I2.t < 1 - 1e-4) partB.push([I2.x, I2.y])
+            pts.slice(k + 1).forEach(p => partB.push([p[0], p[1]]))
+
+            if (partA.length >= 2) resultPolylines.push(partA)
+            if (partB.length >= 2) resultPolylines.push(partB)
+        }
 
         if (resultPolylines.length === 0) return { type: 'polyline', action: { type: 'remove' }, preview: null }
 
@@ -1135,7 +1155,7 @@ class TrimCommand extends Command {
         if (el.type === 'ellipse') return this.calculateEllipseTrim(el, point)
         if (el.type === 'path' && el.data('ellipseArcData')) return this.calculateEllipseTrim(el, point, el.data('ellipseArcData'))
         if (el.type === 'path' && el.data('splineData')) return this.calculateSplineTrim(el, point)
-        if (el.type === 'polyline') return this.calculatePolylineTrim(el, point)
+        if (el.type === 'polyline' || el.type === 'polygon') return this.calculatePolylineTrim(el, point)
         return null
     }
 
@@ -1152,7 +1172,7 @@ class TrimCommand extends Command {
             const el = window.SVG(item.node)
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
 
-            let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
+            let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'polygon'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValidHover = true
 
             if (isValidHover) {
@@ -1180,26 +1200,28 @@ class TrimCommand extends Command {
                 const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.r} ${p.r} 0 ${largeArc} ${sweep} ${p.endPt.x} ${p.endPt.y}`
 
                 this.ghostArc.plot(d).show().front()
-                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
+                this.ghostArc.attr('style', 'stroke: #F44336 !important; stroke-width: var(--helper-stroke-width, 0.2) !important; pointer-events: none; fill: none !important;')
             } else if (p.type === 'ellipseArc') {
                 this.ghostLine.hide()
 
-                // CCW sweep from theta1 to theta2
-                let diff = (p.theta2 - p.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                const ccw = p.ccw !== false
+                const diff = ccw
+                    ? (p.theta2 - p.theta1 + 2 * Math.PI) % (2 * Math.PI)
+                    : (p.theta1 - p.theta2 + 2 * Math.PI) % (2 * Math.PI)
                 const largeArc = diff > Math.PI ? 1 : 0
-                const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.rx} ${p.ry} 0 ${largeArc} 1 ${p.endPt.x} ${p.endPt.y}`
+                const d = `M ${p.startPt.x} ${p.startPt.y} A ${p.rx} ${p.ry} 0 ${largeArc} ${ccw ? 1 : 0} ${p.endPt.x} ${p.endPt.y}`
 
                 this.ghostArc.plot(d).show().front()
-                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
+                this.ghostArc.attr('style', 'stroke: #F44336 !important; stroke-width: var(--helper-stroke-width, 0.2) !important; pointer-events: none; fill: none !important;')
             } else if (p.type === 'spline') {
                 this.ghostLine.hide()
                 const d = catmullRomToBezierPath(p.points)
                 this.ghostArc.plot(d).show().front()
-                this.ghostArc.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none; fill: none !important;`)
+                this.ghostArc.attr('style', 'stroke: #F44336 !important; stroke-width: var(--helper-stroke-width, 0.2) !important; pointer-events: none; fill: none !important;')
             } else {
                 this.ghostArc.hide()
                 this.ghostLine.plot(p.x1, p.y1, p.x2, p.y2).show().front()
-                this.ghostLine.attr('style', `stroke: #F44336 !important; stroke-width: var(--hover-stroke-width, 0.4) !important; pointer-events: none;`)
+                this.ghostLine.attr('style', 'stroke: #F44336 !important; stroke-width: var(--helper-stroke-width, 0.2) !important; pointer-events: none;')
             }
         } else {
             this.clearGhost()
@@ -1214,11 +1236,11 @@ class TrimCommand extends Command {
     onLineClicked(el, source) {
         try {
             if (!el || el.hasClass('ghostLine')) return
-            let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline'
+            let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'polygon'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValid = true
 
             if (!isValid) {
-                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, circles/arcs, ellipses, splines, and polylines can be trimmed.' })
+                this.editor.signals.terminalLogged.dispatch({ msg: 'Only lines, rectangles, polygons, circles/arcs, ellipses, splines, and polylines can be trimmed.' })
                 return
             }
 
@@ -1272,7 +1294,6 @@ class TrimCommand extends Command {
         this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
         this.editor.signals.toogledSelect.remove(this.boundOnLineClicked)
         this.editor.signals.commandCancelled.remove(this.cleanup, this)
-        this.editor.signals.preferencesChanged.remove(this.boundOnPreferencesChanged)
 
         if (this.ghostLine) this.ghostLine.remove()
         if (this.ghostArc) this.ghostArc.remove()

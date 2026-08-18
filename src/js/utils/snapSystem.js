@@ -2,6 +2,7 @@ import { getArcGeometry, isPointInArc } from './arcUtils'
 import { calculateDistance } from './calculateDistance'
 import { getPreferences } from '../Preferences'
 import { getAllDrawingElements } from '../Collection'
+import { pointOnEllipse } from './ellipseArcUtils'
 
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
@@ -456,17 +457,19 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       }
 
       if (ellipseArcData && st.quadrant) {
-        const arcSpan = (ellipseArcData.theta2 - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+        const arcCcw = ellipseArcData.ccw !== false
+        const arcSpan = arcCcw
+          ? (ellipseArcData.theta2 - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+          : (ellipseArcData.theta1 - ellipseArcData.theta2 + Math.PI * 2) % (Math.PI * 2)
         const isOnArc = (theta) => {
-          const distanceFromStart = (theta - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+          const distanceFromStart = arcCcw
+            ? (theta - ellipseArcData.theta1 + Math.PI * 2) % (Math.PI * 2)
+            : (ellipseArcData.theta1 - theta + Math.PI * 2) % (Math.PI * 2)
           return distanceFromStart <= arcSpan + 1e-4
         }
-        ;[
-          { theta: 0, x: ellipseArcData.cx + ellipseArcData.rx, y: ellipseArcData.cy },
-          { theta: Math.PI / 2, x: ellipseArcData.cx, y: ellipseArcData.cy + ellipseArcData.ry },
-          { theta: Math.PI, x: ellipseArcData.cx - ellipseArcData.rx, y: ellipseArcData.cy },
-          { theta: Math.PI * 1.5, x: ellipseArcData.cx, y: ellipseArcData.cy - ellipseArcData.ry },
-        ].filter(point => isOnArc(point.theta)).forEach(point => {
+        ;[0, Math.PI / 2, Math.PI, Math.PI * 1.5]
+          .map(theta => ({ theta, ...pointOnEllipse(ellipseArcData, theta) }))
+          .filter(point => isOnArc(point.theta)).forEach(point => {
           taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType: 'quadrant' })
         })
       }

@@ -44,7 +44,7 @@ async function createViewportCommand(editor, args) {
     ghostRect = editor.paperSvg.rect(0, 0)
       .fill('rgba(100,150,255,0.15)')
       .stroke('#5599ff')
-      .attr('stroke-width', 0.04)
+      .attr('stroke-width', 'var(--helper-stroke-width, 0.2)')
       .attr('stroke-dasharray', '0.2 0.1')
 
     ghostUpdater = (e) => {

@@ -288,6 +288,12 @@ export function getPolylineSegments(el) {
   for (let i = 0; i < pts.length - 1; i++) {
     segments.push({ x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1] })
   }
+  if (el.type === 'polygon' && pts.length > 2) {
+    segments.push({
+      x1: pts[pts.length - 1][0], y1: pts[pts.length - 1][1],
+      x2: pts[0][0], y2: pts[0][1],
+    })
+  }
   return segments
 }
 

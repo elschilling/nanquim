@@ -1,6 +1,7 @@
 import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { applyCollectionStyleToElement } from '../Collection'
+import { renderEllipseArc } from '../utils/ellipseArcUtils'
 
 function reflectPoint(p, p1, p2) {
     const dx = p2.x - p1.x
@@ -388,6 +389,11 @@ class MirrorCommand extends Command {
                 points: sd.points.map(p => reflectPoint(p, p1, p2))
             })
         }
+        if (originalPos.ellipseArcData) {
+            const mirrored = reflectEllipseArcData(originalPos.ellipseArcData, p1, p2)
+            if (mirrored) renderEllipseArc(element, mirrored)
+            else element.removeData('ellipseArcData')
+        }
     }
 
     getElementPosition(element) {
@@ -395,6 +401,7 @@ class MirrorCommand extends Command {
             arcData: element.data('arcData'),
             circleTrimData: element.data('circleTrimData'),
             splineData: element.data('splineData'),
+            ellipseArcData: element.data('ellipseArcData'),
             opacity: element.attr('opacity')
         }
 
@@ -490,6 +497,36 @@ class MirrorCommand extends Command {
         this.editor.signals.updatedSelection.dispatch()
 
         this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Mirror reapplied.' })
+    }
+}
+
+function reflectEllipseArcData(data, p1, p2) {
+    const dx = p2.x - p1.x
+    const dy = p2.y - p1.y
+    const length = Math.hypot(dx, dy)
+    if (length < 1e-6) return null
+
+    // Reflection preserves the ellipse radii but rotates its local x-axis.
+    // The reflected local y-axis is reversed, so the parameter direction and
+    // SVG sweep must be inverted as well.
+    const ux = dx / length
+    const uy = dy / length
+    const rotation = data.rotation || 0
+    const localXAxis = { x: Math.cos(rotation), y: Math.sin(rotation) }
+    const reflectedXAxis = {
+        x: (2 * ux * ux - 1) * localXAxis.x + (2 * ux * uy) * localXAxis.y,
+        y: (2 * ux * uy) * localXAxis.x + (2 * uy * uy - 1) * localXAxis.y,
+    }
+
+    const center = reflectPoint({ x: data.cx, y: data.cy }, p1, p2)
+    return {
+        ...data,
+        cx: center.x,
+        cy: center.y,
+        rotation: Math.atan2(reflectedXAxis.y, reflectedXAxis.x),
+        theta1: -data.theta1,
+        theta2: -data.theta2,
+        ccw: data.ccw === false,
     }
 }
 

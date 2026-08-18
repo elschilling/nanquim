@@ -44,10 +44,12 @@ class TrimEllipseCommand extends Command {
             this.action.arcs.forEach(arc => {
                 const { cx, cy, rx, ry, theta1, theta2, startPt, endPt } = arc
 
-                // theta1 is start, theta2 is end (CCW sweep)
-                let diff = (theta2 - theta1 + 2 * Math.PI) % (2 * Math.PI)
+                const ccw = arc.ccw !== false
+                let diff = ccw
+                    ? (theta2 - theta1 + 2 * Math.PI) % (2 * Math.PI)
+                    : (theta1 - theta2 + 2 * Math.PI) % (2 * Math.PI)
                 const largeArcFlag = diff > Math.PI ? 1 : 0
-                const sweepFlag = 1 // CCW
+                const sweepFlag = ccw ? 1 : 0
 
                 const d = `M ${startPt.x} ${startPt.y} A ${rx} ${ry} 0 ${largeArcFlag} ${sweepFlag} ${endPt.x} ${endPt.y}`
 

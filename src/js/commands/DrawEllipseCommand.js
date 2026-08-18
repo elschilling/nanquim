@@ -30,18 +30,10 @@ class DrawEllipseCommand extends Command {
     }
 
     createGhost(cx, cy, rx, ry) {
-        const activeSvg = this.getActiveSvg()
-        this.ghost = activeSvg
+        this.ghost = this.drawing
             .ellipse(rx * 2, ry * 2)
             .center(cx, cy)
-            .attr({
-                stroke: '#8ab4f8',
-                'stroke-width': 1,
-                'stroke-dasharray': '4 4',
-                'vector-effect': 'non-scaling-stroke',
-                opacity: 0.7,
-                fill: 'none',
-            })
+        applyCollectionStyleToElement(this.editor, this.ghost)
     }
 
     removeGhost() {

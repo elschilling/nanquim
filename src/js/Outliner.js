@@ -8,6 +8,7 @@ import {
   toggleElementLock,
 } from './Collection'
 import { getPreferences } from './Preferences'
+import { pointOnEllipse } from './utils/ellipseArcUtils'
 
 const drawingTree = document.getElementById('drawing-tree')
 
@@ -963,12 +964,14 @@ function Outliner(editor) {
         })
       } else if (el.type === 'path' && el.data('ellipseArcData')) {
         const arc = el.data('ellipseArcData')
+        const xRadiusPoint = pointOnEllipse(arc, 0)
+        const yRadiusPoint = pointOnEllipse(arc, Math.PI / 2)
         const points = [
           { pt: localToWorld(el, arc.cx, arc.cy), index: 0 },
           { pt: localToWorld(el, arc.startPt.x, arc.startPt.y), index: 1 },
           { pt: localToWorld(el, arc.endPt.x, arc.endPt.y), index: 2 },
-          { pt: localToWorld(el, arc.cx + arc.rx, arc.cy), index: 3 },
-          { pt: localToWorld(el, arc.cx, arc.cy + arc.ry), index: 4 },
+          { pt: localToWorld(el, xRadiusPoint.x, xRadiusPoint.y), index: 3 },
+          { pt: localToWorld(el, yRadiusPoint.x, yRadiusPoint.y), index: 4 },
         ]
 
         points.forEach((p) => {
