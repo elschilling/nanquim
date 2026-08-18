@@ -12,6 +12,28 @@ export function worldToScreen(worldPoint, svgCanvas, ctm) {
   return { x: screenPoint.x, y: screenPoint.y }
 }
 
+/**
+ * Converts a point expressed in an element's coordinate system to the active
+ * SVG's root (viewBox) coordinate system. Rectangles retain their local x/y
+ * values when they are rotated or otherwise transformed, so their snap points
+ * must be converted before they are compared with the cursor.
+ */
+function localPointToWorld(el, point, activeSvg, svgScreenCTM) {
+  const elementCTM = el.screenCTM()
+  const svgCTM = svgScreenCTM || activeSvg.screenCTM()
+  if (!elementCTM || !svgCTM) return point
+
+  const screenX = elementCTM.a * point.x + elementCTM.c * point.y + elementCTM.e
+  const screenY = elementCTM.b * point.x + elementCTM.d * point.y + elementCTM.f
+  const determinant = svgCTM.a * svgCTM.d - svgCTM.b * svgCTM.c
+  if (Math.abs(determinant) < 1e-10) return point
+
+  return {
+    x: (svgCTM.d * (screenX - svgCTM.e) - svgCTM.c * (screenY - svgCTM.f)) / determinant,
+    y: (-svgCTM.b * (screenX - svgCTM.e) + svgCTM.a * (screenY - svgCTM.f)) / determinant,
+  }
+}
+
 // ---- Geometry extraction helpers ------------------------------------------------
 
 /** Extract line segments from an element (line, rect, polygon, polyline, path) */
@@ -363,17 +385,28 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const ry = el.node.y.baseVal.value
       const rw = el.node.width.baseVal.value
       const rh = el.node.height.baseVal.value
+      const rectPoints = {
+        topLeft: { x: rx, y: ry },
+        topRight: { x: rx + rw, y: ry },
+        bottomRight: { x: rx + rw, y: ry + rh },
+        bottomLeft: { x: rx, y: ry + rh },
+        topMidpoint: { x: rx + rw / 2, y: ry },
+        rightMidpoint: { x: rx + rw, y: ry + rh / 2 },
+        bottomMidpoint: { x: rx + rw / 2, y: ry + rh },
+        leftMidpoint: { x: rx, y: ry + rh / 2 },
+      }
+      Object.keys(rectPoints).forEach(key => {
+        rectPoints[key] = localPointToWorld(el, rectPoints[key], activeSvg, ctm)
+      })
       if (st.endpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry }, activeSvg, ctm), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry }, activeSvg, ctm), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh }, activeSvg, ctm), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh }, activeSvg, ctm), snapType: 'endpoint' })
+        ;['topLeft', 'topRight', 'bottomRight', 'bottomLeft'].forEach(key => {
+          taggedTargets.push({ screenPoint: worldToScreen(rectPoints[key], activeSvg, ctm), snapType: 'endpoint' })
+        })
       }
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry }, activeSvg, ctm), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw, y: ry + rh / 2 }, activeSvg, ctm), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx + rw / 2, y: ry + rh }, activeSvg, ctm), snapType: 'midpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: rx, y: ry + rh / 2 }, activeSvg, ctm), snapType: 'midpoint' })
+        ;['topMidpoint', 'rightMidpoint', 'bottomMidpoint', 'leftMidpoint'].forEach(key => {
+          taggedTargets.push({ screenPoint: worldToScreen(rectPoints[key], activeSvg, ctm), snapType: 'midpoint' })
+        })
       }
     } else if (el.type === 'path' && el.data('arcData')) {
       const arcData = el.data('arcData')

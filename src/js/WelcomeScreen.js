@@ -1,37 +1,35 @@
 /**
  * WelcomeScreen — Blender-style welcome dialog for nanquim.
  *
- * Recent files are persisted in localStorage under the key
- * "nanquim-recent-files" as a JSON array of { name, dataURL } objects
- * (max RECENT_LIMIT entries, newest first).
+ * Recent files are persisted as FileSystemFileHandle objects in IndexedDB.
+ * The drawing content is deliberately not cached: opening a recent item always
+ * reads the file currently on disk.
  */
 
-const STORAGE_KEY = 'nanquim-recent-files'
+const LEGACY_STORAGE_KEY = 'nanquim-recent-files'
+const DATABASE_NAME = 'nanquim-recent-files'
+const STORE_NAME = 'files'
 const RECENT_LIMIT = 10
 
 function WelcomeScreen(editor) {
   this.editor = editor
   this._overlay = null
 
-  // Listen to the loader so we can track freshly-opened files
-  const origLoadFile = editor.loader.loadFile.bind(editor.loader)
-  editor.loader.loadFile = (file) => {
-    editor.currentFileName = file.name
-    _trackFile(file)
-    origLoadFile(file)
-  }
+  // Remove snapshots written by versions that cached the file contents.
+  localStorage.removeItem(LEGACY_STORAGE_KEY)
 
   this.show()
 }
 
 // ── Public ──────────────────────────────────────────────────────────────────
 
-WelcomeScreen.prototype.show = function () {
+WelcomeScreen.prototype.show = async function () {
   if (this._overlay) return           // already visible
   const overlay = document.createElement('div')
   overlay.id = 'welcome-overlay'
   overlay.className = 'welcome-overlay'
-  overlay.innerHTML = _buildHTML(getRecentFiles())
+  const recentFiles = await getRecentFiles()
+  overlay.innerHTML = _buildHTML(recentFiles, _canPersistFileHandles())
 
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) this.dismiss()
@@ -57,12 +55,12 @@ WelcomeScreen.prototype.show = function () {
 
   // Recent file entries
   overlay.querySelectorAll('.ws-recent-item').forEach((item) => {
+    const index = parseInt(item.dataset.index, 10)
+    item._recentFile = recentFiles[index]
     item.addEventListener('click', () => {
-      const index = parseInt(item.dataset.index, 10)
-      const recent = getRecentFiles()[index]
+      const recent = item._recentFile
       if (!recent) return
-      this.dismiss()
-      _loadFromDataURL(recent.dataURL, recent.name, editor)
+      _openRecentFile(recent, this.editor, this)
     })
   })
 
@@ -71,62 +69,136 @@ WelcomeScreen.prototype.show = function () {
   document.addEventListener('keydown', this._keyHandler)
 }
 
-WelcomeScreen.prototype.dismiss = function () {
+WelcomeScreen.prototype.dismiss = function (onComplete) {
   if (!this._overlay) return
   this._overlay.classList.add('ws-fade-out')
   document.removeEventListener('keydown', this._keyHandler)
   this._overlay.addEventListener('animationend', () => {
     this._overlay.remove()
     this._overlay = null
+    if (onComplete) onComplete()
   }, { once: true })
 }
 
 // ── Recent files helpers ─────────────────────────────────────────────────────
 
-export function getRecentFiles() {
+export async function getRecentFiles() {
+  const db = await _openDatabase()
+  if (!db) return []
+
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    const files = await _getAll(db)
+    return files.sort((a, b) => b.timestamp - a.timestamp)
   } catch {
     return []
+  } finally {
+    db.close()
   }
 }
 
-export function addRecentFile(name, dataURL) {
-  let list = getRecentFiles().filter(f => f.name !== name)
-  list.unshift({ name, dataURL, timestamp: Date.now() })
-  if (list.length > RECENT_LIMIT) list = list.slice(0, RECENT_LIMIT)
-  // Retry with progressively fewer entries if storage quota is exceeded
-  while (list.length > 0) {
+export async function addRecentFile(handle) {
+  if (!handle) return
+  const db = await _openDatabase()
+  if (!db) return
+
+  try {
+    const existing = await _getAll(db)
+    const matchingEntry = await _findMatchingEntry(existing, handle)
+    const entry = {
+      id: matchingEntry ? matchingEntry.id : crypto.randomUUID(),
+      name: handle.name,
+      handle,
+      timestamp: Date.now(),
+    }
+    await _put(db, entry)
+
+    const staleEntries = existing
+      .filter(file => file.id !== entry.id)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(RECENT_LIMIT - 1)
+    await Promise.all(staleEntries.map(file => _delete(db, file.id)))
+  } finally {
+    db.close()
+  }
+}
+
+async function _findMatchingEntry(entries, handle) {
+  for (const entry of entries) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-      return
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-        list.pop() // drop the oldest entry and try again
-      } else {
-        throw e
-      }
+      if (await entry.handle.isSameEntry(handle)) return entry
+    } catch (_) {
+      // A stale handle cannot be compared; opening it will remove it.
     }
   }
+  return null
 }
 
-function _trackFile(file) {
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    addRecentFile(file.name, e.target.result)
+async function _openRecentFile(recent, editor, welcomeScreen) {
+  try {
+    // Call this directly from the click handler so the browser treats it as a
+    // user-initiated permission request. Asking for write access here also
+    // enables a later Ctrl+S direct save without another prompt.
+    const permission = await recent.handle.requestPermission({ mode: 'readwrite' })
+    if (permission !== 'granted') {
+      editor.signals.terminalLogged.dispatch({ msg: `Access to ${recent.name} was not granted.` })
+      return
+    }
+
+    const file = await recent.handle.getFile()
+    editor.currentFileName = file.name
+    editor.currentFileHandle = recent.handle
+    welcomeScreen.dismiss()
+    editor.loader.loadFile(file)
+  } catch (error) {
+    // A deleted or moved file has no valid handle anymore. Do not offer an old
+    // drawing snapshot in its place.
+    if (error.name === 'NotFoundError') {
+      await _removeRecentFile(recent.id)
+      welcomeScreen.dismiss(() => welcomeScreen.show())
+      return
+    }
+    console.error('[WelcomeScreen] Failed to open recent file:', error)
+    editor.signals.terminalLogged.dispatch({ msg: `Could not open ${recent.name}.` })
   }
-  reader.readAsDataURL(file)
 }
 
-function _loadFromDataURL(dataURL, name, editor) {
-  // Convert data-URL → Blob → File then hand to the existing loader
-  fetch(dataURL)
-    .then(r => r.blob())
-    .then(blob => {
-      const file = new File([blob], name)
-      editor.loader.loadFile(file)
-    })
-    .catch(err => console.error('[WelcomeScreen] Failed to load recent file:', err))
+function _openDatabase() {
+  if (!window.indexedDB) return Promise.resolve(null)
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, 1)
+    request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME, { keyPath: 'id' })
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+function _getAll(db) {
+  return _request(db.transaction(STORE_NAME).objectStore(STORE_NAME).getAll())
+}
+
+function _put(db, entry) {
+  return _request(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(entry))
+}
+
+function _delete(db, id) {
+  return _request(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).delete(id))
+}
+
+function _request(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+async function _removeRecentFile(id) {
+  const db = await _openDatabase()
+  if (!db) return
+  try {
+    await _delete(db, id)
+  } finally {
+    db.close()
+  }
 }
 
 // ── HTML builder ─────────────────────────────────────────────────────────────
@@ -137,7 +209,11 @@ function _formatDate(ts) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function _buildHTML(recentFiles) {
+function _canPersistFileHandles() {
+  return window.isSecureContext && typeof window.showOpenFilePicker === 'function'
+}
+
+function _buildHTML(recentFiles, canPersistFileHandles) {
   const recentHTML = recentFiles.length
     ? recentFiles.map((f, i) => /* html */`
         <div class="ws-recent-item" data-index="${i}" title="${f.name}">
@@ -146,7 +222,10 @@ function _buildHTML(recentFiles) {
           <span class="ws-recent-date">${_formatDate(f.timestamp)}</span>
         </div>
       `).join('')
-    : `<div class="ws-no-recent">No recently opened files.</div>`
+    : `<div class="ws-no-recent">${canPersistFileHandles
+      ? 'No recent disk files. Files opened with Open File… or saved with Save SVG will appear here.'
+      : 'Recent disk files require HTTPS or localhost and the File System Access API. This browser connection can only open files once.'
+    }</div>`
 
   return /* html */`
     <div class="ws-dialog" id="ws-dialog">

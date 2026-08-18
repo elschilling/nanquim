@@ -17,12 +17,17 @@ function Navbar(editor) {
   form.appendChild(fileInput)
 
   // Save SVG — serialize the drawing group into a standalone SVG and trigger download
-  window.saveSVG = async function () {
+  window.saveSVG = async function ({ direct = false } = {}) {
     const filename = 'drawing.svg'
+    const directSaveHandle = direct && editor.currentFileHandle && /\.svg$/i.test(editor.currentFileName || editor.currentFileHandle.name)
 
-    const convertStrokes = window.confirm(
-      'Convert white strokes to black? (Recommended for viewing the SVG in other programs. They will be converted back to white when opened in Nanquim)'
-    )
+    // Direct saves preserve the editable Nanquim styling and must not interrupt
+    // Ctrl+S with the export-only stroke conversion question.
+    const convertStrokes = directSaveHandle
+      ? false
+      : window.confirm(
+          'Convert white strokes to black? (Recommended for viewing the SVG in other programs. They will be converted back to white when opened in Nanquim)'
+        )
 
     // Force in-memory SVG.js data object into DOM data-* attributes so they get serialized
     // Also bake explicitly black strokes into elements using the .newDrawing class,
@@ -138,6 +143,52 @@ function Navbar(editor) {
       `</svg>`,
     ].join('\n')
 
+    if (directSaveHandle) {
+      try {
+        const permission = await editor.currentFileHandle.queryPermission({ mode: 'readwrite' })
+        if (permission !== 'granted') {
+          editor.signals.terminalLogged.dispatch({ msg: 'This file is not writable. Use Save SVG to export a copy.' })
+          return
+        }
+        const writable = await editor.currentFileHandle.createWritable()
+        await writable.write(svgString)
+        await writable.close()
+        editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Saved ${editor.currentFileName || editor.currentFileHandle.name}.` })
+        return
+      } catch (error) {
+        console.error('[Navbar] Failed to save file:', error)
+        editor.signals.terminalLogged.dispatch({ msg: 'Could not save the current file.' })
+        return
+      }
+    }
+
+    // A first save chooses a disk location and keeps its handle. Subsequent
+    // Ctrl+S calls can then overwrite this exact file without another dialog.
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: editor.currentFileName || filename,
+          types: [{
+            description: 'SVG drawing',
+            accept: { 'image/svg+xml': ['.svg'] },
+          }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(svgString)
+        await writable.close()
+        editor.currentFileName = handle.name
+        editor.currentFileHandle = handle
+        await addRecentFile(handle)
+        editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Saved ${handle.name}.` })
+      } catch (error) {
+        if (error.name !== 'AbortError') {
+          console.error('[Navbar] Failed to save file:', error)
+          editor.signals.terminalLogged.dispatch({ msg: 'Could not save the file.' })
+        }
+      }
+      return
+    }
+
     const blob = new Blob([svgString], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -148,11 +199,6 @@ function Navbar(editor) {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
 
-    // Update the recent files entry with the current saved content
-    const recentName = editor.currentFileName || filename
-    const dataURL = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString)
-    addRecentFile(recentName, dataURL)
-
     editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Drawing successfully saved.` })
   }
 
@@ -161,8 +207,40 @@ function Navbar(editor) {
     new DXFExporter(editor).saveFile('drawing.dxf')
   }
 
-  // Open SVG — trigger the file input
-  window.openSVG = function () {
+  // Open SVG/DXF with a persistent disk handle when the browser supports it.
+  window.openSVG = async function () {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          multiple: false,
+          types: [{
+            description: 'Nanquim drawings',
+            accept: {
+              'image/svg+xml': ['.svg'],
+              'image/vnd.dxf': ['.dxf'],
+            },
+          }],
+        })
+        const file = await handle.getFile()
+        editor.currentFileName = file.name
+        editor.currentFileHandle = handle
+        // Ask for write access while this picker action still has a user
+        // gesture, so later Ctrl+S saves directly without a prompt.
+        await handle.requestPermission({ mode: 'readwrite' })
+        await addRecentFile(handle)
+        editor.loader.loadFile(file)
+      } catch (error) {
+        // The picker reports AbortError when the user cancels it.
+        if (error.name !== 'AbortError') console.error('[Navbar] Failed to open file:', error)
+      }
+      return
+    }
+
+    // Browsers without the File System Access API can open a file, but no disk
+    // reference is available to persist as a recent file.
+    editor.signals.terminalLogged.dispatch({
+      msg: 'Recent disk files require HTTPS or localhost and File System Access support.',
+    })
     fileInput.click()
   }
 

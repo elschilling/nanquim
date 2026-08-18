@@ -8,6 +8,7 @@ class CopyCommand extends Command {
     this.name = 'Copy'
     this.boundOnKeyDown = this.onKeyDown.bind(this)
     this.boundOnCopyStop = this.onCopyStop.bind(this)
+    this.boundOnDistanceInput = this.onDistanceInput.bind(this)
     this.allCopiedElements = []  // All placed copies across all clicks (for undo)
     this.currentGhosts = []      // Ghost clones for the current (unplaced) copy
     this.interactiveExecutionDone = false
@@ -58,12 +59,45 @@ class CopyCommand extends Command {
   onBasePoint(point) {
     this.basePoint = point
     this.editor.signals.terminalLogged.dispatch({
-      msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}. Specify destination. Press Esc or Enter to finish.`,
+      msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}. Specify destination or type a distance. Press Esc or Enter to finish.`,
     })
 
     this._spawnGhosts()
-    this.editor.signals.pointCaptured.addOnce(this.onNextPoint, this)
+    this._waitForDestination()
     document.addEventListener('keydown', this.boundOnCopyStop)
+  }
+
+  _waitForDestination() {
+    this.editor.signals.pointCaptured.addOnce(this.onNextPoint, this)
+    this.editor.signals.inputValue.addOnce(this.boundOnDistanceInput, this)
+  }
+
+  onDistanceInput(value) {
+    const distance = parseFloat(value)
+    if (!Number.isFinite(distance)) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Enter a valid distance or click a destination point.' })
+      // Signal listeners are detached after their callback returns, so defer
+      // re-registering the one-shot listener.
+      Promise.resolve().then(() => {
+        if (!this._cleanedUp) this.editor.signals.inputValue.addOnce(this.boundOnDistanceInput, this)
+      })
+      return
+    }
+
+    this.editor.signals.pointCaptured.remove(this.onNextPoint, this)
+    this.editor.distance = distance
+    // A distance needs a direction. Use the current cursor/snap position, the
+    // same direction that the copy ghost is showing.
+    const directionPoint = this.editor.snapPoint || this.editor.coordinates
+    if (!directionPoint) {
+      this.editor.distance = null
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Move the cursor to set a direction, then enter a distance.' })
+      Promise.resolve().then(() => {
+        if (!this._cleanedUp) this._waitForDestination()
+      })
+      return
+    }
+    this.onNextPoint(directionPoint)
   }
 
   // Spawn fresh ghost clones from the original selection at their original positions.
@@ -86,6 +120,7 @@ class CopyCommand extends Command {
   }
 
   onNextPoint(point) {
+    this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
     this.editor.signals.moveGhostingStopped.dispatch()
 
     let dx = point.x - this.basePoint.x
@@ -143,7 +178,7 @@ class CopyCommand extends Command {
     // the not-yet-detached binding — which then gets detached, leaving no listener.
     Promise.resolve().then(() => {
       if (!this._cleanedUp) {
-        this.editor.signals.pointCaptured.addOnce(this.onNextPoint, this)
+        this._waitForDestination()
       }
     })
   }
@@ -169,6 +204,7 @@ class CopyCommand extends Command {
     document.removeEventListener('keydown', this.boundOnCopyStop)
     this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
     this.editor.signals.pointCaptured.remove(this.onNextPoint, this)
+    this.editor.signals.inputValue.remove(this.boundOnDistanceInput, this)
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
 
     // Stop ghosting and discard the unplaced ghost clones

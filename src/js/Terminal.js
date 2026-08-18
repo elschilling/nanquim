@@ -222,7 +222,7 @@ function Terminal(editor) {
     // Ctrl+S — Save SVG
     if (e.ctrlKey && e.key === 's') {
       e.preventDefault()
-      if (window.saveSVG) window.saveSVG()
+      if (window.saveSVG) window.saveSVG({ direct: true })
       return
     }
     // Ctrl+O — Open SVG
