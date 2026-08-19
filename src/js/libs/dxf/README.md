@@ -1,4 +1,9 @@
-[![Build Status](https://travis-ci.org/bjnortier/dxf.svg?branch=master)](https://travis-ci.org/bjnortier/dxf)
+> **Vendored dependency:** Nanquim's DXF importer is based on the `dxf` 5.1.0
+> sources from [skymakerolof/dxf](https://github.com/skymakerolof/dxf), retained
+> under the included MIT license. Nanquim imports this snapshot directly from
+> `src/`; it is not installed, published, or rebuilt as a separate npm package.
+> Its runtime dependencies and security updates are managed by Nanquim's root
+> manifest and lockfile.
 
 # dxf
 

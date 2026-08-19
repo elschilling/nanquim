@@ -5,6 +5,7 @@ import { createBuiltinRegistry, socketTypesCompatible } from './core/NodeRegistr
 import { createId } from './core/ids.js'
 import { SvgGeometryAdapter } from './SvgGeometryAdapter.js'
 import { SvgOutputRenderer } from './SvgOutputRenderer.js'
+import { parseSafeJson } from '../utils/sanitizeSvg.js'
 import {
   ApplyGeometryNodesCommand,
   AttachGeometryNodesCommand,
@@ -16,6 +17,280 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const SCHEMA_VERSION = 1
+const MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS = 128
+const SERIALIZED_GEOMETRY_NODE_LIMITS = Object.freeze({
+  maxGraphs: 128,
+  maxInstances: 4096,
+  maxNodesPerGraph: 2048,
+  maxLinksPerGraph: 8192,
+  maxTotalNodes: 10000,
+  maxTotalLinks: 40000,
+  maxInterfaceSockets: 128,
+  maxIdentifierLength: 256,
+  maxLabelLength: 1024,
+  maxStringLength: 4 * 1024 * 1024,
+  maxValueNodes: 100000,
+  maxValueDepth: 64,
+})
+const GEOMETRY_NODE_LOAD_RENDER_LIMITS = Object.freeze({
+  remainingItems: 100000,
+  remainingElements: 100000,
+  remainingTextLength: 4 * 1024 * 1024,
+  remainingAttributeLength: 16 * 1024 * 1024,
+  remainingPayloadLength: 32 * 1024 * 1024,
+  remainingEvaluatedNodes: 100000,
+  remainingProcessedLinks: 100000,
+  remainingSocketValues: 100000,
+  remainingMaterializedItems: 100000,
+  remainingMaterializedValueNodes: 2000000,
+  remainingSourceItems: 100000,
+  remainingSourceElements: 100000,
+  remainingSourceTextLength: 4 * 1024 * 1024,
+  remainingSourceAttributeLength: 16 * 1024 * 1024,
+  remainingSourceSerializedLength: 32 * 1024 * 1024,
+})
+
+function createLoadRenderBudget(overrides = {}) {
+  return { ...GEOMETRY_NODE_LOAD_RENDER_LIMITS, ...(overrides || {}) }
+}
+
+const BATCH_STOP_BUDGET_KEYS = Object.freeze([
+  'remainingItems',
+  'remainingElements',
+  'remainingTextLength',
+  'remainingAttributeLength',
+  'remainingPayloadLength',
+  'remainingEvaluatedNodes',
+  'remainingProcessedLinks',
+  'remainingSocketValues',
+  'remainingMaterializedItems',
+  'remainingMaterializedValueNodes',
+  'remainingSourceItems',
+  'remainingSourceElements',
+  'remainingSourceTextLength',
+  'remainingSourceAttributeLength',
+  'remainingSourceSerializedLength',
+])
+
+function batchBudgetExhausted(budget) {
+  return Boolean(budget && BATCH_STOP_BUDGET_KEYS.some((key) => (
+    Number.isFinite(budget[key]) && budget[key] <= 0
+  )))
+}
+
+function boundedDiagnostics(value, fallbackMessage = '') {
+  const source = Array.isArray(value) ? value : []
+  if (source.length === 0) {
+    return fallbackMessage
+      ? [{
+          level: 'error',
+          severity: 'error',
+          code: 'evaluation-failed',
+          message: fallbackMessage,
+        }]
+      : []
+  }
+  if (source.length <= MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS) return source.slice()
+
+  const retainedCount = MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS - 1
+  const retained = source.slice(0, retainedCount)
+  let omittedHasError = false
+  for (let index = retainedCount; index < source.length; index += 1) {
+    const item = source[index]
+    if (item && (item.level === 'error' || item.severity === 'error')) {
+      omittedHasError = true
+      break
+    }
+  }
+  const omittedCount = source.length - retainedCount
+  retained.push({
+    level: omittedHasError ? 'error' : 'warning',
+    severity: omittedHasError ? 'error' : 'warning',
+    code: 'diagnostics-truncated',
+    message: `${omittedCount} additional graph diagnostics were omitted`,
+    omittedCount,
+  })
+  return retained
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertBoundedString(value, label, maxLength, { required = false } = {}) {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new TypeError(`${label} is required.`)
+    return ''
+  }
+  const text = String(value)
+  if (text.length > maxLength) throw new RangeError(`${label} exceeds the safe length limit.`)
+  return text
+}
+
+function assertBoundedSerializedValue(value, limits = SERIALIZED_GEOMETRY_NODE_LIMITS) {
+  const pending = [{ value, depth: 0 }]
+  const visited = new WeakSet()
+  let nodes = 0
+  let stringLength = 0
+
+  while (pending.length > 0) {
+    const entry = pending.pop()
+    nodes += 1
+    if (nodes > limits.maxValueNodes || entry.depth > limits.maxValueDepth) {
+      throw new RangeError('Geometry Nodes metadata exceeds the safe complexity limit.')
+    }
+    if (typeof entry.value === 'string') {
+      stringLength += entry.value.length
+      if (stringLength > limits.maxStringLength) {
+        throw new RangeError('Geometry Nodes metadata exceeds the safe text limit.')
+      }
+      continue
+    }
+    if (!entry.value || typeof entry.value !== 'object') continue
+    if (visited.has(entry.value)) continue
+    visited.add(entry.value)
+
+    if (Array.isArray(entry.value)) {
+      for (let index = 0; index < entry.value.length; index += 1) {
+        pending.push({ value: entry.value[index], depth: entry.depth + 1 })
+      }
+      continue
+    }
+
+    const keys = Object.keys(entry.value)
+    if (keys.some((key) => key === '__proto__' || key === 'constructor' || key === 'prototype')) {
+      throw new TypeError('Geometry Nodes metadata contains an unsafe object key.')
+    }
+    keys.forEach((key) => {
+      stringLength += key.length
+      if (stringLength > limits.maxStringLength) {
+        throw new RangeError('Geometry Nodes metadata exceeds the safe text limit.')
+      }
+      pending.push({ value: entry.value[key], depth: entry.depth + 1 })
+    })
+  }
+}
+
+function assertSerializedGeometryNodes(value, limits = SERIALIZED_GEOMETRY_NODE_LIMITS) {
+  if (!isRecord(value)) throw new TypeError('Geometry Nodes metadata must be an object.')
+  assertBoundedSerializedValue(value, limits)
+
+  const metadataVersion = value.version === undefined ? value.schemaVersion : value.version
+  if (metadataVersion !== undefined && (
+    !Number.isInteger(metadataVersion) || metadataVersion < 1 || metadataVersion > SCHEMA_VERSION
+  )) {
+    throw new TypeError(`Unsupported Geometry Nodes metadata version: ${metadataVersion}`)
+  }
+
+  const graphs = value.graphs === undefined ? [] : value.graphs
+  const instances = value.instances === undefined ? [] : value.instances
+  if (!Array.isArray(graphs) || graphs.length > limits.maxGraphs) {
+    throw new RangeError('Geometry Nodes metadata contains too many graph assets.')
+  }
+  if (!Array.isArray(instances) || instances.length > limits.maxInstances) {
+    throw new RangeError('Geometry Nodes metadata contains too many modifier instances.')
+  }
+
+  let totalNodes = 0
+  let totalLinks = 0
+  const graphIds = new Set()
+  graphs.forEach((graph) => {
+    if (!isRecord(graph) || !Array.isArray(graph.nodes) || !Array.isArray(graph.links)) {
+      throw new TypeError('Geometry Nodes graph assets require node and link arrays.')
+    }
+    if (graph.schemaVersion !== undefined && (
+      !Number.isInteger(graph.schemaVersion) || graph.schemaVersion < 1 || graph.schemaVersion > SCHEMA_VERSION
+    )) {
+      throw new TypeError(`Unsupported Geometry Nodes graph version: ${graph.schemaVersion}`)
+    }
+    if (graph.nodes.length > limits.maxNodesPerGraph || graph.links.length > limits.maxLinksPerGraph) {
+      throw new RangeError('A Geometry Nodes graph exceeds the safe topology limit.')
+    }
+    totalNodes += graph.nodes.length
+    totalLinks += graph.links.length
+    if (totalNodes > limits.maxTotalNodes || totalLinks > limits.maxTotalLinks) {
+      throw new RangeError('Geometry Nodes metadata exceeds the safe total topology limit.')
+    }
+
+    const graphId = assertBoundedString(
+      graph.id,
+      'Geometry Nodes graph id',
+      limits.maxIdentifierLength,
+    )
+    assertBoundedString(graph.name, 'Geometry Nodes graph name', limits.maxLabelLength)
+    if (graphId && graphIds.has(graphId)) throw new TypeError(`Duplicate Geometry Nodes graph id: ${graphId}`)
+    if (graphId) graphIds.add(graphId)
+
+    if (graph.interface !== undefined && graph.interface !== null) {
+      if (!isRecord(graph.interface)) throw new TypeError('Geometry Nodes graph interface must be an object.')
+      for (const direction of ['inputs', 'outputs']) {
+        const sockets = graph.interface[direction]
+        if (sockets !== undefined && (!Array.isArray(sockets) || sockets.length > limits.maxInterfaceSockets)) {
+          throw new RangeError('Geometry Nodes graph interface exceeds the safe socket limit.')
+        }
+        ;(sockets || []).forEach((socket) => {
+          if (!isRecord(socket)) throw new TypeError('Geometry Nodes graph contains an invalid interface socket.')
+          assertBoundedString(socket.id, 'Geometry Nodes socket id', limits.maxIdentifierLength)
+          assertBoundedString(socket.name, 'Geometry Nodes socket name', limits.maxLabelLength)
+          assertBoundedString(socket.type, 'Geometry Nodes socket type', limits.maxIdentifierLength)
+        })
+      }
+    }
+    graph.nodes.forEach((node) => {
+      if (!isRecord(node) || (node.values !== undefined && node.values !== null && !isRecord(node.values))) {
+        throw new TypeError('Geometry Nodes graph contains an invalid node.')
+      }
+      assertBoundedString(node.id, 'Geometry Nodes node id', limits.maxIdentifierLength)
+      assertBoundedString(node.type, 'Geometry Nodes node type', limits.maxIdentifierLength)
+    })
+    graph.links.forEach((link) => {
+      if (!isRecord(link)) throw new TypeError('Geometry Nodes graph contains an invalid link.')
+      for (const field of ['id', 'fromNode', 'fromSocket', 'toNode', 'toSocket']) {
+        assertBoundedString(link[field], `Geometry Nodes link ${field}`, limits.maxIdentifierLength)
+      }
+    })
+  })
+
+  const instanceIds = new Set()
+  const objectIds = new Set()
+  instances.forEach((instance) => {
+    if (!isRecord(instance) || (
+      instance.inputs !== undefined && instance.inputs !== null && !isRecord(instance.inputs)
+    )) {
+      throw new TypeError('Geometry Nodes metadata contains an invalid modifier instance.')
+    }
+    const instanceId = assertBoundedString(
+      instance.id,
+      'Geometry Nodes modifier id',
+      limits.maxIdentifierLength,
+      { required: true },
+    )
+    const objectId = assertBoundedString(
+      instance.objectId,
+      'Geometry Nodes object id',
+      limits.maxIdentifierLength,
+      { required: true },
+    )
+    assertBoundedString(
+      instance.graphId,
+      'Geometry Nodes modifier graph id',
+      limits.maxIdentifierLength,
+      { required: true },
+    )
+    if (instanceId && instanceIds.has(instanceId)) {
+      throw new TypeError(`Duplicate Geometry Nodes modifier id: ${instanceId}`)
+    }
+    if (objectId && objectIds.has(objectId)) {
+      throw new TypeError(`Duplicate Geometry Nodes object id: ${objectId}`)
+    }
+    if (instanceId) instanceIds.add(instanceId)
+    if (objectId) objectIds.add(objectId)
+  })
+
+  assertBoundedString(value.activeObjectId, 'Geometry Nodes active object id', limits.maxIdentifierLength)
+
+  return value
+}
 
 function domNode(value) {
   if (!value) return null
@@ -25,11 +300,6 @@ function domNode(value) {
 function svgElement(value) {
   if (!value) return null
   return value.node ? value : SVG(value)
-}
-
-function childByAttribute(parent, name) {
-  const node = domNode(parent)
-  return Array.from((node && node.children) || []).find((child) => child.getAttribute(name) === 'true') || null
 }
 
 function attributeSnapshot(node) {
@@ -199,6 +469,12 @@ function isPromise(value) {
   return Boolean(value && typeof value.then === 'function')
 }
 
+function exposedInstanceInputs(value) {
+  const inputs = isRecord(value) ? cloneData(value) : {}
+  delete inputs.geometry
+  return inputs
+}
+
 /**
  * Owns Geometry Nodes graph assets and the modifier instances attached to SVG
  * objects. The manager is deliberately the only layer that mutates the live
@@ -211,6 +487,7 @@ class GeometryNodeManager {
     this.evaluator = options.evaluator || new GraphEvaluator(this.registry)
     this.adapter = options.adapter || new SvgGeometryAdapter(editor)
     this.renderer = options.renderer || new SvgOutputRenderer(editor)
+    this.batchBudgetLimits = { ...(options.batchBudgetLimits || {}) }
 
     this.graphs = new Map()
     this.instances = new Map()
@@ -939,9 +1216,10 @@ class GeometryNodeManager {
     })
   }
 
-  evaluateInstance(value) {
+  evaluateInstance(value, options = {}) {
     const instance = typeof value === 'string' ? this.instances.get(value) : value
     if (!instance) return null
+    options = options && typeof options === 'object' ? options : {}
 
     const graph = this.getGraph(instance.graphId)
     const revision = ++instance.revision
@@ -953,7 +1231,7 @@ class GeometryNodeManager {
 
     const finish = (result) => {
       if (!this.instances.has(instance.id) || instance.revision !== revision) return null
-      const diagnostics = (result && result.diagnostics) || []
+      const diagnostics = boundedDiagnostics(result && result.diagnostics)
       const errorDiagnostic = diagnostics.find((item) => item && (
         item.level === 'error' || item.severity === 'error'
       ))
@@ -961,23 +1239,29 @@ class GeometryNodeManager {
         return fail(new Error(errorDiagnostic.message || 'Geometry Nodes evaluation failed.'), diagnostics)
       }
       const geometry = result && result.geometry ? result.geometry : result
-      this.renderer.render(geometry, instance.output, { objectId: instance.objectId })
+      this.renderer.render(geometry, instance.output, {
+        objectId: instance.objectId,
+        budget: options.renderBudget,
+      })
       instance.status = 'ready'
       instance.error = null
       instance.diagnostics = diagnostics
       instance.timings = (result && result.timings) || null
+      const boundedResult = result && typeof result === 'object' && Array.isArray(result.diagnostics)
+        ? { ...result, diagnostics }
+        : result
       this._dispatch('nodeGraphChanged', instance.graphId, graph)
       this._dispatch('geometryNodesEvaluated', instance)
-      this._dispatch('nodeEvaluationCompleted', instance, result)
+      this._dispatch('nodeEvaluationCompleted', instance, boundedResult)
       this._dirty()
-      return result
+      return boundedResult
     }
 
     const fail = (error, diagnostics = null) => {
       if (!this.instances.has(instance.id) || instance.revision !== revision) return null
       instance.status = 'error'
       instance.error = error instanceof Error ? error.message : String(error)
-      instance.diagnostics = diagnostics || [{ level: 'error', severity: 'error', message: instance.error }]
+      instance.diagnostics = boundedDiagnostics(diagnostics, instance.error)
       this._dispatch('nodeGraphChanged', instance.graphId, graph)
       this._dispatch('geometryNodesEvaluated', instance)
       this._dispatch('nodeEvaluationFailed', instance, error)
@@ -988,13 +1272,17 @@ class GeometryNodeManager {
     }
 
     try {
-      const sourceGeometry = this.adapter.fromSource(instance.source)
+      const sourceGeometry = this.adapter.fromSource(instance.source, {
+        budget: options.workBudget,
+      })
       if (!instance.enabled) return finish({ geometry: sourceGeometry, diagnostics: [] })
       if (!graph) throw new Error(`Missing Geometry Nodes graph: ${instance.graphId}`)
       const result = this.evaluator.evaluate(graph, {
         geometry: sourceGeometry,
         inputs: instance.inputs || {},
         signal: instance.abortController && instance.abortController.signal,
+        budget: options.workBudget,
+        validationCache: options.validationCache,
       })
       return isPromise(result) ? result.then(finish).catch(fail) : finish(result)
     } catch (error) {
@@ -1003,9 +1291,32 @@ class GeometryNodeManager {
   }
 
   evaluateGraphInstances(graphId) {
-    const results = Array.from(this.instances.values())
+    const workBudget = createLoadRenderBudget(this.batchBudgetLimits)
+    const validationCache = new Map()
+    const results = []
+    let skippedForBudget = false
+    Array.from(this.instances.values())
       .filter((instance) => instance.graphId === graphId)
-      .map((instance) => this.evaluateInstance(instance))
+      .forEach((instance) => {
+        if (batchBudgetExhausted(workBudget)) {
+          skippedForBudget = true
+          instance.status = 'error'
+          instance.error = 'Geometry Nodes batch evaluation budget was exhausted; last-good output was kept.'
+          instance.diagnostics = [{
+            level: 'error',
+            severity: 'error',
+            code: 'batch-evaluation-budget-exhausted',
+            message: instance.error,
+          }]
+          return
+        }
+        results.push(this.evaluateInstance(instance, {
+          renderBudget: workBudget,
+          workBudget,
+          validationCache,
+        }))
+      })
+    if (skippedForBudget) this._log('Geometry Nodes: batch evaluation budget exhausted; last-good output was kept.')
     return results.some(isPromise) ? Promise.all(results) : results
   }
 
@@ -1180,7 +1491,7 @@ class GeometryNodeManager {
         objectId: instance.objectId,
         graphId: instance.graphId,
         enabled: instance.enabled,
-        inputs: cloneData(instance.inputs || {}),
+        inputs: exposedInstanceInputs(instance.inputs),
       })),
     }
   }
@@ -1211,34 +1522,62 @@ class GeometryNodeManager {
 
   load(value = {}) {
     let data = value
-    if (typeof data === 'string') data = JSON.parse(data)
+    if (typeof data === 'string') {
+      data = parseSafeJson(data, {
+        maxLength: SERIALIZED_GEOMETRY_NODE_LIMITS.maxStringLength,
+        maxDepth: SERIALIZED_GEOMETRY_NODE_LIMITS.maxValueDepth,
+        maxNodes: SERIALIZED_GEOMETRY_NODE_LIMITS.maxValueNodes,
+      })
+      if (data === null) throw new TypeError('Geometry Nodes metadata is invalid or unsafe.')
+    }
     data = data || {}
-
-    this.graphs.clear()
-    ;(data.graphs || []).forEach((graphData) => this.createGraph(graphData.name, graphData))
-    this.instances.clear()
+    assertSerializedGeometryNodes(data)
 
     const serializedById = new Map((data.instances || []).map((instance) => [instance.id, instance]))
     const drawingNode = domNode(this.editor.drawing)
     const wrappers = drawingNode
       ? Array.from(drawingNode.querySelectorAll('[data-geometry-nodes="true"]'))
       : []
+    if (wrappers.length > SERIALIZED_GEOMETRY_NODE_LIMITS.maxInstances) {
+      throw new RangeError('Drawing contains too many Geometry Nodes modifier wrappers.')
+    }
 
+    const matchedWrappers = []
+    const matchedIds = new Set()
     wrappers.forEach((wrapperNode) => {
-      const sourceNode = childByAttribute(wrapperNode, 'data-gn-source')
-      const outputNode = childByAttribute(wrapperNode, 'data-gn-output')
-      if (!sourceNode || !outputNode) return
+      const id = wrapperNode.getAttribute('data-gn-instance-id')
+      if (!id || !serializedById.has(id)) return
+      if (matchedIds.has(id)) throw new TypeError(`Duplicate Geometry Nodes wrapper id: ${id}`)
 
-      const id = wrapperNode.getAttribute('data-gn-instance-id') || createId('modifier')
-      const saved = serializedById.get(id) || {}
-      const objectId = wrapperNode.getAttribute('data-gn-object-id') || saved.objectId || createId('object')
-      const graphId = wrapperNode.getAttribute('data-gn-graph-id') || saved.graphId
-      const enabledAttribute = wrapperNode.getAttribute('data-gn-enabled')
-      const enabled = saved.enabled !== undefined ? Boolean(saved.enabled) : enabledAttribute !== 'false'
+      const sourceNodes = Array.from(wrapperNode.children).filter(
+        (child) => child.getAttribute('data-gn-source') === 'true',
+      )
+      const outputNodes = Array.from(wrapperNode.children).filter(
+        (child) => child.getAttribute('data-gn-output') === 'true',
+      )
+      if (
+        sourceNodes.length !== 1
+        || outputNodes.length !== 1
+        || sourceNodes[0] === outputNodes[0]
+      ) return
+      const sourceNode = sourceNodes[0]
+      const outputNode = outputNodes[0]
+      matchedIds.add(id)
+      matchedWrappers.push({ id, wrapperNode, sourceNode, outputNode, saved: serializedById.get(id) })
+    })
+
+    this.graphs.clear()
+    ;(data.graphs || []).forEach((graphData) => this.createGraph(graphData.name, graphData))
+    this.instances.clear()
+
+    matchedWrappers.forEach(({ id, wrapperNode, sourceNode, outputNode, saved }) => {
+      const objectId = saved.objectId
+      const graphId = saved.graphId
+      const enabled = saved.enabled !== false
 
       wrapperNode.setAttribute('data-gn-instance-id', id)
       wrapperNode.setAttribute('data-gn-object-id', objectId)
-      if (graphId) wrapperNode.setAttribute('data-gn-graph-id', graphId)
+      wrapperNode.setAttribute('data-gn-graph-id', graphId)
       wrapperNode.setAttribute('data-gn-enabled', String(enabled))
 
       const instance = {
@@ -1246,7 +1585,7 @@ class GeometryNodeManager {
         objectId,
         graphId,
         enabled,
-        inputs: cloneData(saved.inputs || {}),
+        inputs: exposedInstanceInputs(saved.inputs),
         status: 'idle',
         error: null,
         diagnostics: [],
@@ -1259,12 +1598,43 @@ class GeometryNodeManager {
     })
 
     this.activeObjectId = data.activeObjectId || null
-    const evaluations = Array.from(this.instances.values()).map((instance) => this.evaluateInstance(instance))
+    const renderBudget = createLoadRenderBudget(this.batchBudgetLimits)
+    const validationCache = new Map()
+    const evaluations = []
+    let skippedForBudget = false
+    Array.from(this.instances.values()).forEach((instance) => {
+      if (batchBudgetExhausted(renderBudget)) {
+        skippedForBudget = true
+        instance.status = 'error'
+        instance.error = 'Geometry Nodes load evaluation budget was exhausted; cached output was kept.'
+        instance.diagnostics = [{
+          level: 'error',
+          severity: 'error',
+          code: 'load-evaluation-budget-exhausted',
+          message: instance.error,
+        }]
+        return
+      }
+      evaluations.push(this.evaluateInstance(instance, {
+        renderBudget,
+        workBudget: renderBudget,
+        validationCache,
+      }))
+    })
+    if (skippedForBudget) this._log('Geometry Nodes: load evaluation budget exhausted; cached output was kept.')
     this._dispatch('activeNodeGraphChanged', this.getActiveInstance(), this.getActiveGraph())
     this._dirty()
     return evaluations.some(isPromise) ? Promise.all(evaluations).then(() => this) : this
   }
 }
 
-export { GeometryNodeManager, SCHEMA_VERSION }
+export {
+  GeometryNodeManager,
+  GEOMETRY_NODE_LOAD_RENDER_LIMITS,
+  MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS,
+  SCHEMA_VERSION,
+  SERIALIZED_GEOMETRY_NODE_LIMITS,
+  assertSerializedGeometryNodes,
+  createLoadRenderBudget,
+}
 export default GeometryNodeManager

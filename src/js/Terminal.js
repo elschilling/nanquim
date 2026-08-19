@@ -1,7 +1,9 @@
 import commands from './commands/_commands'
 import { RemoveElementCommand } from './commands/RemoveElementCommand'
 import { SVG } from '@svgdotjs/svg.js'
+import { parseSafeJson } from './utils/sanitizeSvg'
 
+const MAX_CLIPBOARD_JSON_LENGTH = 20 * 1024 * 1024
 
 function isNumericString(str) {
   return /^-?(\d+(\.\d*)?|\.\d+)$/.test(str)
@@ -263,7 +265,7 @@ function Terminal(editor) {
       return
     }
     // Ctrl+C — Copy selected elements to clipboard
-    if (e.ctrlKey && e.key === 'c' && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
       if (editor.selected.length === 0) return
       e.preventDefault()
       const serializer = new XMLSerializer()
@@ -284,7 +286,7 @@ function Terminal(editor) {
     // The native 'paste' event fires first and handles cross-tab cases.
     // This Clipboard API path handles same-tab Ctrl+V in browsers where
     // the paste event does not carry text (e.g. programmatic invocation).
-    if (e.ctrlKey && e.key === 'v' && !e.shiftKey) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
       e.preventDefault()
       navigator.clipboard.readText().then(text => {
         if (pasteHandledByNativeEvent) return // already handled by the paste event
@@ -405,9 +407,13 @@ function Terminal(editor) {
   }
 
   function processPastedText(text) {
-    let data
-    try { data = JSON.parse(text) } catch (err) {
-      signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] paste JSON parse failed: ${err.message} (text length: ${text.length})` })
+    const data = parseSafeJson(text, {
+      maxLength: MAX_CLIPBOARD_JSON_LENGTH,
+      maxDepth: 16,
+      maxNodes: 5000,
+    })
+    if (data === null) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] paste JSON is invalid or unsafe (text length: ${text.length})` })
       return
     }
     if (!data || !data.nanquimClipboard || !Array.isArray(data.elements)) {

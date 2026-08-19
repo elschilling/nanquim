@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
-import { GeometrySet2D } from '../../src/js/geometry-nodes/core/GeometrySet2D.js'
+import {
+  GeometrySet2D,
+  MAX_GEOMETRY_DATA_LENGTH,
+  MAX_GEOMETRY_ITEMS,
+} from '../../src/js/geometry-nodes/core/GeometrySet2D.js'
 import { GraphEvaluator } from '../../src/js/geometry-nodes/core/GraphEvaluator.js'
 import { GraphValidator } from '../../src/js/geometry-nodes/core/GraphValidator.js'
 import { NodeGraph } from '../../src/js/geometry-nodes/core/NodeGraph.js'
@@ -41,6 +45,152 @@ describe('Geometry Nodes core evaluator', () => {
     expect(result.diagnostics.filter((item) => item.level === 'error')).toEqual([])
     expect(result.geometry.size).toBe(1)
     expect(result.geometry.items[0]).toEqual(source.items[0])
+  })
+
+  test('exposed inputs cannot replace the modifier-owned source geometry', () => {
+    const { evaluator, graph } = setup()
+    const source = sourceGeometry()
+    const spoofed = new GeometrySet2D([{
+      id: 'spoofed',
+      svg: '<image href="https://example.test/tracker.png"/>',
+    }])
+
+    const result = evaluator.evaluate(graph, {
+      geometry: source,
+      inputs: { geometry: spoofed },
+    })
+
+    expect(result.geometry.items).toEqual(source.items)
+  })
+
+  test('charges node and geometry materialization work against an evaluation budget', () => {
+    const { registry, evaluator, graph } = setup()
+    const { input, output } = interfaceNodes(graph)
+    graph.links = []
+    const transform = registry.createNode('transformGeometry', { id: 'bounded-transform', graph })
+    graph.addNode(transform)
+    graph.addLink(input.id, 'geometry', transform.id, 'geometry')
+    graph.addLink(transform.id, 'geometry', output.id, 'geometry')
+    const locallyBounded = new GraphEvaluator(registry, {
+      maxMaterializedItems: 1,
+      maxMaterializedValueNodes: 10000,
+    }).evaluate(graph, { geometry: sourceGeometry() })
+    expect(locallyBounded.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/geometry-materialization limit/) }),
+    ]))
+
+    const budget = {
+      remainingEvaluatedNodes: 20,
+      remainingMaterializedItems: 1,
+      remainingMaterializedValueNodes: 10000,
+    }
+
+    const result = evaluator.evaluate(graph, { geometry: sourceGeometry(), budget })
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/geometry-materialization limit/) }),
+    ]))
+    expect(budget.remainingMaterializedItems).toBe(0)
+    expect(result.geometry.isEmpty).toBe(true)
+
+    const nodeBudget = {
+      remainingEvaluatedNodes: 1,
+      remainingMaterializedItems: 100,
+      remainingMaterializedValueNodes: 10000,
+    }
+    const nodeLimited = evaluator.evaluate(NodeGraph.create({ id: 'node-budget' }), {
+      geometry: sourceGeometry(),
+      budget: nodeBudget,
+    })
+    expect(nodeLimited.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/node-evaluation limit/) }),
+    ]))
+    expect(nodeBudget.remainingEvaluatedNodes).toBe(0)
+  })
+
+  test('bounds validation diagnostics and charges cached graph-link passes', () => {
+    const { registry, graph } = setup()
+    const { output } = interfaceNodes(graph)
+    for (let index = 0; index < 200; index += 1) {
+      graph.links.push({
+        id: `invalid-link-${index}`,
+        fromNode: `missing-node-${index}`,
+        fromSocket: 'geometry',
+        toNode: output.id,
+        toSocket: 'geometry',
+      })
+    }
+
+    const evaluator = new GraphEvaluator(registry, { maxDiagnostics: 8 })
+    const validate = vi.spyOn(evaluator.validator, 'validate')
+    const validationCache = new Map()
+    const budget = {
+      remainingEvaluatedNodes: 100,
+      remainingProcessedLinks: graph.links.length * 2,
+      remainingSocketValues: 100,
+      remainingMaterializedItems: 100,
+      remainingMaterializedValueNodes: 10000,
+    }
+
+    const first = evaluator.evaluate(graph, {
+      geometry: sourceGeometry(),
+      budget,
+      validationCache,
+    })
+    const firstOmittedCount = first.diagnostics.find(
+      (item) => item.code === 'diagnostics-truncated',
+    )?.omittedCount
+    const second = evaluator.evaluate(graph, {
+      geometry: sourceGeometry(),
+      budget,
+      validationCache,
+    })
+
+    expect(validate).toHaveBeenCalledTimes(1)
+    expect(validate.mock.results[0].value.diagnostics.length).toBeLessThanOrEqual(8)
+    expect(first.diagnostics.length).toBeLessThanOrEqual(8)
+    expect(second.diagnostics.length).toBeLessThanOrEqual(8)
+    expect(firstOmittedCount).toBeGreaterThan(0)
+    expect(second.diagnostics.find(
+      (item) => item.code === 'diagnostics-truncated',
+    )?.omittedCount).toBe(firstOmittedCount)
+    expect(budget.remainingProcessedLinks).toBe(0)
+  })
+
+  test('charges socket normalization before cloning runtime values', () => {
+    const { evaluator, graph } = setup()
+    const budget = {
+      remainingEvaluatedNodes: 100,
+      remainingProcessedLinks: 100,
+      remainingSocketValues: 1,
+      remainingMaterializedItems: 100,
+      remainingMaterializedValueNodes: 10000,
+    }
+
+    const result = evaluator.evaluate(graph, { geometry: sourceGeometry(), budget })
+
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringMatching(/socket-value processing limit/) }),
+    ]))
+    expect(result.geometry.isEmpty).toBe(true)
+    expect(budget.remainingSocketValues).toBe(0)
+  })
+
+  test('geometry sets reject output expansion before cloning oversized item arrays', () => {
+    const oversized = new Array(MAX_GEOMETRY_ITEMS + 1)
+    expect(() => new GeometrySet2D(oversized)).toThrow(/limited to 10,000 items/)
+  })
+
+  test('geometry sets reject aggregate payload amplification and unsafe object keys', () => {
+    const chunk = 'x'.repeat(Math.floor(MAX_GEOMETRY_DATA_LENGTH / 2) + 1)
+    expect(() => new GeometrySet2D([
+      { id: 'one', svg: chunk },
+      { id: 'two', svg: chunk },
+    ])).toThrow(/safe data-size limit/)
+
+    const hostile = JSON.parse('{"id":"unsafe","svg":{"__proto__":{"polluted":true}}}')
+    expect(() => new GeometrySet2D([hostile])).toThrow(/unsafe object key/)
+    expect({}.polluted).toBeUndefined()
   })
 
   test('linear array composes deterministic item transforms', () => {

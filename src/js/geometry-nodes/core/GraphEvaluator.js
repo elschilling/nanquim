@@ -3,6 +3,26 @@ import GraphValidator, { diagnostic } from './GraphValidator.js'
 import { builtinRegistry } from './NodeRegistry.js'
 import { createDeterministicId } from './ids.js'
 
+const DEFAULT_EVALUATION_LIMITS = Object.freeze({
+  maxEvaluatedNodes: 10000,
+  maxGraphLinks: 40000,
+  maxProcessedSocketValues: 100000,
+  maxMaterializedItems: 100000,
+  maxMaterializedValueNodes: 2000000,
+  maxDiagnostics: 128,
+})
+
+function graphValidationStamp(graph) {
+  if (!graph || typeof graph !== 'object') return 'invalid'
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : []
+  const links = Array.isArray(graph.links) ? graph.links : []
+  return `${graph.schemaVersion || ''}|${graph.revision || 0}|${nodes.length}|${links.length}`
+}
+
+function boundedDiagnosticLimit(value) {
+  return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : 128
+}
+
 function now() {
   if (globalThis.performance && typeof globalThis.performance.now === 'function') {
     return globalThis.performance.now()
@@ -41,9 +61,13 @@ function createEmptyResult(diagnostics = [], startTime = now()) {
 }
 
 class GraphEvaluator {
-  constructor(registry = builtinRegistry) {
+  constructor(registry = builtinRegistry, options = {}) {
     this.registry = registry
     this.validator = new GraphValidator(registry)
+    this.limits = {
+      ...DEFAULT_EVALUATION_LIMITS,
+      ...(options.limits || options),
+    }
   }
 
   evaluate(graphOrNodeGraph, options = {}) {
@@ -54,9 +78,74 @@ class GraphEvaluator {
 
     if (options instanceof GeometrySet2D) options = { geometry: options }
     options = options && typeof options === 'object' ? options : {}
+    const workBudget = options.budget && typeof options.budget === 'object'
+      ? options.budget
+      : null
+    const validationCache = options.validationCache instanceof Map
+      ? options.validationCache
+      : null
+    const nodes = Array.isArray(graph && graph.nodes) ? graph.nodes : []
+    const links = Array.isArray(graph && graph.links) ? graph.links : []
+    const diagnosticLimit = boundedDiagnosticLimit(this.limits.maxDiagnostics)
+    const reserveSharedWork = (key, amount, message) => {
+      if (!workBudget || !Number.isFinite(workBudget[key])) return
+      const remaining = Math.max(0, workBudget[key])
+      if (amount > remaining) {
+        workBudget[key] = 0
+        throw new RangeError(message)
+      }
+      workBudget[key] = remaining - amount
+    }
+    if (workBudget && Number.isFinite(workBudget.remainingEvaluatedNodes) && workBudget.remainingEvaluatedNodes <= 0) {
+      return createEmptyResult([
+        diagnostic('error', 'evaluation-budget-exhausted', 'Geometry Nodes batch exhausted its node-evaluation budget'),
+      ], startedAt)
+    }
+    if (
+      (Array.isArray(graph && graph.nodes) && graph.nodes.length > this.limits.maxEvaluatedNodes)
+      || (Array.isArray(graph && graph.links) && graph.links.length > this.limits.maxGraphLinks)
+    ) {
+      return createEmptyResult([
+        diagnostic('error', 'evaluation-topology-limit', 'Geometry Nodes graph exceeds the safe evaluation topology limit'),
+      ], startedAt)
+    }
 
-    const validation = this.validator.validate(graph, { reachableOnly: true })
-    const diagnostics = [...validation.diagnostics]
+    const validationCacheKey = graphOrNodeGraph && typeof graphOrNodeGraph === 'object'
+      ? graphOrNodeGraph
+      : null
+    const validationStamp = graphValidationStamp(graph)
+    const cachedValidation = validationCacheKey && validationCache
+      ? validationCache.get(validationCacheKey)
+      : null
+    try {
+      // Each evaluation builds link indexes even when its validation result is
+      // cached, so charge the complete link pass before either operation.
+      reserveSharedWork(
+        'remainingProcessedLinks',
+        links.length,
+        'Geometry Nodes batch exceeded the safe graph-link processing limit',
+      )
+    } catch (error) {
+      return createEmptyResult([
+        diagnostic('error', 'evaluation-link-budget-exhausted', error.message),
+      ], startedAt)
+    }
+
+    let validation = cachedValidation && cachedValidation.stamp === validationStamp
+      ? cachedValidation.validation
+      : null
+    if (!validation) {
+      validation = this.validator.validate(graph, {
+        reachableOnly: true,
+        maxDiagnostics: diagnosticLimit,
+      })
+      if (validationCacheKey && validationCache) {
+        validationCache.set(validationCacheKey, { stamp: validationStamp, validation })
+      }
+    }
+    // Validation results may be shared across a batch. Clone retained records
+    // because runtime truncation updates its local marker in place.
+    const diagnostics = validation.diagnostics.map(item => ({ ...item }))
     const diagnosticKeys = new Set(diagnostics.map(item => (
       `${item.code}|${item.nodeId || ''}|${item.linkId || ''}|${item.message}`
     )))
@@ -64,10 +153,34 @@ class GraphEvaluator {
     const addDiagnostic = (level, code, message, details = {}) => {
       const item = diagnostic(level, code, message, details)
       const key = `${item.code}|${item.nodeId || ''}|${item.linkId || ''}|${item.message}`
-      if (!diagnosticKeys.has(key)) {
-        diagnosticKeys.add(key)
+      if (diagnosticKeys.has(key)) return item
+      diagnosticKeys.add(key)
+      if (diagnostics.length < diagnosticLimit) {
         diagnostics.push(item)
+        return item
       }
+
+      const existingMarker = diagnostics.find(candidate => candidate.code === 'diagnostics-truncated')
+      if (existingMarker) {
+        existingMarker.omittedCount = Number(existingMarker.omittedCount || 0) + 1
+        existingMarker.message = `${existingMarker.omittedCount} additional graph diagnostics were omitted`
+        if (level === 'error') {
+          existingMarker.level = 'error'
+          existingMarker.severity = 'error'
+        }
+        return item
+      }
+
+      const evicted = diagnostics.pop()
+      const omittedHasError = level === 'error' || (evicted && (
+        evicted.level === 'error' || evicted.severity === 'error'
+      ))
+      diagnostics.push(diagnostic(
+        omittedHasError ? 'error' : 'warning',
+        'diagnostics-truncated',
+        '2 additional graph diagnostics were omitted',
+        { omittedCount: 2 },
+      ))
       return item
     }
 
@@ -80,8 +193,20 @@ class GraphEvaluator {
       return createEmptyResult(diagnostics, startedAt)
     }
 
-    const nodes = Array.isArray(graph.nodes) ? graph.nodes : []
-    const links = Array.isArray(graph.links) ? graph.links : []
+    let processedSocketValueCount = 0
+    const normaliseProcessedSocketValue = (value, socket) => {
+      processedSocketValueCount += 1
+      reserveSharedWork(
+        'remainingSocketValues',
+        1,
+        'Geometry Nodes batch exceeded the safe socket-value processing limit',
+      )
+      if (processedSocketValueCount > this.limits.maxProcessedSocketValues) {
+        throw new RangeError('Geometry Nodes evaluation exceeded the safe socket-value processing limit')
+      }
+      return normaliseSocketValue(value, socket)
+    }
+
     const nodeMap = new Map(nodes.map(node => [node.id, node]))
     const linksByInput = new Map()
 
@@ -95,23 +220,88 @@ class GraphEvaluator {
     const suppliedInputs = options.inputs && typeof options.inputs === 'object'
       ? options.inputs
       : {}
-    if (hasOwn(options, 'geometry')) graphInputs.geometry = options.geometry
     Object.assign(graphInputs, suppliedInputs)
+    // `geometry` is the canonical source owned by the modifier. Serialized
+    // exposed-input values must never replace it with an arbitrary GeometrySet
+    // payload that bypasses the SVG import boundary.
+    if (hasOwn(options, 'geometry')) graphInputs.geometry = options.geometry
 
     const interfaceInputs = graph.interface && Array.isArray(graph.interface.inputs)
       ? graph.interface.inputs
       : []
-    interfaceInputs.forEach(socket => {
-      const value = hasOwn(graphInputs, socket.id)
-        ? graphInputs[socket.id]
-        : socket.defaultValue
-      graphInputs[socket.id] = normaliseSocketValue(value, socket)
-    })
+    try {
+      interfaceInputs.forEach(socket => {
+        const value = hasOwn(graphInputs, socket.id)
+          ? graphInputs[socket.id]
+          : socket.defaultValue
+        graphInputs[socket.id] = normaliseProcessedSocketValue(value, socket)
+      })
+    } catch (error) {
+      addDiagnostic('error', 'evaluation-socket-budget-exhausted', error.message)
+      return createEmptyResult(diagnostics, startedAt)
+    }
 
     const nodeState = new Map()
     const nodeOutputs = new Map()
+    const remainingConsumers = new Map()
     const timingRows = []
     const timingByNode = {}
+    const chargedGeometrySets = new WeakSet()
+    let evaluatedNodeCount = 0
+    let materializedItemCount = 0
+    let materializedValueNodeCount = 0
+
+    links.forEach((link) => {
+      remainingConsumers.set(link.fromNode, (remainingConsumers.get(link.fromNode) || 0) + 1)
+    })
+
+    const reserveNodeEvaluation = () => {
+      evaluatedNodeCount += 1
+      reserveSharedWork(
+        'remainingEvaluatedNodes',
+        1,
+        'Geometry Nodes batch exceeded the safe node-evaluation limit',
+      )
+      if (evaluatedNodeCount > this.limits.maxEvaluatedNodes) {
+        throw new RangeError('Geometry Nodes evaluation exceeded the safe node-evaluation limit')
+      }
+    }
+
+    const chargeGeometrySet = (geometry) => {
+      if (!(geometry instanceof GeometrySet2D) || chargedGeometrySets.has(geometry)) return
+      chargedGeometrySets.add(geometry)
+      const itemCount = geometry.size
+      const valueNodeCount = geometry.complexity && Number.isFinite(geometry.complexity.valueNodes)
+        ? geometry.complexity.valueNodes
+        : itemCount
+      materializedItemCount += itemCount
+      materializedValueNodeCount += valueNodeCount
+      reserveSharedWork(
+        'remainingMaterializedItems',
+        itemCount,
+        'Geometry Nodes batch exceeded the safe geometry-materialization limit',
+      )
+      reserveSharedWork(
+        'remainingMaterializedValueNodes',
+        valueNodeCount,
+        'Geometry Nodes batch exceeded the safe geometry-complexity limit',
+      )
+      if (materializedItemCount > this.limits.maxMaterializedItems) {
+        throw new RangeError('Geometry Nodes evaluation exceeded the safe geometry-materialization limit')
+      }
+      if (materializedValueNodeCount > this.limits.maxMaterializedValueNodes) {
+        throw new RangeError('Geometry Nodes evaluation exceeded the safe geometry-complexity limit')
+      }
+    }
+
+    const consumeLink = (link, inputSocket) => {
+      const sourceOutputs = evaluateNode(link.fromNode)
+      const value = normaliseProcessedSocketValue(sourceOutputs[link.fromSocket], inputSocket)
+      const remaining = (remainingConsumers.get(link.fromNode) || 0) - 1
+      remainingConsumers.set(link.fromNode, remaining)
+      if (remaining <= 0) nodeOutputs.delete(link.fromNode)
+      return value
+    }
 
     const checkCancelled = () => {
       if (!options.signal || !options.signal.aborted) return
@@ -142,6 +332,8 @@ class GraphEvaluator {
         return {}
       }
 
+      reserveNodeEvaluation()
+
       const definition = this.registry.get(node.type)
       if (!definition) {
         addDiagnostic('error', 'unknown-node-type', `Unknown node type "${node.type}"`, {
@@ -164,27 +356,20 @@ class GraphEvaluator {
           const incomingLinks = linksByInput.get(key) || []
 
           if (inputSocket.multi) {
-            inputs[inputSocket.id] = incomingLinks.map(link => {
-              const sourceOutputs = evaluateNode(link.fromNode)
-              return normaliseSocketValue(sourceOutputs[link.fromSocket], inputSocket)
-            })
+            inputs[inputSocket.id] = incomingLinks.map(link => consumeLink(link, inputSocket))
             return
           }
 
           if (incomingLinks.length > 0) {
             const link = incomingLinks[incomingLinks.length - 1]
-            const sourceOutputs = evaluateNode(link.fromNode)
-            inputs[inputSocket.id] = normaliseSocketValue(
-              sourceOutputs[link.fromSocket],
-              inputSocket,
-            )
+            inputs[inputSocket.id] = consumeLink(link, inputSocket)
             return
           }
 
           const value = hasOwn(node.values, inputSocket.id)
             ? node.values[inputSocket.id]
             : inputSocket.defaultValue
-          inputs[inputSocket.id] = normaliseSocketValue(value, inputSocket)
+          inputs[inputSocket.id] = normaliseProcessedSocketValue(value, inputSocket)
         })
 
         const context = {
@@ -234,8 +419,9 @@ class GraphEvaluator {
           const value = hasOwn(outputs, outputSocket.id)
             ? outputs[outputSocket.id]
             : outputSocket.defaultValue
-          outputs[outputSocket.id] = normaliseSocketValue(value, outputSocket)
+          outputs[outputSocket.id] = normaliseProcessedSocketValue(value, outputSocket)
         })
+        Object.values(outputs).forEach(chargeGeometrySet)
       } catch (error) {
         if (error && error.name === 'AbortError') throw error
         addDiagnostic('error', 'node-evaluation-failed', error && error.message
@@ -314,6 +500,7 @@ function evaluateGraph(graph, options, registry = builtinRegistry) {
 }
 
 export {
+  DEFAULT_EVALUATION_LIMITS,
   GraphEvaluator,
   evaluateGraph,
 }

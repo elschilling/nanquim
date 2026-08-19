@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { SVG, registerWindow } from '@svgdotjs/svg.js'
 
-import { GeometryNodeManager } from '../../src/js/geometry-nodes/GeometryNodeManager.js'
+import {
+  GeometryNodeManager,
+  MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS,
+  SERIALIZED_GEOMETRY_NODE_LIMITS,
+} from '../../src/js/geometry-nodes/GeometryNodeManager.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -145,6 +149,213 @@ describe('GeometryNodeManager lifecycle', () => {
     expect(restored.getGraph(instance.graphId)).not.toBeNull()
     expect(restored.instances.get(instance.id).status).toBe('ready')
     expect(restored.instances.get(instance.id).output.node.children).toHaveLength(1)
+  })
+
+  test('stops a load batch when attempted procedural work exhausts its shared budget', () => {
+    const editor = createEditor()
+    const firstLine = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const secondLine = editor.activeCollection.line(0, 10, 10, 10).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const firstInstance = first.attachSelection([firstLine], null, false)
+    const secondInstance = first.attachSelection([secondLine], firstInstance.graphId, false)
+    const secondCachedOutput = secondInstance.output.node.innerHTML
+    const saved = first.serialize()
+
+    const restored = new GeometryNodeManager(editor, {
+      batchBudgetLimits: { remainingItems: 1 },
+    })
+    restored.load(saved)
+
+    expect(restored.instances.get(firstInstance.id).status).toBe('ready')
+    expect(restored.instances.get(secondInstance.id).status).toBe('error')
+    expect(restored.instances.get(secondInstance.id).diagnostics).toEqual([
+      expect.objectContaining({ code: 'load-evaluation-budget-exhausted' }),
+    ])
+    expect(secondInstance.output.node.innerHTML).toBe(secondCachedOutput)
+  })
+
+  test('validates a shared invalid graph once and bounds each instance diagnostic list', () => {
+    const editor = createEditor()
+    const firstLine = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const secondLine = editor.activeCollection.line(0, 10, 10, 10).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const firstInstance = first.attachSelection([firstLine], null, false)
+    const secondInstance = first.attachSelection([secondLine], firstInstance.graphId, false)
+    const saved = first.serialize()
+    const savedGraph = saved.graphs.find((graph) => graph.id === firstInstance.graphId)
+    const output = savedGraph.nodes.find((node) => node.type === 'groupOutput')
+    for (let index = 0; index < 200; index += 1) {
+      savedGraph.links.push({
+        id: `invalid-link-${index}`,
+        fromNode: `missing-node-${index}`,
+        fromSocket: 'geometry',
+        toNode: output.id,
+        toSocket: 'geometry',
+      })
+    }
+
+    const restored = new GeometryNodeManager(editor)
+    const validate = vi.spyOn(restored.evaluator.validator, 'validate')
+    restored.load(saved)
+
+    const restoredFirst = restored.instances.get(firstInstance.id)
+    const restoredSecond = restored.instances.get(secondInstance.id)
+    expect(validate).toHaveBeenCalledTimes(1)
+    expect(restoredFirst.status).toBe('error')
+    expect(restoredSecond.status).toBe('error')
+    expect(restoredFirst.diagnostics.length).toBeLessThanOrEqual(
+      MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS,
+    )
+    expect(restoredSecond.diagnostics.length).toBeLessThanOrEqual(
+      MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS,
+    )
+    const firstMarker = restoredFirst.diagnostics.find(
+      (item) => item.code === 'diagnostics-truncated',
+    )
+    const secondMarker = restoredSecond.diagnostics.find(
+      (item) => item.code === 'diagnostics-truncated',
+    )
+    expect(firstMarker?.omittedCount).toBeGreaterThan(0)
+    expect(secondMarker?.omittedCount).toBe(firstMarker.omittedCount)
+  })
+
+  test('ignores cached wrappers that have no matching serialized instance', () => {
+    const editor = createEditor()
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const instance = first.attachSelection([line], null, false)
+    const saved = first.serialize()
+    saved.instances = []
+
+    const cachedOutput = instance.output.node.innerHTML
+    const restored = new GeometryNodeManager(editor)
+    restored.load(saved)
+
+    expect(restored.instances.size).toBe(0)
+    expect(instance.output.node.innerHTML).toBe(cachedOutput)
+    expect(instance.wrapper.attr('data-geometry-nodes')).toBe('true')
+  })
+
+  test('does not bind a modifier when source and output roles are ambiguous', () => {
+    const editor = createEditor()
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const instance = first.attachSelection([line], null, false)
+    const saved = first.serialize()
+    instance.source.attr('data-gn-output', 'true')
+    instance.output.node.removeAttribute('data-gn-output')
+
+    const restored = new GeometryNodeManager(editor)
+    restored.load(saved)
+
+    expect(restored.instances.size).toBe(0)
+    expect(instance.source.node.contains(line.node)).toBe(true)
+  })
+
+  test('uses canonical source geometry even when serialized inputs spoof geometry', () => {
+    const editor = createEditor()
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const instance = first.attachSelection([line], null, false)
+    const saved = first.serialize()
+    saved.instances[0].inputs = {
+      geometry: [{
+        id: 'spoofed',
+        svg: '<image href="https://attacker.invalid/pixel.png" onload="globalThis.pwned=true"/>',
+      }],
+      exposedValue: 42,
+    }
+
+    const restored = new GeometryNodeManager(editor)
+    restored.load(saved)
+    const restoredInstance = restored.instances.get(instance.id)
+
+    expect(restoredInstance.inputs).toEqual({ exposedValue: 42 })
+    expect(restoredInstance.output.node.querySelector('line')).not.toBeNull()
+    expect(restoredInstance.output.node.querySelector('image')).toBeNull()
+    expect(restoredInstance.status).toBe('ready')
+  })
+
+  test('rejects excessive or duplicate DOM modifier wrappers before replacing state', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    const current = manager.createGraph('Current graph')
+    const fragment = document.createDocumentFragment()
+    for (let index = 0; index <= SERIALIZED_GEOMETRY_NODE_LIMITS.maxInstances; index += 1) {
+      const wrapper = document.createElementNS(SVG_NS, 'g')
+      wrapper.setAttribute('data-geometry-nodes', 'true')
+      fragment.appendChild(wrapper)
+    }
+    editor.activeCollection.node.appendChild(fragment)
+
+    expect(() => manager.load({ version: 1, graphs: [], instances: [] })).toThrow(/too many.*wrappers/i)
+    expect(manager.getGraph(current.id)).toBe(current)
+
+    editor.activeCollection.node.replaceChildren()
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const instance = first.attachSelection([line], null, false)
+    const saved = first.serialize()
+    editor.activeCollection.node.appendChild(instance.wrapper.node.cloneNode(true))
+
+    expect(() => manager.load(saved)).toThrow(/Duplicate Geometry Nodes wrapper id/)
+    expect(manager.getGraph(current.id)).toBe(current)
+  })
+
+  test('rejects unsupported or oversized persisted graphs before replacing current state', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    const current = manager.createGraph('Current graph')
+
+    expect(() => manager.load({ version: 2, graphs: [], instances: [] })).toThrow(/Unsupported/)
+    expect(manager.getGraph(current.id)).toBe(current)
+
+    expect(() => manager.load({
+      version: 1,
+      graphs: [],
+      instances: [
+        { id: 'instance-a', objectId: 'same-object', graphId: 'graph-a' },
+        { id: 'instance-b', objectId: 'same-object', graphId: 'graph-a' },
+      ],
+    })).toThrow(/Duplicate Geometry Nodes object id/)
+    expect(manager.getGraph(current.id)).toBe(current)
+
+    const oversizedNodes = Array.from(
+      { length: SERIALIZED_GEOMETRY_NODE_LIMITS.maxNodesPerGraph + 1 },
+      (_, index) => ({ id: `node-${index}`, type: 'float', values: {} }),
+    )
+    expect(() => manager.load({
+      version: 1,
+      graphs: [{ id: 'too-large', nodes: oversizedNodes, links: [] }],
+      instances: [],
+    })).toThrow(/topology limit/)
+    expect(manager.getGraph(current.id)).toBe(current)
+  })
+
+  test('persisted style values cannot reintroduce external SVG paint resources', () => {
+    const editor = createEditor()
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const first = new GeometryNodeManager(editor)
+    const instance = first.attachSelection([line], null, false)
+    const graph = first.getGraph(instance.graphId)
+    const input = graph.nodes.find((node) => node.type === 'groupInput')
+    const output = graph.nodes.find((node) => node.type === 'groupOutput')
+    const style = first.addNode(graph.id, 'setStyle', 0, 0)
+    first.setNodeValue(graph.id, style.id, 'stroke', 'url(https://example.test/paint.svg#x)')
+    first.setNodeValue(graph.id, style.id, 'fill', 'image-set("https://example.test/fill.png" 1x)')
+    first.connect(graph.id, input.id, 'geometry', style.id, 'geometry')
+    first.connect(graph.id, style.id, 'geometry', output.id, 'geometry')
+
+    const saved = first.serialize()
+    const restored = new GeometryNodeManager(editor)
+    restored.load(saved)
+
+    const rendered = restored.instances.get(instance.id).output.node
+    const renderedAttributeValues = Array.from(rendered.querySelectorAll('*')).flatMap((element) => (
+      Array.from(element.attributes).map((attribute) => attribute.value)
+    ))
+    expect(renderedAttributeValues.join('\n')).not.toMatch(/example\.test|image-set/i)
+    expect(restored.instances.get(instance.id).status).toBe('ready')
   })
 
   test('compound move and delete gestures each create one history command', () => {

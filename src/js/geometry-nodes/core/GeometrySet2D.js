@@ -5,6 +5,54 @@ import {
   normaliseMatrix,
 } from './matrix.js'
 
+const MAX_GEOMETRY_ITEMS = 10000
+const MAX_GEOMETRY_DATA_LENGTH = 32 * 1024 * 1024
+const MAX_GEOMETRY_VALUE_NODES = 200000
+const MAX_GEOMETRY_VALUE_DEPTH = 128
+const UNSAFE_GEOMETRY_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function assertGeometryItemCount(count) {
+  if (count > MAX_GEOMETRY_ITEMS) {
+    throw new RangeError(`Geometry output is limited to ${MAX_GEOMETRY_ITEMS.toLocaleString('en-US')} items`)
+  }
+}
+
+function assertGeometryComplexity(items) {
+  let dataLength = 0
+  let valueNodes = 0
+
+  items.forEach((item) => {
+    const pending = [{ value: item, depth: 0 }]
+    const visited = new WeakSet()
+
+    while (pending.length > 0) {
+      const { value, depth } = pending.pop()
+      valueNodes += 1
+      if (valueNodes > MAX_GEOMETRY_VALUE_NODES || depth > MAX_GEOMETRY_VALUE_DEPTH) {
+        throw new RangeError('Geometry output exceeds the safe structural complexity limit')
+      }
+      if (typeof value === 'string') {
+        dataLength += value.length
+      } else if (value && typeof value === 'object') {
+        if (visited.has(value)) continue
+        visited.add(value)
+        const keys = Object.keys(value)
+        if (keys.some((key) => UNSAFE_GEOMETRY_KEYS.has(key))) {
+          throw new TypeError('Geometry output contains an unsafe object key')
+        }
+        keys.forEach((key) => {
+          dataLength += key.length
+          pending.push({ value: value[key], depth: depth + 1 })
+        })
+      }
+      if (dataLength > MAX_GEOMETRY_DATA_LENGTH) {
+        throw new RangeError('Geometry output exceeds the safe data-size limit')
+      }
+    }
+  })
+  return { dataLength, valueNodes }
+}
+
 function cloneValue(value, seen = new WeakMap()) {
   if (value === null || typeof value !== 'object') return value
   if (seen.has(value)) return seen.get(value)
@@ -19,6 +67,9 @@ function cloneValue(value, seen = new WeakMap()) {
   const clone = {}
   seen.set(value, clone)
   Object.keys(value).forEach(key => {
+    if (UNSAFE_GEOMETRY_KEYS.has(key)) {
+      throw new TypeError('Geometry output contains an unsafe object key')
+    }
     clone[key] = cloneValue(value[key], seen)
   })
   return clone
@@ -54,8 +105,11 @@ class GeometrySet2D {
     if (!Array.isArray(source)) {
       throw new TypeError('GeometrySet2D expects an array of geometry items')
     }
+    assertGeometryItemCount(source.length)
+    assertGeometryComplexity(source)
 
     this.items = source.map(normaliseItem)
+    this.complexity = Object.freeze(assertGeometryComplexity(this.items))
   }
 
   static empty() {
@@ -91,11 +145,12 @@ class GeometrySet2D {
   }
 
   concat(...values) {
-    const items = this.items.map(normaliseItem)
+    const items = [...this.items]
 
     values.flat().forEach(value => {
       const geometry = GeometrySet2D.from(value)
-      geometry.items.forEach(item => items.push(normaliseItem(item)))
+      assertGeometryItemCount(items.length + geometry.items.length)
+      items.push(...geometry.items)
     })
 
     return new GeometrySet2D(items)
@@ -113,10 +168,13 @@ class GeometrySet2D {
       const result = callback(normaliseItem(item), index)
       if (result === null || result === undefined) return
       if (result instanceof GeometrySet2D) {
+        assertGeometryItemCount(items.length + result.items.length)
         items.push(...result.items)
       } else if (Array.isArray(result)) {
+        assertGeometryItemCount(items.length + result.length)
         items.push(...result)
       } else {
+        assertGeometryItemCount(items.length + 1)
         items.push(result)
       }
     })
@@ -164,6 +222,12 @@ class GeometrySet2D {
 
 export {
   GeometrySet2D,
+  MAX_GEOMETRY_DATA_LENGTH,
+  MAX_GEOMETRY_ITEMS,
+  MAX_GEOMETRY_VALUE_DEPTH,
+  MAX_GEOMETRY_VALUE_NODES,
+  assertGeometryComplexity,
+  assertGeometryItemCount,
   cloneValue,
   normaliseItem,
 }

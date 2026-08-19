@@ -121,8 +121,8 @@ Enter a command or alias in the terminal, then follow its prompt.
 
 ### Prerequisites
 
-- Node.js 20.19+, 22.12+, or 24+.
-- [pnpm](https://pnpm.io/).
+- Node.js 22.22.2–22.x, 24.15.0–24.x, or 26+.
+- [pnpm](https://pnpm.io/) 8.15.5 (the version pinned in `package.json`).
 
 ### Run the editor
 
