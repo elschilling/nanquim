@@ -14,6 +14,7 @@ import { WelcomeScreen } from './js/WelcomeScreen'
 import { LinearDimensionCommand } from './js/commands/LinearDimensionCommand'
 import { GeometryNodeManager } from './js/geometry-nodes/GeometryNodeManager'
 import { GeometryNodeEditor } from './js/GeometryNodeEditor'
+import { HelpSession } from './js/HelpSession'
 
 const editor = new Editor()
 const geometryNodes = new GeometryNodeManager(editor)
@@ -27,6 +28,7 @@ const properties = new Properties(editor)
 const terminal = new Terminal(editor)
 const statusbar = new StatusBar(editor)
 const preferences = new Preferences(editor)
+const helpSession = new HelpSession(editor)
 
 // Keep modifier context in sync with ordinary canvas/outliner selection. The
 // model/paper mode remains independent from which editor surface owns focus.
@@ -37,6 +39,7 @@ editor.signals.updatedSelection.add(() => {
 // Expose paperEditor on editor so commands and UI can access it
 editor.paperEditor = paperEditor
 editor.geometryNodeEditor = geometryNodeEditor
+editor.helpSession = helpSession
 
 // Initialize listeners
 LinearDimensionCommand.registerRedrawListener(editor)

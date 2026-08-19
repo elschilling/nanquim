@@ -86,6 +86,7 @@ Enter a command or alias in the terminal, then follow its prompt.
 
 | Area | Commands |
 | --- | --- |
+| General | `HELP (?)` |
 | Draw | `LINE (L)`, `CIRCLE (C)`, `ELLIPSE (EL)`, `RECTANGLE (REC)`, `ARC (A)`, `POLYLINE (PL)`, `SPLINE (SP)`, `TEXT (T)`, `HATCH (H)` |
 | Modify | `MOVE (M)`, `COPY (CO)`, `ROTATE (R)`, `SCALE (S)`, `OFFSET (O)`, `FILLET (F)`, `MIRROR (MI)`, `TRIM (TR)`, `EXTEND (EX)`, `ERASE (E)` |
 | Organize | `GROUP (G)`, `UNGROUP (UG)`, `BLOCK (B)`, `INSERT (I)`, `MATCH_PROPERTIES (MA)` |
@@ -96,6 +97,7 @@ Enter a command or alias in the terminal, then follow its prompt.
 
 | Key | Action |
 | --- | --- |
+| `F1` | Open the command and keyboard shortcut reference |
 | `Space` or `Enter` | Confirm terminal input; blank Space repeats the previous command |
 | `Esc` | Cancel the active command or interaction |
 | `Delete` | Delete the current selection |
