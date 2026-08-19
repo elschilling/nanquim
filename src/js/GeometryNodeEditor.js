@@ -104,11 +104,14 @@ class GeometryNodeEditor {
     this.panState = null
     this.resizeState = null
     this.connecting = null
+    this.pendingConnectionSearch = null
     this.palettePoint = null
+    this.paletteClientPoint = null
     this.paletteItems = []
     this.paletteIndex = 0
     this._statusTimer = null
     this._wireFrame = null
+    this._autoLayoutAnimation = null
 
     if (!this.root || !this.stage || !this.nodesLayer || !this.wiresLayer) return
 
@@ -137,7 +140,12 @@ class GeometryNodeEditor {
     if (!this.root) return
     const explicitId = typeof graphOrId === 'string' ? graphOrId : idOf(graphOrId)
     const active = this._activeInstance()
-    this.graphId = explicitId || active?.graphId || this.graphId
+    const nextGraphId = explicitId || active?.graphId || this.graphId
+    if (this.graphId && nextGraphId && String(this.graphId) !== String(nextGraphId)) {
+      this._closePalette()
+      this._cancelConnection()
+    }
+    this.graphId = nextGraphId
     this.root.classList.add('is-open')
     this.root.classList.remove('is-collapsed')
     this.root.setAttribute('aria-hidden', 'false')
@@ -154,6 +162,7 @@ class GeometryNodeEditor {
 
   close() {
     if (!this.root) return
+    this._cancelAutoLayoutAnimation()
     this._closePalette()
     this._cancelConnection()
     this.root.classList.remove('is-open', 'is-collapsed')
@@ -165,6 +174,11 @@ class GeometryNodeEditor {
   toggleCollapsed() {
     if (!this.root) return
     const collapsed = this.root.classList.toggle('is-collapsed')
+    if (collapsed) {
+      this._cancelAutoLayoutAnimation()
+      this._closePalette()
+      this._cancelConnection()
+    }
     this.collapseButton?.setAttribute('title', collapsed ? 'Expand Geometry Nodes' : 'Collapse Geometry Nodes')
     if (!collapsed) requestAnimationFrame(() => this._scheduleWires())
   }
@@ -180,11 +194,19 @@ class GeometryNodeEditor {
       graph = this._graph()
     }
 
+    // A graph evaluation can render again while the overlap animation is in
+    // flight. Preserve its current visual positions so replacing the cards
+    // does not make them jump to the end of the animation.
+    const autoLayoutRects = this._captureAutoLayoutVisualRects(graph?.id)
+
     this.nodesLayer.replaceChildren()
     this.wiresLayer.replaceChildren()
     this.socketElements.clear()
 
     if (!graph) {
+      this._cancelAutoLayoutAnimation()
+      this._closePalette()
+      this._cancelConnection()
       this.title.textContent = 'No active graph'
       this.empty.hidden = false
       this.addButton.disabled = true
@@ -204,6 +226,7 @@ class GeometryNodeEditor {
 
     nodes.forEach((node) => this.nodesLayer.appendChild(this._renderNode(graph, node)))
     this._applyTransform()
+    if (autoLayoutRects) this._applyAutoLayoutFlip(autoLayoutRects)
     this._scheduleWires()
   }
 
@@ -245,7 +268,10 @@ class GeometryNodeEditor {
     this.fitButton?.addEventListener('click', () => this.fit())
     this.addButton?.addEventListener('click', (event) => {
       stopEvent(event)
+      this._cancelConnection()
+      this.pendingConnectionSearch = null
       this.palettePoint = null
+      this.paletteClientPoint = null
       this.palette.hidden ? this._openPalette() : this._closePalette()
     })
 
@@ -261,8 +287,8 @@ class GeometryNodeEditor {
         this._highlightPaletteItem()
       } else if (event.key === 'Enter') {
         stopEvent(event)
-        const definition = this.paletteItems[this.paletteIndex]
-        if (definition) this._addNode(definition.type)
+        const item = this.paletteItems[this.paletteIndex]
+        if (item) this._addNode(item.definition.type, item.plan)
       } else if (event.key === 'Escape') {
         stopEvent(event)
         this._closePalette()
@@ -308,7 +334,10 @@ class GeometryNodeEditor {
     this.stage.addEventListener('contextmenu', (event) => {
       if (event.target.closest('.gn-live-node')) return
       stopEvent(event)
+      this._cancelConnection()
+      this._closePalette()
       this.palettePoint = this._clientToWorld(event.clientX, event.clientY)
+      this.paletteClientPoint = null
       this._openPalette()
     })
 
@@ -316,7 +345,9 @@ class GeometryNodeEditor {
       this._setActiveEditor('geometry-nodes')
       if (event.target.closest('.gn-live-node') || event.target.closest('.gn-wire-hit')) return
       if (event.button !== 0 && event.button !== 1) return
-      if (this.connecting) {
+      if (this.connecting && (
+        this.connecting.pointerId === null || event.pointerId === this.connecting.pointerId
+      )) {
         this._cancelConnection()
         if (event.button === 0) return
       }
@@ -361,7 +392,9 @@ class GeometryNodeEditor {
         this._applyTransform()
       }
       if (this.dragState && event.pointerId === this.dragState.pointerId) this._moveNodes(event)
-      if (this.connecting) {
+      if (this.connecting && (
+        this.connecting.pointerId === null || event.pointerId === this.connecting.pointerId
+      )) {
         this.connecting.cursor = this._clientToStage(event.clientX, event.clientY)
         if (Math.hypot(event.clientX - this.connecting.startClient.x, event.clientY - this.connecting.startClient.y) > 4) {
           this.connecting.moved = true
@@ -385,16 +418,25 @@ class GeometryNodeEditor {
       }
       if (this.dragState && event.pointerId === this.dragState.pointerId) this._finishNodeDrag(event)
       if (this.connecting && event.pointerId === this.connecting.pointerId) {
-        const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.gn-socket')
+        const hit = document.elementFromPoint(event.clientX, event.clientY)
+        const target = hit?.closest?.('.gn-socket')
         if (target && target !== this.connecting.element) {
           this._completeConnection(target)
         } else if (this.connecting.moved) {
-          this._cancelConnection()
+          if (!target && this._isBlankStageRelease(event, hit)) this._openConnectionSearch(event)
+          else this._cancelConnection()
         } else {
           // A click leaves the first socket armed; clicking a second socket
           // completes the link, matching Blender's click-or-drag interaction.
           this.connecting.pointerId = null
         }
+      }
+    })
+
+    window.addEventListener('pointercancel', (event) => {
+      if (this.connecting && event.pointerId === this.connecting.pointerId) {
+        this._cancelConnection()
+        this._closePalette()
       }
     })
   }
@@ -412,6 +454,7 @@ class GeometryNodeEditor {
           event.stopImmediatePropagation()
           this._cancelConnection()
           this._closePalette()
+          this.stage?.focus({ preventScroll: true })
         }
         return
       }
@@ -428,7 +471,18 @@ class GeometryNodeEditor {
         stopEvent(event)
         event.stopImmediatePropagation()
         this.editor.redo?.()
-      } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      } else if (
+        event.key === 'Delete' ||
+        event.key === 'Backspace' ||
+        (
+          event.key.toLowerCase() === 'x' &&
+          !event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          !event.repeat
+        )
+      ) {
         stopEvent(event)
         event.stopImmediatePropagation()
         this._deleteSelection()
@@ -442,7 +496,10 @@ class GeometryNodeEditor {
       ) {
         stopEvent(event)
         event.stopImmediatePropagation()
+        this._cancelConnection()
+        this._closePalette()
         this.palettePoint = null
+        this.paletteClientPoint = null
         this._openPalette()
       } else if (event.key === 'Home') {
         stopEvent(event)
@@ -466,6 +523,8 @@ class GeometryNodeEditor {
       if (!graphId || String(graphId) === String(this.graphId)) this.render()
     })
     listen('activeNodeGraphChanged', (instanceOrGraphId) => {
+      this._closePalette()
+      this._cancelConnection()
       const active = this._activeInstance()
       const incoming = typeof instanceOrGraphId === 'string'
         ? instanceOrGraphId
@@ -774,6 +833,7 @@ class GeometryNodeEditor {
   _startNodeDrag(event, nodeId) {
     if (event.button !== 0) return
     stopEvent(event)
+    this._cancelAutoLayoutAnimation()
     this._setActiveEditor('geometry-nodes')
     const additive = event.shiftKey || event.ctrlKey || event.metaKey
     if (!this.selectedNodes.has(String(nodeId))) this._selectNode(nodeId, additive)
@@ -942,6 +1002,248 @@ class GeometryNodeEditor {
     }
   }
 
+  _planInsertionLayout(graph, anchorPosition, wireTarget) {
+    const anchorId = String(anchorPosition.id)
+    const link = wireTarget?.link || this._links(graph).find((candidate) => (
+      String(candidate.id) === String(wireTarget?.linkId)
+    ))
+    const nodes = this._nodes(graph)
+    const anchorNode = nodes.find((node) => String(node.id) === anchorId)
+    if (!link || !anchorNode) return { nodePositions: [], adjustedIds: [] }
+
+    // Card dimensions are world-space layout data. offsetWidth/offsetHeight
+    // remain correct at every canvas zoom; the rect fallback is only for a
+    // card that has not completed layout yet.
+    const safeZoom = Math.max(0.01, Number(this.zoom) || 1)
+    const boxes = new Map(nodes.map((node) => {
+      const id = String(node.id)
+      const element = this._nodeElement(node.id)
+      const clientRect = element?.getBoundingClientRect?.()
+      const width = Number(element?.offsetWidth) || (clientRect?.width || 0) / safeZoom || 218
+      const height = Number(element?.offsetHeight) || (clientRect?.height || 0) / safeZoom || 120
+      const dropped = id === anchorId
+      return [id, {
+        id,
+        nodeId: node.id,
+        x: dropped ? anchorPosition.x : (Number(node.x) || 0),
+        y: dropped ? anchorPosition.y : (Number(node.y) || 0),
+        width: Math.max(1, width),
+        height: Math.max(1, height),
+      }]
+    }))
+    const anchor = boxes.get(anchorId)
+    if (!anchor) return { nodePositions: [], adjustedIds: [] }
+
+    const links = this._links(graph)
+    const upstream = new Set()
+    const downstream = new Set()
+    const walk = (seed, result, direction) => {
+      const pending = [String(seed)]
+      while (pending.length) {
+        const id = pending.shift()
+        if (result.has(id)) continue
+        result.add(id)
+        links.forEach((candidate) => {
+          const from = String(candidate.fromNode)
+          const to = String(candidate.toNode)
+          if (direction < 0 && to === id && !result.has(from)) pending.push(from)
+          if (direction > 0 && from === id && !result.has(to)) pending.push(to)
+        })
+      }
+    }
+    walk(link.fromNode, upstream, -1)
+    walk(link.toNode, downstream, 1)
+
+    const centerX = (box) => box.x + box.width / 2
+    const sideFor = (box) => {
+      // Flow topology is only a direction hint for cards touched by the
+      // geometric collision chain; it never moves an entire branch by itself.
+      if (upstream.has(box.id) && !downstream.has(box.id)) return -1
+      if (downstream.has(box.id) && !upstream.has(box.id)) return 1
+      const delta = centerX(box) - centerX(anchor)
+      if (Math.abs(delta) > 0.5) return delta < 0 ? -1 : 1
+      return box.id.localeCompare(anchorId) < 0 ? -1 : 1
+    }
+    const verticallyOverlaps = (a, b) => a.y < b.y + b.height && a.y + a.height > b.y
+    const actuallyOverlaps = (a, b) => verticallyOverlaps(a, b) && (
+      a.x < b.x + b.width && a.x + a.width > b.x
+    )
+    const needsHorizontalClearance = (a, b, gap) => verticallyOverlaps(a, b) && (
+      a.x < b.x + b.width + gap && a.x + a.width + gap > b.x
+    )
+
+    const gap = 34
+    const changed = new Set()
+    const assignedSide = new Map()
+    const stableBoxes = Array.from(boxes.values()).filter((box) => box.id !== anchorId)
+    const maxOperations = Math.min(8192, Math.max(64, stableBoxes.length * stableBoxes.length * 3))
+    const layoutSides = [-1, 1]
+    let operations = 0
+
+    layoutSides.forEach((side) => {
+      const queue = [anchor]
+      for (let cursor = 0; cursor < queue.length && operations < maxOperations; cursor += 1) {
+        const pivot = queue[cursor]
+        const candidates = stableBoxes
+          .filter((candidate) => candidate.id !== pivot.id)
+          .filter((candidate) => !assignedSide.has(candidate.id) || assignedSide.get(candidate.id) === side)
+          .filter((candidate) => sideFor(candidate) === side)
+          .sort((a, b) => {
+            const distance = side < 0 ? centerX(b) - centerX(a) : centerX(a) - centerX(b)
+            return distance || a.id.localeCompare(b.id)
+          })
+
+        candidates.forEach((candidate) => {
+          if (operations >= maxOperations) return
+          // Only a real node overlap starts auto-layout. Once started, the
+          // requested clearance propagates through the outward collision chain.
+          const collides = pivot.id === anchorId
+            ? actuallyOverlaps(pivot, candidate)
+            : needsHorizontalClearance(pivot, candidate, gap)
+          if (!collides) return
+
+          const pivotCenter = centerX(pivot)
+          const candidateCenter = centerX(candidate)
+          if (pivot.id !== anchorId) {
+            if (side < 0 && candidateCenter > pivotCenter + 0.5) return
+            if (side > 0 && candidateCenter < pivotCenter - 0.5) return
+          }
+
+          const nextX = side < 0
+            ? pivot.x - gap - candidate.width
+            : pivot.x + pivot.width + gap
+          const movesOutward = side < 0 ? nextX < candidate.x - 0.01 : nextX > candidate.x + 0.01
+          if (!movesOutward) return
+          candidate.x = nextX
+          assignedSide.set(candidate.id, side)
+          changed.add(candidate.id)
+          queue.push(candidate)
+          operations += 1
+        })
+      }
+    })
+
+    const adjustedIds = Array.from(changed).sort()
+    return {
+      adjustedIds,
+      nodePositions: adjustedIds.map((id) => {
+        const box = boxes.get(id)
+        return { id: box.nodeId, x: box.x, y: box.y }
+      }),
+    }
+  }
+
+  _captureNodeClientRects(ids) {
+    const rects = new Map()
+    Array.from(ids || []).forEach((id) => {
+      const element = this._nodeElement(id)
+      const rect = element?.getBoundingClientRect?.()
+      if (rect) rects.set(String(id), { left: rect.left, top: rect.top })
+    })
+    return rects
+  }
+
+  _animationNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now()
+  }
+
+  _captureAutoLayoutVisualRects(graphId) {
+    const animation = this._autoLayoutAnimation
+    if (!animation) return null
+    const graph = this._graph()
+    const graphMatches = graph && String(graphId) === animation.graphId
+    const positionsMatch = graphMatches && Array.from(animation.targets).every(([id, target]) => {
+      const node = this._nodes(graph).find((candidate) => String(candidate.id) === id)
+      return node && Number(node.x) === target.x && Number(node.y) === target.y
+    })
+    if (!positionsMatch || this._animationNow() >= animation.endAt) {
+      this._cancelAutoLayoutAnimation(false)
+      return null
+    }
+    return this._captureNodeClientRects(animation.ids)
+  }
+
+  _startAutoLayoutAnimation(beforeRects, nodePositions) {
+    this._cancelAutoLayoutAnimation(false)
+    const positions = Array.from(nodePositions || [])
+    if (!beforeRects?.size || positions.length === 0) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      this._scheduleWires()
+      return
+    }
+
+    const duration = 230
+    this._autoLayoutAnimation = {
+      graphId: String(this.graphId),
+      ids: new Set(positions.map((position) => String(position.id))),
+      targets: new Map(positions.map((position) => [String(position.id), {
+        x: Number(position.x),
+        y: Number(position.y),
+      }])),
+      endAt: this._animationNow() + duration,
+      frame: null,
+    }
+    if (!this._applyAutoLayoutFlip(beforeRects)) {
+      this._cancelAutoLayoutAnimation(false)
+      return
+    }
+    this._runAutoLayoutWireAnimation()
+  }
+
+  _applyAutoLayoutFlip(beforeRects) {
+    const animation = this._autoLayoutAnimation
+    if (!animation || !beforeRects?.size) return false
+    const remaining = Math.max(0, animation.endAt - this._animationNow())
+    const safeZoom = Math.max(0.01, Number(this.zoom) || 1)
+    let applied = false
+    animation.ids.forEach((id) => {
+      const before = beforeRects.get(String(id))
+      const element = this._nodeElement(id)
+      const after = element?.getBoundingClientRect?.()
+      if (!before || !after) return
+      const dx = (before.left - after.left) / safeZoom
+      const dy = (before.top - after.top) / safeZoom
+      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) return
+      element.style.setProperty('--gn-layout-dx', `${dx}px`)
+      element.style.setProperty('--gn-layout-dy', `${dy}px`)
+      element.style.setProperty('--gn-layout-duration', `${remaining}ms`)
+      element.classList.add('is-auto-layout-settling')
+      applied = true
+    })
+    return applied
+  }
+
+  _runAutoLayoutWireAnimation() {
+    const tick = () => {
+      const animation = this._autoLayoutAnimation
+      if (!animation) return
+      if (this._animationNow() >= animation.endAt) {
+        this._cancelAutoLayoutAnimation(false)
+        this._scheduleWires()
+        return
+      }
+      this._drawWires()
+      animation.frame = requestAnimationFrame(tick)
+    }
+    const animation = this._autoLayoutAnimation
+    if (animation) animation.frame = requestAnimationFrame(tick)
+  }
+
+  _cancelAutoLayoutAnimation(redraw = true) {
+    const animation = this._autoLayoutAnimation
+    if (animation?.frame) cancelAnimationFrame(animation.frame)
+    this._autoLayoutAnimation = null
+    this.nodesLayer?.querySelectorAll('.is-auto-layout-settling').forEach((element) => {
+      element.classList.remove('is-auto-layout-settling')
+      element.style.removeProperty('--gn-layout-dx')
+      element.style.removeProperty('--gn-layout-dy')
+      element.style.removeProperty('--gn-layout-duration')
+    })
+    if (redraw) this._scheduleWires()
+  }
+
   _finishNodeDrag(event) {
     // Pointer-up can carry a final position for which the browser did not emit
     // a pointer-move. Apply it before hit testing so the visible drop and the
@@ -962,16 +1264,25 @@ class GeometryNodeEditor {
     if (state.moved && state.wireTarget && allPositions.length === 1 && typeof manager.insertNodeOnLink === 'function') {
       try {
         const position = allPositions[0]
+        const layout = this._planInsertionLayout(graph, position, state.wireTarget)
+        const beforeRects = this._captureNodeClientRects(layout.adjustedIds)
         const inserted = manager.insertNodeOnLink(
           graph.id,
           position.id,
           state.wireTarget.linkId,
-          { x: position.x, y: position.y },
+          {
+            x: position.x,
+            y: position.y,
+            nodePositions: layout.nodePositions,
+          },
         )
         if (inserted) {
+          this._startAutoLayoutAnimation(beforeRects, layout.nodePositions)
           this.selectedLinks.clear()
           this._dispatchNodeSelection()
-          this._showStatus('Node inserted into connection.')
+          this._showStatus(layout.adjustedIds.length
+            ? 'Node inserted; overlapping nodes moved apart.'
+            : 'Node inserted into connection.')
           return
         }
       } catch (error) {
@@ -1131,10 +1442,69 @@ class GeometryNodeEditor {
     }
   }
 
-  _cancelConnection() {
-    this.connecting?.element?.classList.remove('is-connecting')
+  _isBlankStageRelease(event, hit = null) {
+    if (!this.isOpen || !this._graph() || !this.stage || this.root.classList.contains('is-collapsed')) return false
+    const rect = this.stage.getBoundingClientRect()
+    if (
+      event.clientX < rect.left || event.clientX > rect.right ||
+      event.clientY < rect.top || event.clientY > rect.bottom
+    ) return false
+    const element = hit || document.elementFromPoint(event.clientX, event.clientY)
+    if (!element || !this.stage.contains(element)) return false
+    return !element.closest?.('.gn-live-node, .gn-wire-hit')
+  }
+
+  _openConnectionSearch(event) {
+    const graph = this._graph()
+    const source = this.connecting
+    if (!graph || !source) {
+      this._cancelConnection()
+      return
+    }
+
+    // Keep only serialisable socket identity. The node DOM is re-rendered by
+    // graph signals while the search is open and must never be the authority
+    // for the eventual connection.
+    const origin = {
+      nodeId: String(source.nodeId),
+      socketId: String(source.socketId),
+      direction: source.direction,
+      type: source.type || 'any',
+    }
+    const point = this._clientToWorld(event.clientX, event.clientY)
+    const clientPoint = { x: event.clientX, y: event.clientY }
+
+    this._releaseConnectionPreview()
+    this._closePalette()
+    this.pendingConnectionSearch = {
+      graphId: String(graph.id),
+      origin,
+      point,
+      clientPoint,
+    }
+    this.palettePoint = point
+    this.paletteClientPoint = clientPoint
+    this._openPalette()
+    this._showStatus(source.direction === 'output'
+      ? 'Choose a node input to continue the connection.'
+      : 'Choose a node output to continue the connection.')
+  }
+
+  _releaseConnectionPreview() {
+    const connection = this.connecting
+    connection?.element?.classList.remove('is-connecting')
+    if (
+      connection?.pointerId !== null &&
+      connection?.element?.hasPointerCapture?.(connection.pointerId)
+    ) {
+      try { connection.element.releasePointerCapture(connection.pointerId) } catch (_) { /* capture already ended */ }
+    }
     this.connecting = null
     this._scheduleWires()
+  }
+
+  _cancelConnection() {
+    this._releaseConnectionPreview()
   }
 
   _typesCompatible(a, b) {
@@ -1263,18 +1633,59 @@ class GeometryNodeEditor {
 
   _openPalette() {
     if (!this._graph() || !this.palette) return
+    const connectionSearch = this.pendingConnectionSearch
     this.palette.hidden = false
-    this.addButton.setAttribute('aria-expanded', 'true')
+    this.palette.classList.toggle('is-connection-search', Boolean(connectionSearch))
+    this.palette.closest('.gn-toolbar')?.classList.toggle('has-connection-search', Boolean(connectionSearch))
+    this.addButton?.setAttribute('aria-expanded', 'true')
+    this.paletteSearch.placeholder = connectionSearch ? 'Search compatible nodes…' : 'Search nodes…'
     this.paletteSearch.value = ''
     this.paletteIndex = 0
     this._renderPalette()
-    requestAnimationFrame(() => this.paletteSearch.focus())
+    if (connectionSearch?.clientPoint) {
+      this.palette.style.left = `${connectionSearch.clientPoint.x + 10}px`
+      this.palette.style.top = `${connectionSearch.clientPoint.y + 10}px`
+      this.palette.style.right = 'auto'
+    }
+    requestAnimationFrame(() => {
+      if (connectionSearch && this.pendingConnectionSearch === connectionSearch) {
+        this._positionConnectionPalette(connectionSearch.clientPoint)
+      }
+      this.paletteSearch.focus()
+    })
   }
 
   _closePalette() {
     if (!this.palette) return
     this.palette.hidden = true
+    this.palette.classList.remove('is-connection-search')
+    this.palette.closest('.gn-toolbar')?.classList.remove('has-connection-search')
+    this.palette.style.removeProperty('left')
+    this.palette.style.removeProperty('top')
+    this.palette.style.removeProperty('right')
     this.addButton?.setAttribute('aria-expanded', 'false')
+    if (this.paletteSearch) this.paletteSearch.placeholder = 'Search nodes…'
+    this.pendingConnectionSearch = null
+    this.palettePoint = null
+    this.paletteClientPoint = null
+    this.paletteItems = []
+  }
+
+  _positionConnectionPalette(clientPoint) {
+    if (!clientPoint || !this.palette || this.palette.hidden) return
+    const margin = 8
+    const gap = 10
+    const bounds = this.palette.getBoundingClientRect()
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+    let left = clientPoint.x + gap
+    let top = clientPoint.y + gap
+    if (top + bounds.height > viewportHeight - margin) top = clientPoint.y - bounds.height - gap
+    left = clamp(left, margin, Math.max(margin, viewportWidth - bounds.width - margin))
+    top = clamp(top, margin, Math.max(margin, viewportHeight - bounds.height - margin))
+    this.palette.style.left = `${Math.round(left)}px`
+    this.palette.style.top = `${Math.round(top)}px`
+    this.palette.style.right = 'auto'
   }
 
   _registryDefinitions() {
@@ -1289,25 +1700,89 @@ class GeometryNodeEditor {
       .filter((definition) => definition?.type && definition.hidden !== true)
   }
 
+  _connectionPlans(definition) {
+    const pending = this.pendingConnectionSearch
+    const graph = this._graph()
+    const manager = this.manager
+    if (!pending || !graph || String(graph.id) !== String(pending.graphId)) return []
+
+    if (typeof manager?.getNodeConnectionPlans === 'function') {
+      try {
+        const plans = manager.getNodeConnectionPlans(graph.id, pending.origin, definition.type)
+        return Array.isArray(plans) ? plans.filter(Boolean) : []
+      } catch (_) {
+        return []
+      }
+    }
+    if (typeof manager?.getNodeConnectionPlan === 'function') {
+      try {
+        const plan = manager.getNodeConnectionPlan(graph.id, pending.origin, definition.type)
+        return plan ? [plan] : []
+      } catch (_) {
+        return []
+      }
+    }
+
+    // Static-schema fallback keeps third-party registries usable while the
+    // manager API remains the final authority for committing the edit.
+    const registry = manager?.registry
+    let sockets = []
+    try {
+      sockets = pending.origin.direction === 'output'
+        ? asArray(registry?.getInputs?.(definition.type, graph) || definition.inputs)
+        : asArray(registry?.getOutputs?.(definition.type, graph) || definition.outputs)
+    } catch (_) {
+      return []
+    }
+    return sockets
+      .filter((socket) => pending.origin.direction === 'output'
+        ? this._typesCompatible(pending.origin.type, socket.type)
+        : this._typesCompatible(socket.type, pending.origin.type))
+      .map((connectionSocket) => ({
+        graphId: graph.id,
+        nodeType: definition.type,
+        direction: pending.origin.direction,
+        origin: { ...pending.origin },
+        connectionSocket,
+      }))
+  }
+
   _renderPalette() {
     if (!this.paletteResults) return
     const query = this.paletteSearch.value.trim().toLowerCase()
+    const connectionSearch = Boolean(this.pendingConnectionSearch)
     this.paletteItems = this._registryDefinitions()
-      .filter((definition) => !query || `${definition.label || definition.name || ''} ${definition.type} ${definition.category || ''}`.toLowerCase().includes(query))
-      .sort((a, b) => `${a.category || ''}\0${a.label || a.type}`.localeCompare(`${b.category || ''}\0${b.label || b.type}`))
+      .flatMap((definition) => {
+        const plans = connectionSearch ? this._connectionPlans(definition) : [null]
+        return plans.map((plan, order) => ({ definition, plan, order }))
+      })
+      .filter((item) => {
+        if (!query) return true
+        const definition = item.definition
+        const socket = item.plan?.connectionSocket
+        return `${definition.label || definition.name || ''} ${definition.type} ${definition.category || ''} ${socket?.name || ''} ${socket?.id || ''}`
+          .toLowerCase()
+          .includes(query)
+      })
+      .sort((a, b) => {
+        const left = `${a.definition.category || ''}\0${a.definition.label || a.definition.type}`
+        const right = `${b.definition.category || ''}\0${b.definition.label || b.definition.type}`
+        return left.localeCompare(right) || a.order - b.order
+      })
     this.paletteIndex = clamp(this.paletteIndex, 0, Math.max(0, this.paletteItems.length - 1))
     this.paletteResults.replaceChildren()
 
     if (!this.paletteItems.length) {
       const empty = document.createElement('div')
       empty.className = 'gn-palette-empty'
-      empty.textContent = 'No matching nodes'
+      empty.textContent = connectionSearch ? 'No compatible nodes' : 'No matching nodes'
       this.paletteResults.appendChild(empty)
       return
     }
 
     let category = null
-    this.paletteItems.forEach((definition, index) => {
+    this.paletteItems.forEach((item, index) => {
+      const { definition, plan } = item
       const nextCategory = definition.category || 'General'
       if (nextCategory !== category) {
         category = nextCategory
@@ -1326,13 +1801,21 @@ class GeometryNodeEditor {
       dot.className = 'gn-palette-dot'
       dot.style.setProperty('--gn-category-color', this._categoryColor(definition.category))
       const text = document.createElement('span')
+      text.className = 'gn-palette-item-name'
       text.textContent = definition.label || definition.name || displayName(definition.type)
       button.append(dot, text)
+      if (plan?.connectionSocket) {
+        const socket = document.createElement('span')
+        socket.className = 'gn-palette-socket-name'
+        const direction = this.pendingConnectionSearch?.origin.direction === 'output' ? 'Input' : 'Output'
+        socket.textContent = `${direction}: ${plan.connectionSocket.name || displayName(plan.connectionSocket.id)}`
+        button.appendChild(socket)
+      }
       button.addEventListener('pointermove', () => {
         this.paletteIndex = index
         this._highlightPaletteItem()
       })
-      button.addEventListener('click', () => this._addNode(definition.type))
+      button.addEventListener('click', () => this._addNode(definition.type, plan))
       this.paletteResults.appendChild(button)
     })
   }
@@ -1346,23 +1829,59 @@ class GeometryNodeEditor {
     })
   }
 
-  _addNode(type) {
+  _addNode(type, connectionPlan = null) {
     const graph = this._graph()
     const manager = this.manager
-    if (!graph || typeof manager?.addNode !== 'function') return
+    if (!graph) return
     const rect = this.stage.getBoundingClientRect()
     const point = this.palettePoint || this._clientToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    const pending = this.pendingConnectionSearch
     this._closePalette()
+    this.stage?.focus({ preventScroll: true })
+
+    const finish = (result, connected = false) => {
+      if (!result) {
+        if (connected) this._showStatus('The node could not be connected to that socket.', true)
+        return
+      }
+      const node = result.node || result
+      if (node?.id) this._selectNode(node.id)
+      if (connected) this._showStatus('Node added and connected.')
+      this.render()
+    }
+
+    if (pending) {
+      if (
+        String(graph.id) !== String(pending.graphId) ||
+        typeof manager?.addNodeConnectedToSocket !== 'function'
+      ) {
+        this._showStatus('Dragging to Search is unavailable for this graph.', true)
+        return
+      }
+      const options = { x: point.x - 109, y: point.y - 30 }
+      if (connectionPlan?.connectionSocket?.id !== undefined) {
+        options.connectionSocketId = connectionPlan.connectionSocket.id
+      }
+      try {
+        const result = manager.addNodeConnectedToSocket(graph.id, pending.origin, type, options)
+        if (result?.then) {
+          result.then((value) => finish(value, true)).catch((error) => this._showStatus(error.message, true))
+        } else {
+          finish(result, true)
+        }
+      } catch (error) {
+        this._showStatus(error.message, true)
+      }
+      return
+    }
+
+    if (typeof manager?.addNode !== 'function') return
     try {
       const result = manager.addNode(graph.id, type, point.x - 109, point.y - 30)
       if (result?.then) {
-        result.then((node) => {
-          if (node?.id) this._selectNode(node.id)
-          this.render()
-        }).catch((error) => this._showStatus(error.message, true))
+        result.then((node) => finish(node)).catch((error) => this._showStatus(error.message, true))
       } else {
-        if (result?.id) this._selectNode(result.id)
-        this.render()
+        finish(result)
       }
     } catch (error) {
       this._showStatus(error.message, true)

@@ -87,6 +87,9 @@
   border-bottom: 1px solid #111
   user-select: none
 
+  &.has-connection-search
+    z-index: 40
+
 .gn-editor-mark
   width: 18px
   height: 18px
@@ -177,6 +180,11 @@
   background: #292929
   box-shadow: 0 9px 28px rgba(0, 0, 0, .55)
 
+  &.is-connection-search
+    position: fixed
+    right: auto
+    z-index: 40
+
   &[hidden]
     display: none
 
@@ -223,6 +231,24 @@
   &.is-highlighted
     background: var(--accent-color)
     color: white
+
+    .gn-palette-socket-name
+      color: rgba(255, 255, 255, .82)
+
+.gn-palette-item-name
+  min-width: 0
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.gn-palette-socket-name
+  min-width: 0
+  margin-left: auto
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+  color: #9f9f9f
+  font-size: 9px
 
 .gn-palette-dot
   width: 7px
@@ -347,8 +373,24 @@
   &.is-wire-insert-target
     box-shadow: 0 0 0 3px #ffd36a, 0 5px 18px rgba(0, 0, 0, .55), inset 0 2px 0 var(--gn-node-accent)
 
+  &.is-auto-layout-settling
+    animation: gn-auto-layout-settle var(--gn-layout-duration, 230ms) cubic-bezier(.2, .75, .2, 1) both
+    will-change: translate
+
   &.has-error
     box-shadow: 0 0 0 2px #c84b4b, 0 5px 15px rgba(0, 0, 0, .5), inset 0 2px 0 var(--gn-node-accent)
+
+@keyframes gn-auto-layout-settle
+  from
+    translate: var(--gn-layout-dx, 0) var(--gn-layout-dy, 0)
+
+  to
+    translate: 0 0
+
+@media (prefers-reduced-motion: reduce)
+  .gn-live-node.is-auto-layout-settling
+    animation: none
+    translate: 0 0
 
 .gn-live-node-header
   min-height: 27px

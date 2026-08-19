@@ -247,6 +247,80 @@ describe('GeometryNodeManager lifecycle', () => {
     }))
   })
 
+  test('inserts and resolves multiple node positions in the same undo snapshot', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    const graph = manager.createGraph('Atomic insertion layout')
+    const input = graph.nodes.find((node) => node.type === 'groupInput')
+    const output = graph.nodes.find((node) => node.type === 'groupOutput')
+    const originalLink = graph.links[0]
+    const inserted = manager.addNode(graph.id, 'transformGeometry', 20, 140)
+    const originalPositions = Object.fromEntries(
+      manager.getGraph(graph.id).nodes.map((node) => [node.id, { x: node.x, y: node.y }]),
+    )
+
+    editor.commands.length = 0
+    const nodePositions = [
+      { id: input.id, x: -380, y: -45 },
+      { id: inserted.id, x: 5, y: 25 },
+      { id: output.id, x: 390, y: 55 },
+    ]
+    const result = manager.insertNodeOnLink(graph.id, inserted.id, originalLink.id, {
+      nodePositions,
+    })
+
+    expect(editor.commands).toHaveLength(1)
+    expect(result.position).toEqual({ x: 5, y: 25 })
+    expect(result.nodePositions).toEqual(nodePositions)
+    expect(result.positions).toEqual(nodePositions)
+    expect(manager.getGraph(graph.id).nodes).toEqual(expect.arrayContaining(
+      nodePositions.map((position) => expect.objectContaining(position)),
+    ))
+    expect(manager.getGraph(graph.id).links).toHaveLength(2)
+
+    editor.lastCommand.undo()
+    const restored = manager.getGraph(graph.id)
+    expect(restored.links).toEqual([expect.objectContaining({ id: originalLink.id })])
+    restored.nodes.forEach((node) => {
+      expect({ x: node.x, y: node.y }).toEqual(originalPositions[node.id])
+    })
+  })
+
+  test('rejects invalid insertion position batches before mutation or history', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    const graph = manager.createGraph('Invalid insertion layout')
+    const input = graph.nodes.find((node) => node.type === 'groupInput')
+    const originalLink = graph.links[0]
+    const inserted = manager.addNode(graph.id, 'transformGeometry', 0, 120)
+    const before = manager.getGraph(graph.id).toJSON()
+    const invalidOptions = [
+      { nodePositions: {} },
+      { nodePositions: [{ id: 'missing-node', x: 1, y: 2 }] },
+      { nodePositions: [{ id: input.id, x: Infinity, y: 2 }] },
+      { nodePositions: [{ id: input.id, x: 1, y: '2' }] },
+      { nodePositions: [
+        { id: input.id, x: 1, y: 2 },
+        { id: input.id, x: 3, y: 4 },
+      ] },
+    ]
+
+    editor.commands.length = 0
+    invalidOptions.forEach((options) => {
+      expect(manager.insertNodeOnLink(graph.id, inserted.id, originalLink.id, options)).toBeNull()
+      expect(manager.getGraph(graph.id).toJSON()).toEqual(before)
+    })
+    expect(editor.commands).toHaveLength(0)
+
+    const result = manager.insertNodeOnLink(graph.id, inserted.id, originalLink.id, {
+      x: 10,
+      y: 15,
+      nodePositions: [],
+    })
+    expect(result.nodePositions).toEqual([])
+    expect(editor.commands).toHaveLength(1)
+  })
+
   test('planner uses dynamic sockets and chooses exact numeric sockets before permissive any sockets', () => {
     const editor = createEditor()
     const manager = new GeometryNodeManager(editor)
@@ -337,5 +411,193 @@ describe('GeometryNodeManager lifecycle', () => {
     expect(manager.getGraph(numericGraph.id).links).toEqual([
       expect.objectContaining({ id: 'number-link' }),
     ])
+  })
+
+  test('adds and connects a searched node from an output in one undoable command', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    manager.registry.register({
+      type: 'searchNumericTarget',
+      label: 'Search Numeric Target',
+      inputs: () => [
+        { id: 'anything', name: 'Anything', type: 'any' },
+        { id: 'first', name: 'First', type: 'float', defaultValue: 0 },
+        { id: 'second', name: 'Second', type: 'float', defaultValue: 0 },
+      ],
+      outputs: [],
+      evaluate: () => ({}),
+    })
+    const graph = manager.createGraph('Drag search output', {
+      id: 'drag-search-output',
+      nodes: [{ id: 'source', type: 'float', x: -100, y: 20, values: { value: 7 } }],
+      links: [],
+    })
+    const origin = { nodeId: 'source', socketId: 'value', direction: 'output', type: 'float' }
+
+    editor.commands.length = 0
+    const plans = manager.getNodeConnectionPlans(graph.id, origin, 'searchNumericTarget')
+    expect(plans.map((plan) => plan.connectionSocket.id)).toEqual(['first', 'second', 'anything'])
+    expect(manager.getNodeConnectionPlan(graph.id, origin, 'searchNumericTarget')).toEqual(
+      expect.objectContaining({
+        direction: 'output',
+        origin: expect.objectContaining(origin),
+        connectionSocket: expect.objectContaining({ id: 'first', type: 'float' }),
+      }),
+    )
+    expect(editor.commands).toHaveLength(0)
+
+    const result = manager.addNodeConnectedToSocket(
+      graph.id,
+      origin,
+      'searchNumericTarget',
+      { position: { x: 45, y: -30 }, plan: plans[1] },
+    )
+    const connectedGraph = manager.getGraph(graph.id)
+
+    expect(editor.commands).toHaveLength(1)
+    expect(editor.lastCommand.name).toBe('Add Connected Search Numeric Target')
+    expect(result.connectionSocket.id).toBe('second')
+    expect(result.position).toEqual({ x: 45, y: -30 })
+    expect(connectedGraph.nodes).toContainEqual(expect.objectContaining({
+      id: result.node.id,
+      type: 'searchNumericTarget',
+      x: 45,
+      y: -30,
+    }))
+    expect(connectedGraph.links).toEqual([
+      expect.objectContaining({
+        id: result.link.id,
+        fromNode: 'source',
+        fromSocket: 'value',
+        toNode: result.node.id,
+        toSocket: 'second',
+      }),
+    ])
+
+    editor.lastCommand.undo()
+    expect(manager.getGraph(graph.id).nodes).toEqual([
+      expect.objectContaining({ id: 'source', type: 'float' }),
+    ])
+    expect(manager.getGraph(graph.id).links).toEqual([])
+  })
+
+  test('adding from a non-multi input replaces its inbound link and undo restores it', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    const graph = manager.createGraph('Drag search input')
+    const output = graph.nodes.find((node) => node.type === 'groupOutput')
+    const originalLink = graph.links[0]
+    const origin = {
+      nodeId: output.id,
+      socketId: 'geometry',
+      direction: 'input',
+      type: 'geometry',
+    }
+
+    editor.commands.length = 0
+    const plan = manager.getNodeConnectionPlan(graph.id, origin, 'linearArray')
+    expect(plan).toEqual(expect.objectContaining({
+      direction: 'input',
+      connectionSocket: expect.objectContaining({ id: 'geometry', type: 'geometry' }),
+      replacedLinks: [expect.objectContaining({ id: originalLink.id })],
+    }))
+
+    const result = manager.addNodeConnectedToSocket(graph.id, origin, 'linearArray', {
+      position: { x: 80, y: 60 },
+    })
+    expect(editor.commands).toHaveLength(1)
+    expect(result.replacedLinks).toEqual([expect.objectContaining({ id: originalLink.id })])
+    expect(manager.getGraph(graph.id).links).toEqual([
+      expect.objectContaining({
+        fromNode: result.node.id,
+        fromSocket: 'geometry',
+        toNode: output.id,
+        toSocket: 'geometry',
+      }),
+    ])
+
+    editor.lastCommand.undo()
+    expect(manager.getGraph(graph.id).nodes).toHaveLength(2)
+    expect(manager.getGraph(graph.id).links).toEqual([
+      expect.objectContaining({ id: originalLink.id }),
+    ])
+  })
+
+  test('adding from a multi input preserves existing links', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    manager.registry.register({
+      type: 'multiInputTarget',
+      label: 'Multi Input Target',
+      inputs: [{ id: 'values', name: 'Values', type: 'float', defaultValue: 0, multi: true }],
+      outputs: [],
+      evaluate: () => ({}),
+    })
+    const graph = manager.createGraph('Multi input drag search', {
+      id: 'multi-input-drag-search',
+      nodes: [
+        { id: 'first-source', type: 'float', x: -200, y: 0, values: { value: 1 } },
+        { id: 'target', type: 'multiInputTarget', x: 200, y: 0, values: {} },
+      ],
+      links: [{
+        id: 'existing-multi-link',
+        fromNode: 'first-source',
+        fromSocket: 'value',
+        toNode: 'target',
+        toSocket: 'values',
+      }],
+    })
+    const origin = { nodeId: 'target', socketId: 'values', direction: 'input', type: 'float' }
+
+    editor.commands.length = 0
+    const result = manager.addNodeConnectedToSocket(graph.id, origin, 'float', { x: 0, y: 0 })
+    expect(result.replacedLinks).toEqual([])
+    expect(editor.commands).toHaveLength(1)
+    expect(manager.getGraph(graph.id).links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'existing-multi-link' }),
+      expect.objectContaining({
+        fromNode: result.node.id,
+        fromSocket: 'value',
+        toNode: 'target',
+        toSocket: 'values',
+      }),
+    ]))
+  })
+
+  test('drag search rejects hidden, unknown, stale, and incompatible choices without history', () => {
+    const editor = createEditor()
+    const manager = new GeometryNodeManager(editor)
+    manager.registry.register({
+      type: 'hiddenNumericTarget',
+      label: 'Hidden Numeric Target',
+      hidden: true,
+      inputs: [{ id: 'value', name: 'Value', type: 'float', defaultValue: 0 }],
+      outputs: [],
+      evaluate: () => ({}),
+    })
+    const graph = manager.createGraph('Rejected drag search', {
+      id: 'rejected-drag-search',
+      nodes: [{ id: 'source', type: 'float', x: 0, y: 0, values: { value: 1 } }],
+      links: [],
+    })
+    const origin = { nodeId: 'source', socketId: 'value', direction: 'output', type: 'float' }
+
+    editor.commands.length = 0
+    expect(manager.getNodeConnectionPlan(graph.id, origin, 'hiddenNumericTarget')).toBeNull()
+    expect(manager.getNodeConnectionPlan(graph.id, origin, 'groupOutput')).toBeNull()
+    expect(manager.getNodeConnectionPlan(graph.id, origin, 'missingType')).toBeNull()
+    expect(manager.getNodeConnectionPlan(graph.id, origin, 'color')).toBeNull()
+    expect(manager.getNodeConnectionPlan(graph.id, { ...origin, type: 'geometry' }, 'math')).toBeNull()
+    expect(manager.addNodeConnectedToSocket(graph.id, origin, 'color', { x: 5, y: 6 })).toBeNull()
+    expect(manager.addNodeConnectedToSocket(graph.id, origin, 'math', {
+      x: 5,
+      y: 6,
+      connectionSocketId: 'missing-socket',
+    })).toBeNull()
+    expect(editor.commands).toHaveLength(0)
+    expect(manager.getGraph(graph.id).nodes).toEqual([
+      expect.objectContaining({ id: 'source', type: 'float' }),
+    ])
+    expect(manager.getGraph(graph.id).links).toEqual([])
   })
 })

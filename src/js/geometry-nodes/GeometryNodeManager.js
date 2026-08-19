@@ -134,6 +134,27 @@ function insertionSocketScore(sourceSocket, targetSocket, inputSocket, outputSoc
   return score
 }
 
+function normalizeSocketDirection(direction) {
+  const value = String(direction || '').toLowerCase()
+  if (value === 'input' || value === 'inputs' || value === 'in') return 'input'
+  if (value === 'output' || value === 'outputs' || value === 'out') return 'output'
+  return null
+}
+
+function connectionSocketScore(outputSocket, inputSocket) {
+  const outputType = String(outputSocket && outputSocket.type || 'any')
+  const inputType = String(inputSocket && inputSocket.type || 'any')
+
+  // Keep registry order as the final tie-breaker, but rank lossless matches
+  // ahead of Nanquim's integer-to-float coercion and permissive `any` sockets.
+  if (outputType === inputType && outputType !== 'any') return 300
+  if (outputType === 'integer' && inputType === 'float') return 200
+  if (outputType === 'any' || inputType === 'any') {
+    return 100 + (outputType !== 'any' || inputType !== 'any' ? 1 : 0)
+  }
+  return 0
+}
+
 function droppedPosition(options = {}) {
   const source = options && options.position && typeof options.position === 'object'
     ? options.position
@@ -142,6 +163,31 @@ function droppedPosition(options = {}) {
   if (source && Number.isFinite(Number(source.x))) position.x = Number(source.x)
   if (source && Number.isFinite(Number(source.y))) position.y = Number(source.y)
   return position
+}
+
+function insertionNodePositions(graph, value) {
+  if (value === undefined) return { positions: [], reason: null }
+  if (!Array.isArray(value)) {
+    return { positions: null, reason: 'Insertion node positions must be an array.' }
+  }
+
+  const nodes = new Map(normalizeNodes(graph && graph.nodes).map((node) => [node.id, node]))
+  const seen = new Set()
+  const positions = []
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || !nodes.has(candidate.id)) {
+      return { positions: null, reason: `Unknown node in insertion position update: ${candidate && candidate.id}` }
+    }
+    if (seen.has(candidate.id)) {
+      return { positions: null, reason: `Duplicate insertion position update: ${candidate.id}` }
+    }
+    if (!Number.isFinite(candidate.x) || !Number.isFinite(candidate.y)) {
+      return { positions: null, reason: `Invalid insertion position for node: ${candidate.id}` }
+    }
+    seen.add(candidate.id)
+    positions.push({ id: candidate.id, x: candidate.x, y: candidate.y })
+  }
+  return { positions, reason: null }
 }
 
 function insertAt(parent, child, index) {
@@ -491,6 +537,207 @@ class GeometryNodeManager {
     return normalizeLinks(this.getGraph(graphId).links).find((link) => link.id === id) || null
   }
 
+  _nodeConnectionPlan(graphId, origin, nodeType, options = {}) {
+    const graph = this.getGraph(graphId)
+    if (!graph) return { plan: null, reason: `Unknown Geometry Nodes graph: ${graphId}` }
+    if (!origin || typeof origin !== 'object') {
+      return { plan: null, reason: 'A socket is required to add a connected node.' }
+    }
+
+    const direction = normalizeSocketDirection(origin.direction)
+    const originNodeId = String(origin.nodeId || '')
+    const originSocketId = String(origin.socketId || origin.id || '')
+    if (!direction || !originNodeId || !originSocketId) {
+      return { plan: null, reason: 'The originating socket is invalid.' }
+    }
+
+    const definition = this.registry && this.registry.get ? this.registry.get(nodeType) : null
+    const interfaceNode = nodeType === 'groupInput'
+      || nodeType === 'groupOutput'
+      || String(definition && definition.category || '').toLowerCase() === 'interface'
+    if (!definition) return { plan: null, reason: `Unknown node type: ${nodeType}` }
+    if (definition.hidden || interfaceNode) {
+      return { plan: null, reason: 'Hidden and interface nodes cannot be added from socket search.' }
+    }
+
+    // Resolve dynamic/interface sockets against an isolated graph view so the
+    // search menu remains a genuinely read-only operation.
+    const candidateGraph = this._graphFromJSON(this._graphToJSON(graph))
+    const originNode = graphNode(candidateGraph, originNodeId)
+    if (!originNode) return { plan: null, reason: `Unknown Geometry Nodes node: ${originNodeId}` }
+
+    let originSocket
+    try {
+      const originSockets = direction === 'output'
+        ? this.registry.getOutputs(originNode, candidateGraph)
+        : this.registry.getInputs(originNode, candidateGraph)
+      originSocket = socketById(originSockets, originSocketId)
+    } catch (error) {
+      return { plan: null, reason: error instanceof Error ? error.message : String(error) }
+    }
+    if (!originSocket || originSocket.hidden) {
+      return { plan: null, reason: 'The originating socket is no longer available.' }
+    }
+    if (origin.type && String(origin.type) !== String(originSocket.type)) {
+      return { plan: null, reason: 'The originating socket type changed before search completed.' }
+    }
+
+    const reservedIds = new Set(normalizeNodes(candidateGraph.nodes).map((node) => node.id))
+    normalizeLinks(candidateGraph.links).forEach((link) => {
+      reservedIds.add(link.fromNode)
+      reservedIds.add(link.toNode)
+    })
+    let candidateNodeId = options.nodeId ? String(options.nodeId) : '__gn_connection_preview__'
+    if (options.nodeId && reservedIds.has(candidateNodeId)) {
+      return { plan: null, reason: `Geometry Nodes node id is already in use: ${candidateNodeId}` }
+    }
+    while (reservedIds.has(candidateNodeId)) candidateNodeId += '_'
+
+    const position = droppedPosition(options)
+    let candidateNode
+    let candidateSockets
+    try {
+      candidateNode = this.registry.createNode(nodeType, {
+        id: candidateNodeId,
+        x: position.x,
+        y: position.y,
+        graph: candidateGraph,
+      })
+      candidateGraph.nodes.push(candidateNode)
+      const outputs = this.registry.getOutputs(candidateNode, candidateGraph)
+      outputs.forEach((socket) => {
+        if (!Object.prototype.hasOwnProperty.call(candidateNode.values, socket.id) && socket.defaultValue !== undefined) {
+          candidateNode.values[socket.id] = cloneData(socket.defaultValue)
+        }
+      })
+      candidateSockets = direction === 'output'
+        ? this.registry.getInputs(candidateNode, candidateGraph)
+        : outputs
+    } catch (error) {
+      return { plan: null, reason: error instanceof Error ? error.message : String(error) }
+    }
+
+    const compatible = []
+    candidateSockets.forEach((socket, index) => {
+      if (socket.hidden) return
+      const outputSocket = direction === 'output' ? originSocket : socket
+      const inputSocket = direction === 'output' ? socket : originSocket
+      if (!socketTypesCompatible(outputSocket.type, inputSocket.type)) return
+      const score = connectionSocketScore(outputSocket, inputSocket)
+      compatible.push({ socket, score, index })
+    })
+    compatible.sort((a, b) => b.score - a.score || a.index - b.index)
+    if (compatible.length === 0) {
+      return { plan: null, reason: 'The node has no compatible socket for this connection.' }
+    }
+
+    const requestedSocketId = String(
+      options.connectionSocketId
+      || options.socketId
+      || options.connectionSocket && options.connectionSocket.id
+      || options.plan && options.plan.connectionSocket && options.plan.connectionSocket.id
+      || '',
+    )
+    const selected = requestedSocketId
+      ? compatible.find(({ socket }) => socket.id === requestedSocketId)
+      : compatible[0]
+    if (!selected) {
+      return { plan: null, reason: `The selected socket is not compatible: ${requestedSocketId}` }
+    }
+
+    const links = normalizeLinks(candidateGraph.links)
+    const replacedLinks = direction === 'input' && !originSocket.multi
+      ? links.filter((link) => link.toNode === originNodeId && link.toSocket === originSocketId)
+      : []
+    const replacedIds = new Set(replacedLinks.map((link) => link.id))
+    const remainingLinks = links.filter((link) => !replacedIds.has(link.id))
+    const prospectiveLinkFor = (socket) => direction === 'output'
+      ? { fromNode: originNodeId, fromSocket: originSocketId, toNode: candidateNodeId, toSocket: socket.id }
+      : { fromNode: candidateNodeId, fromSocket: socket.id, toNode: originNodeId, toSocket: originSocketId }
+    const prospectiveLink = prospectiveLinkFor(selected.socket)
+
+    if (pathExists(remainingLinks, prospectiveLink.toNode, prospectiveLink.fromNode)) {
+      return { plan: null, reason: 'Adding the node would create a cycle.' }
+    }
+
+    const plans = compatible.map(({ socket }) => ({
+      graphId,
+      nodeType: definition.type,
+      label: definition.label || definition.name || definition.type,
+      direction,
+      origin: {
+        nodeId: originNodeId,
+        socketId: originSocketId,
+        direction,
+        type: originSocket.type,
+      },
+      originSocket: cloneData(originSocket),
+      connectionSocket: cloneData(socket),
+      replacedLinks: replacedLinks.map((link) => cloneData(link)),
+    }))
+    const plan = plans.find(({ connectionSocket }) => connectionSocket.id === selected.socket.id)
+
+    return {
+      plan,
+      plans,
+      candidateNode,
+      prospectiveLink,
+      reason: null,
+    }
+  }
+
+  getNodeConnectionPlan(graphId, origin, nodeType) {
+    return this._nodeConnectionPlan(graphId, origin, nodeType).plan
+  }
+
+  getNodeConnectionPlans(graphId, origin, nodeType) {
+    return this._nodeConnectionPlan(graphId, origin, nodeType).plans || []
+  }
+
+  addNodeConnectedToSocket(graphId, origin, nodeType, options = {}) {
+    const nodeId = createId('node')
+    const { plan, candidateNode, prospectiveLink, reason } = this._nodeConnectionPlan(
+      graphId,
+      origin,
+      nodeType,
+      {
+        ...droppedPosition(options),
+        nodeId,
+        connectionSocketId: options.connectionSocketId
+          || options.socketId
+          || options.connectionSocket && options.connectionSocket.id
+          || options.plan && options.plan.connectionSocket && options.plan.connectionSocket.id,
+      },
+    )
+    if (!plan) {
+      this._log(`Geometry Nodes: ${reason || 'The node cannot be connected to this socket.'}`)
+      return null
+    }
+
+    const linkId = createId('link')
+    const replacedIds = new Set(plan.replacedLinks.map((link) => link.id))
+    this._mutateGraphJSON(graphId, `Add Connected ${plan.label}`, (json) => {
+      if (!json.nodes.some((node) => node.id === plan.origin.nodeId)) {
+        throw new Error('The node graph changed before the connected node was added.')
+      }
+      json.nodes.push(cloneData(candidateNode))
+      if (replacedIds.size > 0) {
+        json.links = json.links.filter((link) => !replacedIds.has(link.id))
+      }
+      json.links.push({ id: linkId, ...prospectiveLink })
+    })
+
+    const updatedGraph = this.getGraph(graphId)
+    const node = graphNode(updatedGraph, nodeId)
+    const link = graphLink(updatedGraph, linkId)
+    return {
+      ...plan,
+      node,
+      link,
+      position: node ? { x: node.x, y: node.y } : null,
+    }
+  }
+
   _linkInsertionPlan(graphId, nodeId, linkId) {
     const graph = this.getGraph(graphId)
     if (!graph) return { plan: null, reason: `Unknown Geometry Nodes graph: ${graphId}` }
@@ -613,6 +860,22 @@ class GeometryNodeManager {
       return null
     }
 
+    // Overlap resolution belongs to the same user gesture as the rewire. Do
+    // all validation before creating a history command so a stale or malformed
+    // layout proposal cannot leave behind a partial graph edit.
+    const graph = this.getGraph(graphId)
+    const positionBatch = options.nodePositions === undefined
+      ? options.positions
+      : options.nodePositions
+    const {
+      positions: nodePositions,
+      reason: nodePositionReason,
+    } = insertionNodePositions(graph, positionBatch)
+    if (!nodePositions) {
+      this._log(`Geometry Nodes: ${nodePositionReason}`)
+      return null
+    }
+
     const incomingId = createId('link')
     const outgoingId = createId('link')
     const position = droppedPosition(options)
@@ -623,6 +886,17 @@ class GeometryNodeManager {
       }
       if (Object.prototype.hasOwnProperty.call(position, 'x')) node.x = position.x
       if (Object.prototype.hasOwnProperty.call(position, 'y')) node.y = position.y
+      nodePositions.forEach((updatedPosition) => {
+        const updatedNode = json.nodes.find((candidate) => candidate.id === updatedPosition.id)
+        // IDs were checked against the exact snapshot used to plan the edit.
+        // Keep this guard in the command builder in case the graph is replaced
+        // synchronously between validation and snapshot construction.
+        if (!updatedNode) {
+          throw new Error('The node graph changed before overlap resolution completed.')
+        }
+        updatedNode.x = updatedPosition.x
+        updatedNode.y = updatedPosition.y
+      })
       json.links = json.links.filter((candidate) => candidate.id !== linkId)
       json.links.push({
         id: incomingId,
@@ -643,10 +917,16 @@ class GeometryNodeManager {
     const insertedNode = graphNode(updatedGraph, nodeId)
     const incomingLink = graphLink(updatedGraph, incomingId)
     const outgoingLink = graphLink(updatedGraph, outgoingId)
+    const updatedPositions = nodePositions.map(({ id }) => {
+      const updatedNode = graphNode(updatedGraph, id)
+      return updatedNode ? { id, x: updatedNode.x, y: updatedNode.y } : null
+    }).filter(Boolean)
     return {
       ...plan,
       node: insertedNode,
       position: insertedNode ? { x: insertedNode.x, y: insertedNode.y } : null,
+      nodePositions: updatedPositions,
+      positions: updatedPositions,
       incomingLink,
       outgoingLink,
       links: [incomingLink, outgoingLink],
