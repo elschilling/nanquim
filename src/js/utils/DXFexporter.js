@@ -1,4 +1,5 @@
 import { getArcGeometry } from './arcUtils'
+import { bakeTransforms } from './transformGeometry'
 
 // ─── ACI colour helpers ────────────────────────────────────────────────────
 
@@ -351,7 +352,12 @@ function DXFExporter(editor) {
 
         editor.collections.forEach((data) => {
             const layerName = sanitizeLayerName(data.group.attr('name') || data.group.attr('id'))
-            walkGroup(data.group, layerName)
+            // DXF has no nested SVG transform stack. Bake a detached clone so
+            // procedural array/transform nodes export at their evaluated world
+            // positions without mutating the live document.
+            const exportGroup = data.group.clone(true, false)
+            bakeTransforms(exportGroup)
+            walkGroup(exportGroup, layerName)
         })
 
         emit(0, 'ENDSEC')
@@ -377,6 +383,14 @@ function DXFExporter(editor) {
 
         function walkGroup(parent, layerName) {
             parent.children().each(el => {
+                // Geometry-node sources are canonical, hidden inputs. Exporting
+                // them alongside the evaluated cache would duplicate objects in
+                // DXF consumers, which do not honor SVG display semantics.
+                if (el.attr('data-hidden') === 'true' ||
+                    el.attr('data-gn-source') === 'true' ||
+                    el.css('display') === 'none') {
+                    return
+                }
                 if (el.type === 'g') {
                     walkGroup(el, layerName)
                 } else {

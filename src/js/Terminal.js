@@ -10,6 +10,20 @@ function isNumericString(str) {
 function Terminal(editor) {
   const signals = editor.signals
 
+  function isGeometryNodesTarget(target) {
+    return !!(target && target.closest && target.closest('.gn-dock, .geometry-nodes-editor'))
+  }
+
+  function isEditableTarget(target) {
+    if (!target) return false
+    if (target.isContentEditable) return true
+    if (target.matches && target.matches('input, textarea, select, [contenteditable="true"]')) return true
+    return !!(target.classList && (
+      target.classList.contains('property-input') ||
+      target.classList.contains('prefs-input')
+    ))
+  }
+
   let terminalText = document.getElementById('terminalInput')
   let terminalLog = document.getElementById('terminalLog')
   let terminalContainer = terminalLog && terminalLog.closest('.terminal')
@@ -170,7 +184,8 @@ function Terminal(editor) {
   let pasteHandledByNativeEvent = false
   document.addEventListener('paste', (e) => {
     const activeElement = document.activeElement
-    if (activeElement && (activeElement.classList.contains('property-input') || activeElement.classList.contains('prefs-input'))) return
+    if (editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) return
+    if (isEditableTarget(activeElement)) return
     const text = e.clipboardData && e.clipboardData.getData('text')
     if (text) {
       e.preventDefault()
@@ -183,6 +198,22 @@ function Terminal(editor) {
   })
 
   function handleInput(e) {
+    // Geometry Nodes owns its own shortcuts, clipboard, and text controls. Keep
+    // file-level shortcuts global but otherwise do not feed keys to the CAD
+    // terminal while that editor has focus.
+    const isFileShortcut = (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'o')
+    if ((editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) && !isFileShortcut) return
+
+    // The terminal input is where CAD commands and interactive values are
+    // collected, so it must still pass through the shortcut handler. All other
+    // editable controls own their keystrokes (including Space and Enter).
+    const focusedElement = document.activeElement
+    const terminalOwnsInput = e.target === terminalText || focusedElement === terminalText
+    const foreignEditableHasFocus = !terminalOwnsInput && (
+      isEditableTarget(e.target) || isEditableTarget(focusedElement)
+    )
+    if (foreignEditableHasFocus && !isFileShortcut) return
+
     // ── Autocomplete navigation ──
     if (acItems.length > 0 && autocompleteEl.classList.contains('visible')) {
       if (e.code === 'ArrowDown') {
@@ -220,13 +251,13 @@ function Terminal(editor) {
     }
 
     // Ctrl+S — Save SVG
-    if (e.ctrlKey && e.key === 's') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault()
       if (window.saveSVG) window.saveSVG({ direct: true })
       return
     }
     // Ctrl+O — Open SVG
-    if (e.ctrlKey && e.key === 'o') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
       e.preventDefault()
       if (window.openSVG) window.openSVG()
       return
@@ -264,10 +295,6 @@ function Terminal(editor) {
       })
       return
     }
-
-    // Don't intercept keystrokes while a property/prefs input has focus
-    const activeEl = document.activeElement
-    if (activeEl && (activeEl.classList.contains('property-input') || activeEl.classList.contains('prefs-input'))) return
 
     // ── Input Handling (on keydown to intercept Space/Enter correctly) ──
     const isConfirmKey = (e.code === 'Enter' || e.code === 'NumpadEnter') || (e.code === 'Space' && !editor.isTypingText)
@@ -327,8 +354,12 @@ function Terminal(editor) {
       // Normal mode command execution
       if (isConfirmKey) {
         if (e.code === 'Space' && inputVal === '') {
+          // Space is an Enter alias in the CAD terminal. Consume it even when
+          // there is no previous command so it never becomes literal input.
+          e.preventDefault()
+          terminalText.value = ''
+          hideAutocomplete()
           if (editor.lastCommand) {
-            e.preventDefault()
             editor.lastCommand.execute()
           }
           return
@@ -366,9 +397,10 @@ function Terminal(editor) {
 
     // Global focus management
     const activeElement = document.activeElement
-    if (activeElement && (activeElement.classList.contains('property-input') || activeElement.classList.contains('prefs-input'))) {
+    if (isEditableTarget(activeElement)) {
       return
     }
+    if (editor.activeEditor === 'geometry-nodes') return
     terminalText.focus()
   }
 
@@ -394,6 +426,7 @@ function Terminal(editor) {
   }
 
   function handleKeyUp(e) {
+    if (editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) return
     if (e.code === 'Escape') {
       if (editor.isEditingVertex) {
         editor.editingVertices.forEach((v) => {

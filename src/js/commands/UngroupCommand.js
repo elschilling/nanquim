@@ -5,13 +5,25 @@ class UngroupCommand extends Command {
         super(editor)
         this.type = 'UngroupCommand'
         this.name = 'Ungroup'
-        // Only keep selected elements that are groups
-        this.selectedGroups = editor.selected.filter(el => el.type === 'g' && el.attr('data-group') === 'true')
+        // A Geometry Nodes wrapper owns a hidden canonical source and a derived
+        // cache. Generic ungrouping would expose both and duplicate the drawing;
+        // users must Apply the modifier first.
+        this.proceduralGroups = editor.selected.filter(el => el.attr && el.attr('data-geometry-nodes') === 'true')
+        this.selectedGroups = editor.selected.filter(el =>
+            el.type === 'g' &&
+            el.attr('data-group') === 'true' &&
+            el.attr('data-geometry-nodes') !== 'true'
+        )
     }
 
     execute() {
+        if (this.proceduralGroups.length > 0) {
+            this.editor.signals.terminalLogged.dispatch({ msg: 'Apply Geometry Nodes before ungrouping a procedural object.' })
+        }
         if (this.selectedGroups.length === 0) {
-            this.editor.signals.terminalLogged.dispatch({ msg: 'No groups selected to ungroup.' })
+            if (this.proceduralGroups.length === 0) {
+                this.editor.signals.terminalLogged.dispatch({ msg: 'No groups selected to ungroup.' })
+            }
             return
         }
 

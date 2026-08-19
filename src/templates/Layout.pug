@@ -1,8 +1,9 @@
 main
     include NavBar
     section.screen
-        .viewport
+        .viewport.geometry-nodes-host
             include Canvas
+            include GeometryNodes
         .sidepanel-resize(onmousedown='resizePanel(event)')
         .sidepanel
             include Outliner

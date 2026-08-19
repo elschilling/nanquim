@@ -147,6 +147,13 @@ function Viewport(editor) {
       .on('zoom', () => editor.signals.refreshHandlers.dispatch())
       .on('pan', updateGrid)
 
+    svgInstance.on('pointerdown', () => {
+      if (editor.activeEditor !== 'canvas') {
+        editor.activeEditor = 'canvas'
+        signals.activeEditorChanged.dispatch('canvas')
+      }
+    })
+
     svgInstance.on('dblclick', (e) => {
       if (e.button === 0 && !editor.isInteracting && !editor.isDrawing) {
         if (hoveredElements.length > 0 && hoveredElements[0].type === 'text') {

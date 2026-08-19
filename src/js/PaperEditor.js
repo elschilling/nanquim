@@ -274,6 +274,7 @@ function PaperEditor(editor) {
     const colors = new Set()
     const scan = (el) => {
       if (!el || !el.node) return
+      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
       const addColor = (c) => {
         if (!c || c === 'none' || c === 'transparent') return
         colors.add(normalizeColor(c))
@@ -344,6 +345,7 @@ function PaperEditor(editor) {
 
     const scan = (el) => {
       if (!el || !el.node) return
+      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
       
       const node = el.node
       // Only process geometry elements that might have stroke/fill
@@ -393,6 +395,7 @@ function PaperEditor(editor) {
   function _clearLiveColorMapping() {
     const scan = (el) => {
       if (!el || !el.node) return
+      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
       const node = el.node
       
       // Restore original colors

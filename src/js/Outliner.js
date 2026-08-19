@@ -1090,6 +1090,7 @@ function Outliner(editor) {
     const isExplicitGroup = group.attr('data-group') === 'true'
 
     if (isExplicitGroup) {
+      const isGeometryNodes = group.attr('data-geometry-nodes') === 'true'
       const groupUl = document.createElement('ul')
       const groupLi = document.createElement('li')
       groupLi.id = 'li' + group.node.id
@@ -1097,7 +1098,7 @@ function Outliner(editor) {
 
       const isHidden = group.attr('data-hidden') === 'true'
       const isLocked = group.attr('data-locked') === 'true'
-      const isCollapsed = group.attr('data-collapsed') === 'true'
+      const isCollapsed = isGeometryNodes || group.attr('data-collapsed') === 'true'
 
       if (isHidden) groupLi.classList.add('collection-hidden-row')
       if (isLocked) groupLi.classList.add('collection-locked-row')
@@ -1111,11 +1112,20 @@ function Outliner(editor) {
 
       // Chevron toggle icon
       const toggleIcon = document.createElement('div')
-      toggleIcon.className = 'icon ' + (isCollapsed ? 'icon-right' : 'icon-down')
+      toggleIcon.className = isGeometryNodes
+        ? 'icon icon-modifier'
+        : 'icon ' + (isCollapsed ? 'icon-right' : 'icon-down')
       toggleIcon.style.marginRight = '4px'
       toggleIcon.style.cursor = 'pointer'
       toggleIcon.addEventListener('click', (e) => {
         e.stopPropagation()
+        if (isGeometryNodes) {
+          const instance = editor.geometryNodes && editor.geometryNodes.setActiveByElement(group)
+          if (editor.geometryNodeEditor && typeof editor.geometryNodeEditor.open === 'function') {
+            editor.geometryNodeEditor.open(instance && instance.graphId)
+          }
+          return
+        }
         if (isCollapsed) group.attr('data-collapsed', null)
         else group.attr('data-collapsed', 'true')
         signals.updatedOutliner.dispatch()
@@ -1129,7 +1139,7 @@ function Outliner(editor) {
 
       const groupNameSpan = document.createElement('span')
       groupNameSpan.className = 'collection-name'
-      groupNameSpan.textContent = group.attr('name') || 'Group'
+      groupNameSpan.textContent = group.attr('name') || (isGeometryNodes ? 'Geometry Nodes' : 'Group')
 
       leftSide.appendChild(toggleIcon)
       leftSide.appendChild(folderIcon)
@@ -1139,6 +1149,15 @@ function Outliner(editor) {
         e.stopPropagation()
         signals.toogledSelect.dispatch(group)
       })
+      if (isGeometryNodes) {
+        leftSide.addEventListener('dblclick', (e) => {
+          e.stopPropagation()
+          const instance = editor.geometryNodes && editor.geometryNodes.setActiveByElement(group)
+          if (editor.geometryNodeEditor && typeof editor.geometryNodeEditor.open === 'function') {
+            editor.geometryNodeEditor.open(instance && instance.graphId)
+          }
+        })
+      }
 
       // Icons container (right side)
       const iconsDiv = document.createElement('div')

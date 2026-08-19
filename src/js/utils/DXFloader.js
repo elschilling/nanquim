@@ -54,6 +54,24 @@ function DXFLoader(editor) {
       // Read Block Definitions metadata
       const savedBlockDefsStr = svgRoot.getAttribute('data-block-definitions')
 
+      // Geometry Nodes uses a proper metadata element because graph JSON can
+      // grow well beyond what is reasonable or safe in a root attribute.
+      const geometryNodesMetadata = Array.from(svgRoot.children).find(
+        child => child.localName === 'metadata' && child.getAttribute('id') === 'nanquim-geometry-nodes'
+      )
+      let savedGeometryNodes = null
+      if (geometryNodesMetadata && geometryNodesMetadata.textContent) {
+        try {
+          savedGeometryNodes = JSON.parse(geometryNodesMetadata.textContent)
+        } catch (e) {
+          console.warn('Failed to parse Geometry Nodes metadata', e)
+        }
+      }
+
+      if (editor.geometryNodes && typeof editor.geometryNodes.reset === 'function') {
+        editor.geometryNodes.reset({ preserveDom: true })
+      }
+
       if (savedPaperConfigStr) {
         try {
           const parsedConfig = JSON.parse(savedPaperConfigStr)
@@ -104,7 +122,7 @@ function DXFLoader(editor) {
               const imported = document.importNode(defNode, true)
               editor.svg.defs().node.appendChild(imported)
             })
-          } else {
+          } else if (child.localName !== 'metadata') {
             svgContent += new XMLSerializer().serializeToString(child)
           }
         })
@@ -210,6 +228,11 @@ function DXFLoader(editor) {
         // as collections use 'collection-N' format.
         if (el.attr('data-collection') === 'true') return
 
+        // Procedural rendering namespaces semantic SVG ids so internal
+        // clip/mask/gradient/href references survive arrays, save/load and
+        // Apply. These ids intentionally remain non-numeric.
+        if (el.attr('data-nanquim-preserve-id') === 'true') return
+
         let id = parseInt(el.attr('id'))
         if (isNaN(id)) {
           id = editor.elementIndex++
@@ -272,6 +295,20 @@ function DXFLoader(editor) {
         }
       }
       rebuildBlockDefinitionsFromDOM(editor)
+
+      // Restore graph assets and bind their modifier instances to the wrapper
+      // groups that were just hydrated. The manager keeps the cached SVG output
+      // if a graph is missing or from a newer schema.
+      if (editor.geometryNodes && typeof editor.geometryNodes.load === 'function') {
+        try {
+          editor.geometryNodes.load(savedGeometryNodes || { schemaVersion: 1, graphs: [], instances: [] })
+        } catch (e) {
+          console.warn('Failed to restore Geometry Nodes', e)
+          if (editor.signals && editor.signals.terminalLogged) {
+            editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Geometry Nodes could not be restored; cached SVG output was kept.' })
+          }
+        }
+      }
 
       // Collapse all collections and group elements in the outliner on load
       editor.collections.forEach(data => {

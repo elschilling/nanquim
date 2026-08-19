@@ -1,6 +1,13 @@
 import { addRecentFile } from './WelcomeScreen.js'
 import { DXFExporter } from './utils/DXFexporter.js'
 
+function escapeXmlText(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 function Navbar(editor) {
   const form = document.createElement('form')
   form.style.display = 'none'
@@ -41,8 +48,6 @@ function Navbar(editor) {
         }
       }
 
-      // Iterate through collection children for element baking
-      const children = group.attr('data-collection') === 'true' ? group.children() : [group]
       const iterFn = (el) => {
         // Serialize data attributes
         if (el.data('arcData')) {
@@ -56,6 +61,13 @@ function Navbar(editor) {
         }
 
         // Baking legacy styles deprecated: Managed by Collection inline overrides
+
+        // Geometry-node sources and outputs add another group level. Persist
+        // custom SVG.js data recursively so their canonical source survives a
+        // native save/reopen round trip.
+        if (el.type === 'g' && el.children) {
+          el.children().each(iterFn)
+        }
       }
       if (group.attr('data-collection') === 'true') {
         group.children().each(iterFn)
@@ -126,11 +138,18 @@ function Navbar(editor) {
       Array.from(editor.blockDefinitions.entries())
     ).replace(/"/g, '&quot;')
 
+    const geometryNodesData = editor.geometryNodes && typeof editor.geometryNodes.serialize === 'function'
+      ? editor.geometryNodes.serialize()
+      : null
+    const geometryNodesMetadata = geometryNodesData
+      ? `<metadata id="nanquim-geometry-nodes">${escapeXmlText(JSON.stringify(geometryNodesData))}</metadata>`
+      : ''
+
     const svgString = [
       `<?xml version="1.0" encoding="UTF-8"?>`,
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svgjs="http://svgjs.com/svgjs"`,
       `  viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}"`,
-      `  data-nanquim-version="1"`,
+      `  data-nanquim-version="2"`,
       `  data-element-index="${editor.elementIndex}"`,
       `  data-paper-config="${paperConfigStr}"`,
       `  data-paper-viewports="${viewportsStr}"`,
@@ -138,6 +157,7 @@ function Navbar(editor) {
       `  data-text-styles="${textStylesStr}"`,
       `  data-block-definitions="${blockDefsMetaStr}"`,
       convertStrokes ? `  data-nanquim-converted-strokes="true">` : `>`,
+      geometryNodesMetadata,
       blockDefsContent,
       drawingContent,
       `</svg>`,

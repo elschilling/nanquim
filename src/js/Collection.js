@@ -334,6 +334,7 @@ function getAllDrawingElements(editor) {
     const elements = []
     const collectLeaves = (parent) => {
         parent.children().each((child) => {
+            if (child.attr('data-hidden') === 'true' || child.attr('data-gn-source') === 'true') return
             if (child.type === 'g') {
                 collectLeaves(child)
             } else {
@@ -345,6 +346,21 @@ function getAllDrawingElements(editor) {
         collectLeaves(data.group)
     })
     return elements
+}
+
+/**
+ * True when an element is part of a generated Geometry Nodes output. Generated
+ * leaves may be snapped to and measured, but destructive CAD commands must act
+ * on the procedural wrapper (or require Apply) rather than corrupting the cache.
+ */
+function isDerivedGeometry(element) {
+    let current = element
+    while (current && current.node && current.node.nodeName !== 'svg') {
+        if (current.attr('data-gn-derived') === 'true') return true
+        if (current.attr('data-gn-output') === 'true') return true
+        current = current.parent && current.parent()
+    }
+    return false
 }
 
 /**
@@ -495,4 +511,5 @@ export {
     applyCollectionStyleToElement,
     migrateOrphanElements,
     rebuildCollectionsFromDOM,
+    isDerivedGeometry,
 }

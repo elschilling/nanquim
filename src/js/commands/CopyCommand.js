@@ -46,6 +46,14 @@ class CopyCommand extends Command {
       return
     }
 
+    if (selectedElements.some(element => element.attr && element.attr('data-geometry-nodes') === 'true')) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'Apply Geometry Nodes before copying a procedural object in this MVP.',
+      })
+      this.cleanup()
+      return
+    }
+
     this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
     this.originalSelection = this.editor.selected.slice()
 

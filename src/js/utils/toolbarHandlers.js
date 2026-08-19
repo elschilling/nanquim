@@ -169,6 +169,9 @@ export function initToolbarHandlers(editor) {
   }
 
   function handleRightClick(e) {
+    // The document-level CAD cancel gesture must not suppress the node
+    // editor's own context menu and right-drag interactions.
+    if (e.target && e.target.closest && e.target.closest('.gn-dock, .geometry-nodes-editor')) return
     e.preventDefault()
     editor.svg.fire('cancelDrawing', e)
   }

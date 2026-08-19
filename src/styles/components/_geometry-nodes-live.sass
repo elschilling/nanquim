@@ -1,0 +1,613 @@
+// Live Geometry Nodes editor. Everything is scoped to .gn-dock so the older
+// static node-design prototype remains available without affecting this UI.
+.geometry-nodes-host
+  flex-direction: column
+  min-height: 0
+
+  > .canvas-editor
+    min-height: 0
+
+  // Geometry Nodes owns keyboard focus while its dock is open. Hiding the
+  // terminal at the host level preserves its expanded and resized state for
+  // when the dock closes again.
+  &.is-geometry-nodes-open .terminal
+    display: none
+
+.gn-dock
+  --gn-panel-height: 330px
+  --gn-grid-size: 24px
+  --gn-grid-x: 0px
+  --gn-grid-y: 0px
+  --gn-node-width: 218px
+  display: none
+  flex: 0 0 var(--gn-panel-height)
+  min-height: 150px
+  max-height: 75%
+  min-width: 0
+  position: relative
+  overflow: visible
+  color: #ddd
+  background: #191919
+  border-top: var(--editor-border-width) solid var(--editor-border-color)
+
+  &.is-open
+    display: flex
+    flex-direction: column
+
+  &.is-collapsed
+    flex-basis: 34px !important
+    min-height: 34px
+
+    .gn-editor-body,
+    .gn-dock-resize
+      display: none
+
+    .gn-collapse-glyph
+      transform: rotate(-90deg)
+
+  button,
+  input,
+  select
+    font: inherit
+
+  button
+    color: inherit
+
+.gn-dock-resize
+  position: absolute
+  top: -5px
+  left: 0
+  right: 0
+  height: 9px
+  z-index: 30
+  cursor: row-resize
+
+  &::after
+    content: ''
+    position: absolute
+    top: 3px
+    left: 0
+    right: 0
+    height: 2px
+    background: transparent
+
+  &:hover::after,
+  &.is-resizing::after
+    background: var(--accent-color)
+
+.gn-toolbar
+  flex: 0 0 32px
+  display: flex
+  align-items: center
+  gap: 6px
+  padding: 0 6px
+  position: relative
+  z-index: 20
+  background: #303030
+  border-bottom: 1px solid #111
+  user-select: none
+
+.gn-editor-mark
+  width: 18px
+  height: 18px
+  display: grid
+  place-items: center
+  border-radius: 4px
+  color: #72bfa8
+  background: #202020
+
+.gn-graph-heading
+  min-width: 0
+  display: flex
+  align-items: baseline
+  gap: 7px
+
+.gn-graph-kind
+  color: #999
+  font-size: 10px
+  text-transform: uppercase
+  letter-spacing: .05em
+
+.gn-graph-name
+  max-width: min(34vw, 360px)
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+  font-size: 12px
+  font-weight: 500
+  color: #eee
+
+.gn-toolbar-spacer
+  flex: 1
+
+.gn-toolbar-button
+  min-height: 22px
+  padding: 2px 9px
+  display: inline-flex
+  align-items: center
+  justify-content: center
+  border: 1px solid #1d1d1d
+  border-radius: 4px
+  color: #ddd
+  background: #454545
+  cursor: pointer
+
+  &:hover:not(:disabled),
+  &[aria-expanded="true"]
+    background: #585858
+    border-color: #696969
+
+  &:focus-visible
+    outline: 2px solid var(--accent-color)
+    outline-offset: 1px
+
+  &:disabled
+    cursor: default
+    opacity: .38
+
+.gn-collapse-button,
+.gn-close-button
+  width: 24px
+  padding: 0
+  background: transparent
+  border-color: transparent
+
+.gn-collapse-glyph
+  display: block
+  transition: transform .12s ease
+
+.gn-close-button
+  font-size: 18px
+
+.gn-add-menu
+  position: relative
+
+.gn-palette
+  position: absolute
+  top: calc(100% + 5px)
+  right: 0
+  width: min(330px, 60vw)
+  max-height: min(430px, 55vh)
+  padding: 7px
+  display: flex
+  flex-direction: column
+  gap: 6px
+  border: 1px solid #111
+  border-radius: 6px
+  background: #292929
+  box-shadow: 0 9px 28px rgba(0, 0, 0, .55)
+
+  &[hidden]
+    display: none
+
+.gn-palette-search
+  box-sizing: border-box
+  width: 100%
+  height: 28px
+  padding: 4px 8px
+  border: 1px solid #555
+  border-radius: 4px
+  outline: none
+  color: #eee
+  background: #181818
+
+  &:focus
+    border-color: var(--accent-color)
+
+.gn-palette-results
+  overflow: auto
+  min-height: 30px
+
+.gn-palette-category
+  padding: 7px 7px 3px
+  color: #8d8d8d
+  font-size: 9px
+  font-weight: 600
+  text-transform: uppercase
+  letter-spacing: .08em
+
+.gn-palette-item
+  width: 100%
+  min-height: 28px
+  padding: 4px 8px
+  display: flex
+  align-items: center
+  gap: 8px
+  border: 0
+  border-radius: 4px
+  text-align: left
+  background: transparent
+  cursor: pointer
+
+  &:hover,
+  &.is-highlighted
+    background: var(--accent-color)
+    color: white
+
+.gn-palette-dot
+  width: 7px
+  height: 7px
+  flex: none
+  border-radius: 50%
+  background: var(--gn-category-color, #888)
+
+.gn-palette-empty
+  padding: 12px 8px
+  color: #999
+  text-align: center
+  font-size: 11px
+
+.gn-editor-body
+  flex: 1
+  min-height: 0
+  position: relative
+
+.gn-stage
+  width: 100%
+  height: 100%
+  position: relative
+  overflow: hidden
+  outline: none
+  cursor: default
+  background: #191919
+
+  &.is-panning
+    cursor: grabbing
+
+  &:focus-visible
+    box-shadow: inset 0 0 0 1px var(--accent-color)
+
+.gn-grid
+  position: absolute
+  inset: 0
+  pointer-events: none
+  background-image: radial-gradient(circle, #3b3b3b 1px, transparent 1.2px)
+  background-size: var(--gn-grid-size) var(--gn-grid-size)
+  background-position: var(--gn-grid-x) var(--gn-grid-y)
+
+.gn-world
+  width: 0
+  height: 0
+  position: absolute
+  left: 0
+  top: 0
+  transform-origin: 0 0
+  overflow: visible
+  z-index: 2
+
+.gn-wire-layer
+  width: 100%
+  height: 100%
+  position: absolute
+  inset: 0
+  overflow: visible
+  pointer-events: none
+  z-index: 1
+
+.gn-wire
+  fill: none
+  stroke: var(--gn-wire-color, #aaa)
+  stroke-width: 2px
+  stroke-linecap: round
+  vector-effect: non-scaling-stroke
+  pointer-events: none
+
+  &.is-selected
+    stroke: #ff8a3d
+    stroke-width: 3px
+
+  &.is-drop-target
+    stroke: #fff3a8
+    stroke-width: 4px
+    filter: drop-shadow(0 0 3px rgba(255, 184, 54, .9))
+
+.gn-wire-hit
+  fill: none
+  stroke: transparent
+  stroke-width: 13px
+  vector-effect: non-scaling-stroke
+  pointer-events: stroke
+  cursor: pointer
+
+.gn-wire-preview
+  fill: none
+  stroke: #eee
+  stroke-width: 2px
+  stroke-dasharray: 5 4
+  vector-effect: non-scaling-stroke
+  pointer-events: none
+
+.gn-wire-hit.is-drop-target
+  stroke: rgba(255, 184, 54, .12)
+
+.gn-node-layer
+  position: absolute
+  left: 0
+  top: 0
+  overflow: visible
+
+.gn-live-node
+  --gn-node-accent: #737373
+  box-sizing: border-box
+  width: var(--gn-node-width)
+  position: absolute
+  display: flex
+  flex-direction: column
+  border: 1px solid #101010
+  border-radius: 7px
+  overflow: visible
+  color: #d8d8d8
+  background: #2b2b2b
+  box-shadow: 0 5px 15px rgba(0, 0, 0, .4), inset 0 2px 0 var(--gn-node-accent)
+  user-select: none
+
+  &.is-selected
+    box-shadow: 0 0 0 2px #ed7100, 0 5px 15px rgba(0, 0, 0, .5), inset 0 2px 0 var(--gn-node-accent)
+
+  &.is-wire-insert-target
+    box-shadow: 0 0 0 3px #ffd36a, 0 5px 18px rgba(0, 0, 0, .55), inset 0 2px 0 var(--gn-node-accent)
+
+  &.has-error
+    box-shadow: 0 0 0 2px #c84b4b, 0 5px 15px rgba(0, 0, 0, .5), inset 0 2px 0 var(--gn-node-accent)
+
+.gn-live-node-header
+  min-height: 27px
+  padding: 4px 9px
+  display: flex
+  align-items: center
+  gap: 7px
+  border-radius: 7px 7px 0 0
+  color: #f1f1f1
+  background: #202020
+  cursor: grab
+
+  &:active
+    cursor: grabbing
+
+.gn-node-category-dot
+  width: 7px
+  height: 7px
+  flex: none
+  border-radius: 50%
+  background: var(--gn-node-accent)
+
+.gn-node-title
+  min-width: 0
+  flex: 1
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+  font-size: 11px
+  font-weight: 600
+
+.gn-node-warning
+  color: #ff857d
+  font-size: 11px
+
+.gn-node-body
+  padding: 6px 0 7px
+
+.gn-socket-row
+  min-height: 25px
+  padding: 2px 10px
+  display: flex
+  align-items: center
+  position: relative
+  gap: 6px
+  font-size: 10px
+
+  &.is-output
+    justify-content: flex-end
+    text-align: right
+
+.gn-socket-label
+  min-width: 0
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+  color: #c8c8c8
+
+.gn-socket
+  --gn-socket-color: #999
+  width: 11px
+  height: 11px
+  box-sizing: border-box
+  position: absolute
+  top: 50%
+  left: -6px
+  transform: translateY(-50%)
+  border: 2px solid #202020
+  border-radius: 50%
+  background: var(--gn-socket-color)
+  cursor: crosshair
+
+  &:hover,
+  &.is-connecting
+    transform: translateY(-50%) scale(1.35)
+    box-shadow: 0 0 0 1px #fff
+
+  &.is-output
+    left: auto
+    right: -6px
+
+  &.is-linked
+    border-color: #ddd
+
+  &.is-insert-input,
+  &.is-insert-output
+    transform: translateY(-50%) scale(1.45)
+    border-color: #fff3a8
+    box-shadow: 0 0 0 2px rgba(255, 184, 54, .75)
+
+.gn-node-input
+  box-sizing: border-box
+  min-width: 0
+  height: 21px
+  flex: 1
+  padding: 2px 5px
+  border: 1px solid #505050
+  border-radius: 4px
+  outline: none
+  color: #e4e4e4
+  background: #1d1d1d
+  font-size: 10px
+  user-select: text
+
+  &:focus
+    border-color: var(--accent-color)
+
+  &[type="checkbox"]
+    width: 14px
+    height: 14px
+    min-width: 14px
+    flex: none
+
+  &[type="color"]
+    max-width: 42px
+    padding: 1px
+
+.gn-vector-inputs
+  min-width: 0
+  flex: 1
+  display: flex
+  gap: 3px
+
+  .gn-node-input
+    width: 0
+
+.gn-empty
+  position: absolute
+  inset: 0
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 5px
+  color: #818181
+  pointer-events: none
+
+  strong
+    color: #aaa
+    font-size: 12px
+
+  span
+    font-size: 10px
+
+  &[hidden]
+    display: none
+
+.gn-status
+  max-width: calc(100% - 20px)
+  min-height: 18px
+  padding: 2px 7px
+  position: absolute
+  left: 8px
+  bottom: 7px
+  display: none
+  border-radius: 4px
+  color: #ddd
+  background: rgba(28, 28, 28, .88)
+  font-size: 10px
+  pointer-events: none
+
+  &:not(:empty)
+    display: block
+
+  &.is-error
+    color: #ff9992
+
+// Modifier UI inside the existing Properties panel.
+.gn-modifier-properties
+  display: flex
+  flex-direction: column
+  gap: 8px
+
+.gn-modifier-card
+  overflow: hidden
+  border: 1px solid #292929
+  border-radius: 5px
+  background: #333
+
+.gn-modifier-card-header
+  min-height: 30px
+  padding: 4px 7px
+  display: flex
+  align-items: center
+  gap: 6px
+  background: #292929
+
+.gn-modifier-enable
+  margin: 0
+
+.gn-modifier-name
+  min-width: 0
+  flex: 1
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+  color: #eee
+  font-size: 11px
+
+.gn-modifier-badge
+  padding: 1px 5px
+  border-radius: 999px
+  color: #b8d7c9
+  background: #24453a
+  font-size: 8px
+  text-transform: uppercase
+
+  &.is-error
+    color: #ffc1bd
+    background: #5b2929
+
+.gn-modifier-body
+  padding: 8px
+  display: flex
+  flex-direction: column
+  gap: 7px
+
+.gn-modifier-status
+  margin: 0
+  overflow-wrap: anywhere
+  color: #aaa
+  font-size: 10px
+
+  &.is-error
+    color: #ff9992
+
+.gn-property-actions
+  display: flex
+  flex-wrap: wrap
+  gap: 5px
+
+.gn-property-button
+  min-height: 25px
+  padding: 3px 8px
+  flex: 1
+  border: 1px solid #202020
+  border-radius: 4px
+  color: #ddd
+  background: #494949
+  cursor: pointer
+  font-size: 10px
+
+  &:hover:not(:disabled)
+    background: #5c5c5c
+
+  &:disabled
+    opacity: .4
+    cursor: default
+
+  &.is-primary
+    background: var(--accent-color)
+    color: white
+
+  &.is-danger
+    color: #ffc1bd
+    background: #562d2d
+
+.gn-property-empty
+  margin: 2px 0
+  color: #999
+  font-size: 10px
+  line-height: 1.45

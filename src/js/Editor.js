@@ -40,6 +40,17 @@ function Editor() {
     paperViewportsChanged: new Signal(), // dispatched when paper viewports change
     colorMapUpdated: new Signal(),      // dispatched when print colors are modified
     refreshDimensions: new Signal(),    // dispatched when a dimension style updates
+    activeEditorChanged: new Signal(),  // canvas <-> geometry-nodes focus/surface
+    activeNodeGraphChanged: new Signal(),
+    nodeGraphChanged: new Signal(),
+    nodeSelectionChanged: new Signal(),
+    nodeEvaluationStarted: new Signal(),
+    nodeEvaluationCompleted: new Signal(),
+    nodeEvaluationFailed: new Signal(),
+    geometryNodesChanged: new Signal(),
+    // Compatibility/event aggregation hook for consumers that only need a
+    // final instance update regardless of success or failure.
+    geometryNodesEvaluated: new Signal(),
   }
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
@@ -97,6 +108,10 @@ function Editor() {
   // ── Paper Mode ──────────────────────────────────────────────────────────────
   // 'model' | 'paper'
   this.mode = 'model'
+
+  // Editor focus is independent from model/paper space. Geometry Nodes is an
+  // editor surface for the current model object, not a third drawing mode.
+  this.activeEditor = 'canvas'
 
   // Paper configuration (persisted into saved SVG metadata)
   this.paperConfig = {

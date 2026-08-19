@@ -2,6 +2,7 @@ import { setCollectionStyle, getElementOverrides, setElementOverrides, applyColl
 import { Matrix } from '@svgdotjs/svg.js'
 import { HATCH_PATTERNS, ensurePattern } from './utils/hatchPatterns'
 import { enterBlockEdit, saveBlockEdit, discardBlockEdit } from './BlockManager'
+import { GeometryNodeEditor } from './GeometryNodeEditor'
 
 const propertiesPanel = document.getElementById('properties-panel')
 
@@ -60,7 +61,8 @@ function _showColorToast(el, text) {
 
 function Properties(editor) {
   const signals = editor.signals
-  let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles' | 'textstyles'
+  const geometryNodeEditor = editor.geometryNodeEditor || new GeometryNodeEditor(editor)
+  let activeTab = 'transform' // 'transform' | 'style' | 'settings' | 'dimstyles' | 'textstyles' | 'modifiers'
   const dimStylesExpanded = new Set()
   const textStylesExpanded = new Set()
   const transformAccordionsExpanded = new Set(['general', 'transform'])
@@ -71,6 +73,7 @@ function Properties(editor) {
   const settingsTabBtn = document.getElementById('tab-settings')
   const dimStylesTabBtn = document.getElementById('tab-dimstyles')
   const textStylesTabBtn = document.getElementById('tab-textstyles')
+  const modifiersTabBtn = document.getElementById('tab-modifiers')
 
   if (transformTabBtn && styleTabBtn) {
     transformTabBtn.addEventListener('click', () => {
@@ -110,8 +113,16 @@ function Properties(editor) {
     })
   }
 
+  if (modifiersTabBtn) {
+    modifiersTabBtn.addEventListener('click', () => {
+      activeTab = 'modifiers'
+      updateTabUI()
+      render()
+    })
+  }
+
   function updateTabUI() {
-    ;[transformTabBtn, styleTabBtn, settingsTabBtn, dimStylesTabBtn, textStylesTabBtn].forEach((btn) => {
+    ;[transformTabBtn, styleTabBtn, settingsTabBtn, dimStylesTabBtn, textStylesTabBtn, modifiersTabBtn].forEach((btn) => {
       if (btn) btn.classList.remove('active')
     })
     if (activeTab === 'transform' && transformTabBtn) transformTabBtn.classList.add('active')
@@ -119,14 +130,16 @@ function Properties(editor) {
     else if (activeTab === 'settings' && settingsTabBtn) settingsTabBtn.classList.add('active')
     else if (activeTab === 'dimstyles' && dimStylesTabBtn) dimStylesTabBtn.classList.add('active')
     else if (activeTab === 'textstyles' && textStylesTabBtn) textStylesTabBtn.classList.add('active')
+    else if (activeTab === 'modifiers' && modifiersTabBtn) modifiersTabBtn.classList.add('active')
   }
 
   // Show/hide the Settings tab icon based on editor mode
   function updateModeUI() {
     const isPaper = editor.mode === 'paper'
     if (settingsTabBtn) settingsTabBtn.style.display = isPaper ? '' : 'none'
+    if (modifiersTabBtn) modifiersTabBtn.style.display = isPaper ? 'none' : ''
     // If we were on settings tab and switched to model mode, revert to transform
-    if (!isPaper && activeTab === 'settings') {
+    if ((!isPaper && activeTab === 'settings') || (isPaper && activeTab === 'modifiers')) {
       activeTab = 'transform'
       updateTabUI()
     }
@@ -154,6 +167,14 @@ function Properties(editor) {
     render()
   })
 
+  signals.updatedSelection.add(() => {
+    render()
+  })
+
+  ;['nodeGraphChanged', 'activeNodeGraphChanged', 'nodeEvaluationCompleted', 'nodeEvaluationFailed', 'geometryNodesChanged'].forEach((name) => {
+    if (signals[name] && typeof signals[name].add === 'function') signals[name].add(() => render())
+  })
+
   function render() {
     propertiesPanel.innerHTML = ''
 
@@ -172,6 +193,15 @@ function Properties(editor) {
       content.className = 'properties-content'
       propertiesPanel.appendChild(content)
       renderTextStylesTab(content)
+      return
+    }
+
+    // ── GEOMETRY NODES MODIFIERS TAB ──
+    if (activeTab === 'modifiers') {
+      const content = document.createElement('div')
+      content.className = 'properties-content gn-modifier-properties'
+      propertiesPanel.appendChild(content)
+      renderGeometryNodesTab(content)
       return
     }
 
@@ -260,6 +290,195 @@ function Properties(editor) {
         renderStyleTab(content, element, node)
       }
     }
+  }
+
+  function renderGeometryNodesTab(container) {
+    const manager = editor.geometryNodes
+    if (!manager) {
+      const unavailable = document.createElement('p')
+      unavailable.className = 'gn-property-empty'
+      unavailable.textContent = 'Geometry Nodes is not available in this document.'
+      container.appendChild(unavailable)
+      return
+    }
+
+    let instance = null
+    try {
+      instance = typeof manager.getActiveInstance === 'function'
+        ? manager.getActiveInstance()
+        : manager.activeInstance || null
+    } catch (_) {
+      instance = null
+    }
+
+    // Resolve the card from the actual Properties selection as well. This
+    // keeps the tab correct even while another surface is updating the
+    // manager's active-object pointer.
+    const selectedNode = editor.selected[editor.selected.length - 1]?.node
+    const selectedWrapper = selectedNode?.closest?.('[data-geometry-nodes="true"]')
+    if (selectedWrapper && manager.instances instanceof Map) {
+      instance = manager.instances.get(selectedWrapper.getAttribute('data-gn-instance-id')) || instance
+    } else if (editor.selected.length === 0 || (selectedNode && !selectedWrapper)) {
+      instance = null
+    }
+
+    if (!instance) {
+      const description = document.createElement('p')
+      description.className = 'gn-property-empty'
+      description.textContent = editor.selected.length
+        ? 'Add a non-destructive node graph to the selected SVG geometry.'
+        : 'Select an SVG element or group to add a Geometry Nodes modifier.'
+      container.appendChild(description)
+
+      const add = createGeometryNodesButton('Add Geometry Nodes', 'is-primary')
+      add.disabled = editor.mode !== 'model' || editor.selected.length === 0 || typeof manager.attachSelection !== 'function'
+      add.addEventListener('click', async () => {
+        add.disabled = true
+        try {
+          const attached = await manager.attachSelection()
+          const active = attached || manager.getActiveInstance?.()
+          if (!active) {
+            add.disabled = false
+            render()
+            return
+          }
+          geometryNodeEditor.open(active?.graphId)
+          render()
+        } catch (error) {
+          reportGeometryNodesError(error)
+          add.disabled = false
+        }
+      })
+      container.appendChild(add)
+      return
+    }
+
+    const graphId = instance.graphId || instance.graph?.id
+    let graph = instance.graph || null
+    try {
+      if (!graph && typeof manager.getGraph === 'function') graph = manager.getGraph(graphId)
+      else if (!graph && manager.graphs instanceof Map) graph = manager.graphs.get(graphId)
+    } catch (_) { /* render the modifier even if its graph is missing */ }
+
+    const card = document.createElement('section')
+    card.className = 'gn-modifier-card'
+
+    const header = document.createElement('header')
+    header.className = 'gn-modifier-card-header'
+
+    const enabled = document.createElement('input')
+    enabled.type = 'checkbox'
+    enabled.className = 'gn-modifier-enable'
+    enabled.checked = instance.enabled !== false
+    enabled.title = enabled.checked ? 'Disable modifier' : 'Enable modifier'
+    enabled.disabled = typeof manager.setEnabled !== 'function'
+    enabled.addEventListener('change', () => {
+      try {
+        manager.setEnabled(modifierId(instance), enabled.checked)
+      } catch (error) {
+        enabled.checked = !enabled.checked
+        reportGeometryNodesError(error)
+      }
+    })
+
+    const name = document.createElement('strong')
+    name.className = 'gn-modifier-name'
+    name.textContent = graph?.name || instance.name || 'Geometry Nodes'
+    name.title = name.textContent
+
+    const state = geometryNodesState(instance, graph)
+    const badge = document.createElement('span')
+    badge.className = `gn-modifier-badge${state.error ? ' is-error' : ''}`
+    badge.textContent = state.label
+    header.append(enabled, name, badge)
+
+    const body = document.createElement('div')
+    body.className = 'gn-modifier-body'
+    const status = document.createElement('p')
+    status.className = `gn-modifier-status${state.error ? ' is-error' : ''}`
+    status.textContent = state.message
+    body.appendChild(status)
+
+    const actions = document.createElement('div')
+    actions.className = 'gn-property-actions'
+    const open = createGeometryNodesButton('Open Editor', 'is-primary')
+    open.disabled = !graph
+    open.addEventListener('click', () => geometryNodeEditor.open(graphId))
+
+    const apply = createGeometryNodesButton('Apply')
+    apply.disabled = typeof manager.applyModifier !== 'function' || state.error || instance.enabled === false
+    apply.addEventListener('click', async () => {
+      if (!window.confirm('Apply Geometry Nodes and replace the procedural object with editable SVG geometry?')) return
+      apply.disabled = true
+      try {
+        await manager.applyModifier(modifierId(instance))
+        geometryNodeEditor.close()
+        render()
+      } catch (error) {
+        reportGeometryNodesError(error)
+        apply.disabled = false
+      }
+    })
+
+    const remove = createGeometryNodesButton('Remove', 'is-danger')
+    remove.disabled = typeof manager.removeModifier !== 'function'
+    remove.addEventListener('click', async () => {
+      if (!window.confirm('Remove this Geometry Nodes modifier? The original source geometry will be kept.')) return
+      remove.disabled = true
+      try {
+        await manager.removeModifier(modifierId(instance))
+        geometryNodeEditor.close()
+        render()
+      } catch (error) {
+        reportGeometryNodesError(error)
+        remove.disabled = false
+      }
+    })
+
+    actions.append(open, apply, remove)
+    body.appendChild(actions)
+    card.append(header, body)
+    container.appendChild(card)
+  }
+
+  function createGeometryNodesButton(label, modifierClass = '') {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = `gn-property-button${modifierClass ? ` ${modifierClass}` : ''}`
+    button.textContent = label
+    return button
+  }
+
+  function modifierId(instance) {
+    return instance.id ?? instance.instanceId ?? instance.objectId
+  }
+
+  function geometryNodesState(instance, graph) {
+    const diagnostic = Array.isArray(instance.diagnostics)
+      ? instance.diagnostics.find((item) => item?.severity === 'error') || instance.diagnostics[0]
+      : null
+    const rawError = instance.error || instance.lastError || diagnostic?.message || (!graph ? 'Referenced node graph is missing.' : '')
+    if (rawError) {
+      return {
+        error: true,
+        label: 'Error',
+        message: rawError.message || String(rawError),
+      }
+    }
+    if (instance.enabled === false) return { error: false, label: 'Muted', message: 'The source geometry is shown; evaluation is disabled.' }
+    if (instance.status === 'evaluating') return { error: false, label: 'Working', message: 'Evaluating node graph…' }
+    const nodeCount = graph?.nodes instanceof Map ? graph.nodes.size : (graph?.nodes?.length || 0)
+    return {
+      error: false,
+      label: 'Ready',
+      message: `${nodeCount} node${nodeCount === 1 ? '' : 's'} · Live SVG output`,
+    }
+  }
+
+  function reportGeometryNodesError(error) {
+    const message = error?.message || String(error || 'Geometry Nodes operation failed.')
+    if (signals.terminalLogged) signals.terminalLogged.dispatch({ type: 'span', msg: message })
+    console.error(error)
   }
 
   // ── DIMENSION STYLES TAB ────────────────────────────────────────────────────

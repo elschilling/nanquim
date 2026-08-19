@@ -1,0 +1,27 @@
+.gn-dock#geometry-nodes-dock(aria-hidden="true")
+  .gn-dock-resize#geometry-nodes-resize(role="separator" aria-label="Resize Geometry Nodes editor" aria-orientation="horizontal")
+  .gn-toolbar
+    button.gn-toolbar-button.gn-collapse-button#geometry-nodes-collapse(type="button" title="Collapse Geometry Nodes" aria-label="Collapse Geometry Nodes")
+      span.gn-collapse-glyph ▾
+    .gn-editor-mark(aria-hidden="true") ◇
+    .gn-graph-heading
+      span.gn-graph-kind Geometry Nodes
+      strong.gn-graph-name#geometry-nodes-title No active graph
+    .gn-toolbar-spacer
+    .gn-add-menu
+      button.gn-toolbar-button.gn-add-button#geometry-nodes-add(type="button" title="Add node (Shift+A)" aria-label="Add node" aria-keyshortcuts="Shift+A" aria-haspopup="true" aria-expanded="false" disabled) Add
+      .gn-palette#geometry-nodes-palette(hidden)
+        input.gn-palette-search#geometry-nodes-search(type="search" placeholder="Search nodes…" autocomplete="off" aria-label="Search nodes")
+        .gn-palette-results#geometry-nodes-results(role="listbox")
+    button.gn-toolbar-button#geometry-nodes-fit(type="button" title="Frame all nodes" disabled) Fit
+    button.gn-toolbar-button.gn-close-button#geometry-nodes-close(type="button" title="Close Geometry Nodes" aria-label="Close Geometry Nodes") ×
+  .gn-editor-body
+    .gn-stage#geometry-nodes-stage(tabindex="0" aria-label="Geometry Nodes graph editor")
+      .gn-grid#geometry-nodes-grid
+      svg.gn-wire-layer#geometry-nodes-wires(aria-hidden="true")
+      .gn-world#geometry-nodes-world
+        .gn-node-layer#geometry-nodes-nodes
+      .gn-empty#geometry-nodes-empty
+        strong No Geometry Nodes graph
+        span Add a Geometry Nodes modifier from Properties to begin.
+      .gn-status#geometry-nodes-status(role="status" aria-live="polite")
