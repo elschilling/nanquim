@@ -1,75 +1,172 @@
 # Nanquim
 
-**A lightweight 2D CAD tool for the web, built on SVG.**
+**A browser-based 2D CAD editor built around editable SVG.**
 
-[Live Demo](https://nanquim.vercel.app/) | [GitHub](https://github.com/elschilling/nanquim)
+[Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
----
+> [!WARNING]
+> Nanquim is in active, pre-1.0 development. Features and saved metadata may still change, and some CAD and file-format edge cases are not covered by automated tests. Use copies of important drawings and please report anything that breaks.
 
-Nanquim is a simple, browser-based 2D CAD editor designed for creating technical drawings directly in SVG. The goal is to provide a straightforward and accessible tool for precision drawing without the need for heavy desktop software.
+## About
 
-The name "Nanquim" is a nod to the ink pens (canetas nanquim) traditionally used by architects and engineers for creating detailed technical drawings. This project aims to bring that same spirit of precision and craft to the modern web.
+Nanquim is an open-source 2D CAD editor for creating technical drawings directly in the browser. Its document model is SVG, so drawings remain inspectable, portable vector files rather than being locked into an opaque project format. Nanquim adds CAD-oriented precision tools, organization, Paper Space, reusable content, and procedural geometry on top of that SVG foundation.
 
-## The Vision
+The name is a reference to the technical ink pens (*canetas nanquim*) traditionally used by architects and engineers. The long-term vision is to explore a lightweight technical drawing workflow that can interoperate well with open design tools such as Blender and Bonsai. Direct Blender/Bonsai integration is not implemented yet.
 
-My dream would be to see this kind of editor inside Blender one day. For now, I’m just rolling with what I know—HTML/CSS/JS—before even thinking about how it could fit into Blender. I'm curious, does anyone else feel like we’re missing a good 2D tool for making technical drawings natively in SVG?
+## Current capabilities
 
-## Features
+### Drawing and annotation
 
-Nanquim is in active development but already sports a robust set of 2D CAD features:
+- Lines, circles, rectangles, arcs, ellipses, polylines, and splines.
+- Live text creation and editing.
+- Hatches with selectable patterns, scale, color, opacity, and island-aware boundaries.
+- Linear and aligned dimensions with reusable dimension styles.
+- Distance measurement and enclosed-area calculation.
 
-### 🛠️ Drawing & Modification Commands
-*   **Draw**: Line (`L`), Circle (`C`), Rectangle (`REC`), Arc (`A`)
-*   **Modify**: Move (`M`), Copy (`CO`), Rotate (`R`), Scale (`S`), Offset (`O`), Fillet (`F`), Mirror (`MI`)
-*   **Edit**: Trim (`TR`), Extend (`EX`), Erase (`E`)
-*   **Utilities**: Measure Distance (`D`), Match Properties (`MA`)
+### Editing and modification
 
-### 📦 Layers & Organization
-*   **Collections System**: Group elements into manageable, hierarchical collections (layers).
-*   **Outliner**: A Photoshop/Blender-style hierarchical tree view to easily select, hide (`eye icon`), or lock (`padlock icon`) elements and collections.
-*   **Properties Panel**: Inspect and tweak attributes (color, stroke width, collection assignment) of selected elements.
+- Move, Copy, Rotate, Scale, Offset, Fillet, Mirror, Erase, Trim, and Extend.
+- Group and Ungroup for ordinary SVG geometry.
+- Directional window/crossing selection, multi-selection, and disambiguation when elements overlap.
+- Direct editing grips for supported element types, including transformed geometry.
+- Editable names, coordinates, geometry, stroke, fill, opacity, and dash properties.
+- Match Properties and a shared Undo/Redo history for the main editing operations.
 
-### 📐 Precision & Workflow
-*   **Snapping**: `OSNAP` (endpoints, midpoints, intersections) and `ORTHO` (orthogonal locking) modes for precise drawing.
-*   **Viewport**: Infinite canvas with smooth pan (`Middle Mouse`) and zoom (`Scroll`) capabilities.
-*   **Command Line Interface**: AutoCAD-style command aliases for fast, keyboard-driven workflows.
+### Precision workflow
 
-### 💾 File Support
-*   **Import**: Load existing `.dxf` (CAD files) or `.svg` drawings.
-*   **Export**: Save your drawings natively to standalone, standard `.svg` files (with smart white-to-black stroke conversion for external viewing).
+- AutoCAD-style command terminal with aliases, autocomplete, prompts, and repeat-last-command behavior.
+- Numeric input plus `@x,y` relative coordinates and `#x,y` absolute coordinates.
+- Ortho and polar tracking with on-canvas guides.
+- Configurable endpoint, midpoint, center, quadrant, intersection, extension, perpendicular, tangent, nearest, and grid snaps.
+- Dynamic grid and axes, configurable interaction tolerances, and zoom-independent handles and snap markers.
 
-## Tech Stack
+### Organization and reusable content
 
-*   **Frontend:** HTML, SASS, and vanilla JavaScript
-*   **Templating:** Pug
-*   **Build Tool:** Vite
+- Collections/layers with an active destination, inherited styles, visibility, locking, and opacity.
+- A Blender-style Outliner synchronized with viewport selection.
+- Nested SVG groups and element type indicators.
+- Reusable Blocks that can be created, inserted as instances, and edited in place with Save or Discard.
+- Reusable text and dimension styles, bundled with Inter, DM Sans, JetBrains Mono, and Fira Code variants for PDF output.
 
-## Getting Started
+### Paper Space and output
 
-To run Nanquim locally:
+- A separate Paper Space with ISO A0–A4 and custom sheet sizes and portrait/landscape orientation.
+- Multiple live model viewports with editable `1:N` scales and model origins.
+- Paper annotations and per-color print mapping, including grayscale and black presets.
+- Paper export to standalone SVG and PDF.
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/elschilling/nanquim.git
-    cd nanquim
-    ```
+### SVG, DXF, and browser files
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+- Open and save editable SVG drawings with Nanquim metadata for collections, specialized geometry, styles, blocks, Paper Space, and Geometry Nodes.
+- Import supported DXF geometry and export common DXF entities, including lines, circles, ellipses, arcs, polylines, and text. DXF text import is not supported yet.
+- Copy and paste Nanquim SVG elements with ID cleanup.
+- Welcome screen and recent disk files where the browser supports persistent file handles.
+- `Ctrl+O` and `Ctrl+S` file shortcuts, with download/upload fallbacks when direct file access is unavailable.
 
-3.  **Start the development server:**
-    ```bash
-    npm run dev
-    ```
+DXF is a broad format and round-trip support is not complete. Real-world SVG and DXF compatibility reports are especially useful.
 
-This will open the application in your default browser.
+## Experimental Geometry Nodes
 
-## Contributing
+Nanquim includes a Blender-inspired Geometry Nodes MVP for procedural 2D SVG. A modifier can be attached non-destructively to selected SVG geometry, keeping its source while rendering an evaluated SVG result.
 
-This is a personal project born out of a desire for a better 2D drawing tool on the web. Contributions, ideas, and feedback are highly welcome! Feel free to open an issue or submit a pull request.
+The current node library includes:
+
+- Line, Circle, Rectangle, and Text primitives.
+- Join Geometry, Transform Geometry, linear arrays, and polar arrays.
+- Set Style.
+- Float, Integer, Boolean, Vector 2D, Color, Math, Vector Math, Combine XY, and Separate XY utilities.
+
+The node editor supports pan/zoom, Fit, a searchable `Shift+A` menu, `X`/Delete, typed sockets, and undoable graph edits. Pulling a connection into empty space opens a search filtered to compatible nodes and sockets. Dropping an unconnected node over a wire inserts it into the flow; overlapping neighbors move apart with a short collision-aware animation.
+
+Node graphs are stored in saved SVG metadata, preserve a last-known rendered SVG result, and can be muted, removed, or applied back into ordinary editable SVG geometry. This system is experimental: standard SVG primitives are the primary target, and attaching a modifier currently requires the selected source elements to share a parent.
+
+## Commands and aliases
+
+Enter a command or alias in the terminal, then follow its prompt.
+
+| Area | Commands |
+| --- | --- |
+| Draw | `LINE (L)`, `CIRCLE (C)`, `ELLIPSE (EL)`, `RECTANGLE (REC)`, `ARC (A)`, `POLYLINE (PL)`, `SPLINE (SP)`, `TEXT (T)`, `HATCH (H)` |
+| Modify | `MOVE (M)`, `COPY (CO)`, `ROTATE (R)`, `SCALE (S)`, `OFFSET (O)`, `FILLET (F)`, `MIRROR (MI)`, `TRIM (TR)`, `EXTEND (EX)`, `ERASE (E)` |
+| Organize | `GROUP (G)`, `UNGROUP (UG)`, `BLOCK (B)`, `INSERT (I)`, `MATCH_PROPERTIES (MA)` |
+| Measure and annotate | `DIST (D)`, `AREA (AR)`, `DIMLINEAR (DM)`, `DIMALIGNED (DA)` |
+| Paper Space | `VIEWPORT (VP)` |
+
+### Useful keys
+
+| Key | Action |
+| --- | --- |
+| `Space` or `Enter` | Confirm terminal input; blank Space repeats the previous command |
+| `Esc` | Cancel the active command or interaction |
+| `Delete` | Delete the current selection |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
+| `F2` | Expand or restore the terminal |
+| `F3` | Toggle all viewport overlays |
+| `F7` | Toggle the grid |
+| `F8` | Toggle Ortho |
+| `F9` | Toggle object snapping |
+| `F10` | Toggle polar tracking |
+
+## Browser support and current limitations
+
+- Chromium-based browsers are currently the most tested.
+- Firefox and Safari should be treated as test targets; bug reports are welcome.
+- Persistent recent-file handles and direct overwrite require a secure context (`https` or `localhost`) and the browser File System Access API. Other browsers use file upload/download fallbacks.
+- Copy/paste through the system clipboard may also require a secure context and clipboard permission.
+- DXF import/export supports common drawing entities, not every DXF feature or vendor extension.
+- Automated coverage currently focuses on Geometry Nodes, SVG adaptation/rendering, modifier persistence, Undo/Redo edge cases, and terminal input. Much of the legacy CAD workflow still relies on manual testing.
+- Real-time collaboration, geometric constraints, direct Blender/Bonsai connectivity, and desktop/PWA packaging are future ideas rather than current features.
+
+## Local development
+
+### Prerequisites
+
+- Node.js 20.19+, 22.12+, or 24+.
+- [pnpm](https://pnpm.io/).
+
+### Run the editor
+
+```bash
+git clone https://github.com/elschilling/nanquim.git
+cd nanquim
+pnpm install
+pnpm dev
+```
+
+Vite will print the local development URL in the terminal.
+
+### Tests and production build
+
+```bash
+pnpm test
+pnpm build
+```
+
+Use `pnpm test:watch` while developing.
+
+## Road to 1.0.0
+
+The immediate goal is reliability rather than adding every possible CAD command. The most valuable testing areas are:
+
+- SVG and DXF round trips through real design applications.
+- Trim, Extend, Fillet, and snaps on arcs, ellipse arcs, splines, transformed geometry, and block instances.
+- Paper scales, annotations, dimensions, fonts, print-color mapping, and PDF output.
+- Large architectural drawings, selection performance, and Outliner responsiveness.
+- Save/reopen, recent-file behavior, and long Undo/Redo sessions across browsers.
+- Geometry Nodes persistence, Apply/Remove, compatible-node search, wire insertion, and export behavior.
+- International keyboard layouts and focus switching between the terminal, Properties, and node editor.
+
+## Contributing and bug reports
+
+Ideas, focused pull requests, and reproducible bug reports are welcome. Please use [GitHub Issues](https://github.com/elschilling/nanquim/issues) and include, when possible:
+
+- Browser, browser version, and operating system.
+- The steps needed to reproduce the problem.
+- Expected and actual behavior.
+- A small shareable SVG or DXF file.
+- A screenshot or short recording.
+- Relevant browser console errors.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for details.
+Nanquim is licensed under the [GNU General Public License v3.0](LICENSE).
