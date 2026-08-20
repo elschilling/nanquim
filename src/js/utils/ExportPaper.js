@@ -108,6 +108,57 @@ function buildPaperSVGString(editor, viewports) {
 }
 
 /**
+ * Replace Paper viewport <use> references with inline model clones before
+ * passing the document to svg2pdf.
+ *
+ * svg2pdf renders a <use> target through a PDF Form XObject whose /BBox is
+ * derived before the referenced element's inherited styles are applied. A
+ * stroke-only horizontal or vertical <line> can therefore be omitted from the
+ * calculated bounds and clipped out of an otherwise valid PDF. Rendering the
+ * same target inline keeps the viewport clip-path and transform while avoiding
+ * that implicit Form XObject clip.
+ */
+function expandPaperViewportUsesForPDF(svgEl) {
+  const doc = svgEl?.ownerDocument
+  if (!doc) return 0
+
+  let expanded = 0
+  const uses = Array.from(svgEl.querySelectorAll('[data-paper-viewport="true"] use'))
+
+  uses.forEach((use) => {
+    const href = use.getAttribute('href') || use.getAttribute('xlink:href')
+    if (!href || !href.startsWith('#')) return
+
+    const referenced = doc.getElementById(href.slice(1))
+    if (!referenced) return
+
+    const wrapper = doc.createElementNS('http://www.w3.org/2000/svg', 'g')
+    Array.from(use.attributes).forEach((attr) => {
+      if (attr.localName === 'href' || attr.localName === 'x' || attr.localName === 'y' || attr.localName === 'width' || attr.localName === 'height') return
+      wrapper.setAttributeNS(attr.namespaceURI, attr.name, attr.value)
+    })
+
+    const x = Number.parseFloat(use.getAttribute('x') || '0')
+    const y = Number.parseFloat(use.getAttribute('y') || '0')
+    if (x || y) {
+      const transform = wrapper.getAttribute('transform')
+      wrapper.setAttribute('transform', `${transform ? `${transform} ` : ''}translate(${x} ${y})`)
+    }
+
+    wrapper.setAttribute('data-paper-pdf-expanded-use', href.slice(1))
+    const clone = referenced.cloneNode(true)
+    // The wrapper records the reference identity; retaining the cloned root id
+    // would duplicate the definition id for every Paper viewport.
+    clone.removeAttribute('id')
+    wrapper.appendChild(clone)
+    use.replaceWith(wrapper)
+    expanded++
+  })
+
+  return expanded
+}
+
+/**
  * Export the paper layout as a standalone SVG file.
  */
 async function exportPaperSVG(editor, viewports) {
@@ -460,6 +511,10 @@ async function exportPaperPDF(editor, viewports) {
   const svgDoc = parser.parseFromString(svgString, 'image/svg+xml')
   const svgEl = svgDoc.documentElement
 
+  // Avoid svg2pdf's implicit Form XObject bounds clipping stroke-only line
+  // geometry from viewport references.
+  expandPaperViewportUsesForPDF(svgEl)
+
   // Inject document CSS into the SVG so svg2pdf can resolve class-based styles
   if (combinedCSS) {
     const styleEl = svgDoc.createElementNS('http://www.w3.org/2000/svg', 'style')
@@ -492,5 +547,6 @@ export {
   exportPaperPDF,
   applyColorMap,
   buildPaperSVGString,
+  expandPaperViewportUsesForPDF,
   registerFontsWithJsPDF,
 }
