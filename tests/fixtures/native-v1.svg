@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nanquim contributors
+SPDX-License-Identifier: GPL-3.0-only
+Purpose-built Nanquim schema-v1 compatibility fixture.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:svgjs="http://svgjs.com/svgjs"
+  viewBox="0 0 120 80"
+  data-nanquim-version="1"
+  data-element-index="3"
+  data-paper-config="{&quot;size&quot;:&quot;A4&quot;,&quot;width&quot;:210,&quot;height&quot;:297,&quot;orientation&quot;:&quot;portrait&quot;,&quot;unitsPerCm&quot;:1,&quot;colorMap&quot;:{}}"
+  data-paper-viewports="[]"
+  data-nanquim-converted-strokes="false">
+  <g id="collection-1" name="Fixture v1" data-collection="true"
+    data-locked="false"
+    style="stroke:#ffffff;stroke-width:0.25;stroke-linecap:round;fill:none">
+    <line id="0" name="Baseline" x1="10" y1="15" x2="90" y2="15" />
+    <circle id="1" name="Reference circle" cx="35" cy="45" r="12" />
+    <polyline id="2" name="Open profile" points="60,55 80,35 105,55" />
+  </g>
+</svg>

@@ -27,6 +27,13 @@ Git history. `CLAUDE.md` points Claude tooling to these shared instructions.
 Source, tests, `package.json`, and CI remain authoritative when documentation
 disagrees with the implementation.
 
+Product status and qualification live in
+[`docs/capabilities.md`](docs/capabilities.md), browser and file-API support in
+[`docs/browser-support.md`](docs/browser-support.md), and release operations in
+[`docs/release-process.md`](docs/release-process.md). Do not promote a partial
+or experimental area to stable in one document without updating its evidence
+and the other user-facing references in the same change.
+
 ## Current stack and commands
 
 - Node.js `22.22.2` and pnpm `8.15.5` are pinned.
@@ -318,8 +325,8 @@ Validation by change type:
 - The former `public/tests` scratch tree was removed after a reference audit.
   Do not recreate it; put purpose-built, licensed fixtures under
   `tests/fixtures` and exercise them with automated tests.
-- Do not delete `public/fonts/generated` merely because of its name; Paper PDF
-  export currently uses those tracked runtime fonts. Audit references before
+- Do not delete `public/fonts/generated` merely because of its name; the UI and
+  Paper PDF export use those tracked runtime fonts. Audit references before
   removing any generated-looking public asset.
 - Avoid synchronous full-document scans in pointer-move, snapping, selection,
   Outliner, or Geometry Nodes hot paths. Use the spatial indexes and bounded
@@ -342,9 +349,13 @@ Validation by change type:
 
 ## Releases and Git
 
-- CI currently targets `master` while local `origin/HEAD` advertises `dev`. Do
-  not infer a canonical branch; follow the checked-out branch and user
-  instruction until Phase 0 intentionally resolves the mismatch.
+- `master` is the canonical branch. GitHub's default branch, CI, and production
+  deployments use it. A clone whose local `origin/HEAD` still advertises `dev`
+  has stale remote metadata; refresh it rather than treating `dev` as the
+  release branch.
+- Follow [`docs/release-process.md`](docs/release-process.md) for validation,
+  tagging, deployment verification, and rollback. Repository documentation
+  does not replace the required GitHub branch rules or Vercel project setting.
 - A release-version change must keep package metadata, visible application
   version, lockfile, changelog, tag, and release notes consistent.
 - A release-version change must not implicitly bump the native SVG or Geometry

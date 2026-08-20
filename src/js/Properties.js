@@ -11,6 +11,43 @@ const propertiesPanel = document.getElementById('properties-panel')
 let _colorClipboard = null
 let _hoveredColorBox = null  // { getColor, setColor, el } — whichever box the mouse is over
 
+const TEXT_STYLE_FONT_WEIGHTS = {
+  Inter: [
+    ['400', 'Regular'],
+    ['500', 'Medium'],
+    ['600', 'Semi-bold'],
+    ['700', 'Bold'],
+  ],
+  'DM Sans': [
+    ['300', 'Light'],
+    ['400', 'Regular'],
+    ['700', 'Bold'],
+  ],
+  'JetBrains Mono': [
+    ['400', 'Regular'],
+    ['500', 'Medium'],
+    ['700', 'Bold'],
+  ],
+  'Fira Code': [
+    ['300', 'Light'],
+    ['400', 'Regular'],
+    ['500', 'Medium'],
+    ['600', 'Semi-bold'],
+    ['700', 'Bold'],
+  ],
+  'Fira Mono': [
+    ['400', 'Regular'],
+    ['500', 'Medium'],
+    ['700', 'Bold'],
+  ],
+  'Cascadia Code': [
+    ['200', 'Extra-light'],
+    ['300', 'Light'],
+    ['400', 'Regular'],
+    ['600', 'Semi-bold'],
+  ],
+}
+
 document.addEventListener('keydown', (e) => {
   if (!_hoveredColorBox) return
   if (!e.ctrlKey && !e.metaKey) return
@@ -769,46 +806,12 @@ function Properties(editor) {
       'JetBrains Mono',
       'Times New Roman',
     ]
-    // Weights available per font (Google Fonts loaded weights + sensible system font subsets)
-    const FONT_WEIGHTS = {
-      Inter: [
-        ['400', 'Regular'],
-        ['500', 'Medium'],
-        ['600', 'Semi-bold'],
-      ],
-      'DM Sans': [
-        ['300', 'Light'],
-        ['400', 'Regular'],
-        ['700', 'Bold'],
-      ],
-      'JetBrains Mono': [
-        ['400', 'Regular'],
-        ['500', 'Medium'],
-      ],
-      'Fira Code': [
-        ['300', 'Light'],
-        ['400', 'Regular'],
-        ['500', 'Medium'],
-        ['600', 'Semi-bold'],
-        ['700', 'Bold'],
-      ],
-      'Fira Mono': [
-        ['400', 'Regular'],
-        ['500', 'Medium'],
-        ['700', 'Bold'],
-      ],
-      'Cascadia Code': [
-        ['200', 'Extra-light'],
-        ['300', 'Light'],
-        ['400', 'Regular'],
-        ['600', 'Semi-bold'],
-      ],
-    }
+    // Weights available from bundled families or common system-font subsets.
     const DEFAULT_WEIGHTS = [
       ['400', 'Regular'],
       ['700', 'Bold'],
     ]
-    const getWeights = (family) => FONT_WEIGHTS[family] || DEFAULT_WEIGHTS
+    const getWeights = (family) => TEXT_STYLE_FONT_WEIGHTS[family] || DEFAULT_WEIGHTS
 
     function makeDropdownRow(parentEl, label, options, currentValue, onChange) {
       const row = document.createElement('div')
@@ -2521,4 +2524,4 @@ function createPropertyField(container, label, value, onChange, readOnly = false
   container.appendChild(row)
 }
 
-export { Properties }
+export { Properties, TEXT_STYLE_FONT_WEIGHTS }
