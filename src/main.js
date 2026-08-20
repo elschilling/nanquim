@@ -14,6 +14,9 @@ import { LinearDimensionCommand } from './js/commands/LinearDimensionCommand'
 import { GeometryNodeManager } from './js/geometry-nodes/GeometryNodeManager'
 import { GeometryNodeEditor } from './js/GeometryNodeEditor'
 import { HelpSession } from './js/HelpSession'
+import { applyApplicationVersion } from './js/applicationVersion'
+
+applyApplicationVersion()
 
 const editor = new Editor()
 const geometryNodes = new GeometryNodeManager(editor)

@@ -1,0 +1,44 @@
+// Bundled fonts used by the application UI, editable SVG text, and Paper PDF
+// export. Keep these paths aligned with LOCAL_TTF_FONTS in ExportPaper.js.
+@mixin font-face($family, $style, $weight, $file)
+  @font-face
+    font-display: swap
+    font-family: $family
+    font-style: $style
+    font-weight: $weight
+    src: url('/fonts/generated/#{$file}') format('truetype')
+
+// Inter
++font-face('Inter', normal, 400, 'Inter-400.ttf')
++font-face('Inter', normal, 500, 'Inter-500.ttf')
++font-face('Inter', normal, 600, 'Inter-600.ttf')
++font-face('Inter', normal, 700, 'Inter-700.ttf')
++font-face('Inter', italic, 400, 'Inter-Italic-400.ttf')
++font-face('Inter', italic, 500, 'Inter-Italic-500.ttf')
++font-face('Inter', italic, 600, 'Inter-Italic-600.ttf')
++font-face('Inter', italic, 700, 'Inter-Italic-700.ttf')
+
+// DM Sans
++font-face('DM Sans', normal, 300, 'DMSans-300.ttf')
++font-face('DM Sans', normal, 400, 'DMSans-400.ttf')
++font-face('DM Sans', normal, 700, 'DMSans-700.ttf')
++font-face('DM Sans', italic, 300, 'DMSans-Italic-300.ttf')
++font-face('DM Sans', italic, 400, 'DMSans-Italic-400.ttf')
++font-face('DM Sans', italic, 700, 'DMSans-Italic-700.ttf')
+
+// JetBrains Mono
++font-face('JetBrains Mono', normal, 400, 'JetBrainsMono-400.ttf')
++font-face('JetBrains Mono', normal, 500, 'JetBrainsMono-500.ttf')
++font-face('JetBrains Mono', normal, 700, 'JetBrainsMono-700.ttf')
++font-face('JetBrains Mono', italic, 400, 'JetBrainsMono-Italic-400.ttf')
++font-face('JetBrains Mono', italic, 500, 'JetBrainsMono-Italic-500.ttf')
++font-face('JetBrains Mono', italic, 700, 'JetBrainsMono-Italic-700.ttf')
+
+// Fira Code. The application exposes 300 and 500 as choices even though the
+// retained static files provide 400, 600, and 700. Match the nearest-weight
+// fallback already used by Paper PDF export so browser and PDF output agree.
++font-face('Fira Code', normal, 300, 'FiraCode-400.ttf')
++font-face('Fira Code', normal, 400, 'FiraCode-400.ttf')
++font-face('Fira Code', normal, 500, 'FiraCode-600.ttf')
++font-face('Fira Code', normal, 600, 'FiraCode-600.ttf')
++font-face('Fira Code', normal, 700, 'FiraCode-700.ttf')

@@ -66,7 +66,7 @@ class MeasureDistanceCommand extends Command {
         this.ghostText = this.ghostGroup
             .text('')
             .addClass('measure-text')
-            .attr('font-family', "'Fira Mono', 'JetBrains Mono', 'Cascadia Code', monospace")
+            .attr('font-family', "'JetBrains Mono', 'Fira Code', monospace")
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'middle')
             .fill('#cccccc')
@@ -184,7 +184,7 @@ class MeasureDistanceCommand extends Command {
         this.measureGroup
             .text(distance.toFixed(4))
             .addClass('measure-text')
-            .attr('font-family', "'Fira Mono', 'JetBrains Mono', 'Cascadia Code', monospace")
+            .attr('font-family', "'JetBrains Mono', 'Fira Code', monospace")
             .attr('font-size', fontSize)
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'middle')

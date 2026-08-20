@@ -144,7 +144,7 @@ async function collectDocumentCSS() {
       const rules = Array.from(sheet.cssRules || [])
       combined += rules.map(r => r.cssText).join('\n') + '\n'
     } catch (_) {
-      // Cross-origin: try fetching the raw text (Google Fonts etc.)
+      // Cross-origin: try fetching the raw stylesheet when CORS permits it.
       if (sheet.href) {
         try {
           const res = await fetch(sheet.href, { mode: 'cors' })
@@ -158,8 +158,8 @@ async function collectDocumentCSS() {
 }
 
 /**
- * Local TTF font files bundled in public/fonts/.
- * jsPDF requires TTF format — woff2 from Google Fonts CDN cannot be used.
+ * Local TTF font files bundled in public/fonts/generated/.
+ * jsPDF requires TTF font data rather than browser-only remote stylesheets.
  * Each entry maps a font-family name to its local TTF paths (normal + italic).
  */
 const LOCAL_TTF_FONTS = {
@@ -228,6 +228,13 @@ function normalizeNumericFontWeight(fontWeight) {
   if (typeof normalized === 'number') return normalized
   if (normalized === 'bold') return 700
   return 400
+}
+
+function fontVariantKey(family, fontStyle, fontWeight) {
+  const normalizedFamily = String(family || '').trim().toLowerCase()
+  const normalizedStyle = String(fontStyle || 'normal').trim().toLowerCase()
+  const normalizedWeight = normalizeNumericFontWeight(fontWeight)
+  return `${normalizedFamily}|${normalizedStyle}|${normalizedWeight}`
 }
 
 function resolveLocalFontPath(local, fontStyle, fontWeight) {
@@ -328,8 +335,8 @@ async function fetchFontAsBase64(url) {
  * Scan an SVG element for font-family values, then find, fetch, and register
  * each non-builtin font with jsPDF so svg2pdf can render text correctly.
  *
- * Prefers local TTF files (public/fonts/) over CSS @font-face sources, since
- * Google Fonts serves woff2 which jsPDF cannot parse.
+ * Prefers the bundled local TTF files over CSS @font-face sources so browser
+ * rendering and PDF embedding resolve the same project-controlled variants.
  *
  * @param {jsPDF} doc
  * @param {SVGElement} svgEl
@@ -338,6 +345,9 @@ async function fetchFontAsBase64(url) {
 async function registerFontsWithJsPDF(doc, svgEl, combinedCSS) {
   const usedVariants = collectUsedFontVariants(svgEl)
   const usedFamilies = new Set(usedVariants.map(variant => variant.family))
+  const usedVariantKeys = new Set(usedVariants.map(
+    ({ family, fontStyle, fontWeight }) => fontVariantKey(family, fontStyle, fontWeight),
+  ))
 
   if (usedVariants.length === 0) return
 
@@ -358,7 +368,7 @@ async function registerFontsWithJsPDF(doc, svgEl, combinedCSS) {
     const path = resolveLocalFontPath(local, fontStyle, fontWeight)
     if (!path) continue
 
-    const key = `${family}|${fontStyle}|${fontWeight}`
+    const key = fontVariantKey(family, fontStyle, fontWeight)
     if (registered.has(key)) continue
 
     const base64 = await fetchFontAsBase64(path)
@@ -383,23 +393,27 @@ async function registerFontsWithJsPDF(doc, svgEl, combinedCSS) {
       if (!familyM || !srcM) continue
       const family = familyM[1].trim().replace(/['"]/g, '')
       if (!usedFamilies.has(family) || builtinFonts.has(family.toLowerCase())) continue
+      // Bundled families are resolved from LOCAL_TTF_FONTS above. Re-reading
+      // their @font-face rules would fetch and register every declared variant.
+      if (LOCAL_TTF_FONTS[family]) continue
       // Skip woff2 URLs — jsPDF cannot parse them
       const url = srcM[1]
       if (url.endsWith('.woff2') || url.includes('.woff')) continue
       const weight = (block.match(/font-weight\s*:\s*([^;\n]+)/) || [])[1]?.trim() || 'normal'
       const fontStyle = (block.match(/font-style\s*:\s*([^;\n]+)/) || [])[1]?.trim() || 'normal'
-      fontSources.push({ family, url: new URL(url, baseUrl).href, weight, fontStyle })
+      const key = fontVariantKey(family, fontStyle, weight)
+      if (!usedVariantKeys.has(key)) continue
+      fontSources.push({ family, url: new URL(url, baseUrl).href, weight, fontStyle, key })
     }
   }
 
   parseFontFacesFromCSS(combinedCSS, location.href)
 
-  for (const { family, url, weight, fontStyle } of fontSources) {
-    const key = `${family}|${weight}|${fontStyle}`
+  for (const { family, url, weight, fontStyle, key } of fontSources) {
     if (registered.has(key)) continue
-    registered.add(key)
     const base64 = await fetchFontAsBase64(url)
     if (!base64) continue
+    registered.add(key)
     const filename = `${family}-${weight}-${fontStyle}.ttf`
     doc.addFileToVFS(filename, base64)
     doc.addFont(filename, family, fontStyle, weight)
@@ -473,4 +487,10 @@ async function exportPaperPDF(editor, viewports) {
   }
 }
 
-export { exportPaperSVG, exportPaperPDF, applyColorMap, buildPaperSVGString }
+export {
+  exportPaperSVG,
+  exportPaperPDF,
+  applyColorMap,
+  buildPaperSVGString,
+  registerFontsWithJsPDF,
+}

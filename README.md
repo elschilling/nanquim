@@ -4,6 +4,8 @@
 
 [Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
+[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Browser support](docs/browser-support.md)
+
 > [!WARNING]
 > Nanquim is in active, pre-1.0 development. Features and saved metadata may still change, and some CAD and file-format edge cases are not covered by automated tests. Use copies of important drawings and please report anything that breaks.
 
@@ -14,6 +16,11 @@ Nanquim is an open-source 2D CAD editor for creating technical drawings directly
 The name is a reference to the technical ink pens (*canetas nanquim*) traditionally used by architects and engineers. The long-term vision is to explore a lightweight technical drawing workflow that can interoperate well with open design tools such as Blender and Bonsai. Direct Blender/Bonsai integration is not implemented yet.
 
 ## Current capabilities
+
+The list below describes the available surface. The
+[capability ledger](docs/capabilities.md) records which areas are stable,
+partial, experimental, or planned, together with their current evidence and
+limitations.
 
 ### Drawing and annotation
 
@@ -46,7 +53,10 @@ The name is a reference to the technical ink pens (*canetas nanquim*) traditiona
 - A Blender-style Outliner synchronized with viewport selection.
 - Nested SVG groups and element type indicators.
 - Reusable Blocks that can be created, inserted as instances, and edited in place with Save or Discard.
-- Reusable text and dimension styles, bundled with Inter, DM Sans, JetBrains Mono, and Fira Code variants for PDF output.
+- Reusable text and dimension styles, with locally bundled Inter, DM Sans,
+  JetBrains Mono, and Fira Code families available to both the browser UI and
+  PDF embedding. The provenance inventory documents portable variants and
+  output limitations.
 
 ### Paper Space and output
 
@@ -111,13 +121,21 @@ Enter a command or alias in the terminal, then follow its prompt.
 
 ## Browser support and current limitations
 
-- Chromium-based browsers are currently the most tested.
-- Firefox and Safari should be treated as test targets; bug reports are welcome.
-- Persistent recent-file handles and direct overwrite require a secure context (`https` or `localhost`) and the browser File System Access API. Other browsers use file upload/download fallbacks.
-- Copy/paste through the system clipboard may also require a secure context and clipboard permission.
+- Desktop Chromium stable and the previous stable release are the primary beta
+  target. Firefox stable and ESR are supported through the upload/download file
+  workflow. Safari/WebKit is currently best-effort and checked manually before
+  prereleases; mobile and touch-first editing are not supported yet.
+- Persistent recent-file handles and direct overwrite require a secure context
+  (`https` or `localhost`) and Chromium's File System Access API. The portable
+  path uses file upload and download.
+- System clipboard access depends on browser permissions, a secure context, and
+  user activation; native paste events remain the fallback where available.
 - DXF import/export supports common drawing entities, not every DXF feature or vendor extension.
 - Automated coverage currently focuses on Geometry Nodes, SVG adaptation/rendering, modifier persistence, Undo/Redo edge cases, and terminal input. Much of the legacy CAD workflow still relies on manual testing.
 - Real-time collaboration, geometric constraints, direct Blender/Bonsai connectivity, and desktop/PWA packaging are future ideas rather than current features.
+
+See the [browser and file-API support policy](docs/browser-support.md) for the
+exact tiers, fallbacks, and per-release verification record.
 
 ## Local development
 
@@ -146,6 +164,9 @@ pnpm build
 
 Use `pnpm test:watch` while developing.
 
+Release maintainers should use the
+[release, deployment, and rollback checklist](docs/release-process.md).
+
 ## Road to 1.0.0
 
 The immediate goal is reliability rather than adding every possible CAD command. The most valuable testing areas are:
@@ -169,6 +190,11 @@ Ideas, focused pull requests, and reproducible bug reports are welcome. Please u
 - A screenshot or short recording.
 - Relevant browser console errors.
 
+Contributors and coding agents should also read [AGENTS.md](AGENTS.md).
+
 ## License
 
 Nanquim is licensed under the [GNU General Public License v3.0](LICENSE).
+Bundled third-party code, fonts, and artwork retain their respective licenses;
+see [Third-party notices](THIRD_PARTY_NOTICES.md) and the
+[asset provenance inventory](docs/asset-provenance.md).

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nanquim contributors
+SPDX-License-Identifier: GPL-3.0-only
+Purpose-built Nanquim schema-v2 compatibility fixture.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:svgjs="http://svgjs.com/svgjs"
+  viewBox="0 0 160 100"
+  data-nanquim-version="2"
+  data-element-index="8"
+  data-paper-config="{&quot;size&quot;:&quot;A3&quot;,&quot;width&quot;:420,&quot;height&quot;:297,&quot;orientation&quot;:&quot;landscape&quot;,&quot;unitsPerCm&quot;:1,&quot;colorMap&quot;:{&quot;#ffffff&quot;:{&quot;printColor&quot;:&quot;#000000&quot;,&quot;enabled&quot;:true}}}"
+  data-paper-viewports="[{&quot;id&quot;:&quot;vp-fixture&quot;,&quot;x&quot;:15,&quot;y&quot;:12,&quot;w&quot;:180,&quot;h&quot;:120,&quot;scale&quot;:50,&quot;modelOriginX&quot;:20,&quot;modelOriginY&quot;:10}]"
+  data-dim-styles="{&quot;activeStyleId&quot;:&quot;Standard&quot;,&quot;styles&quot;:[{&quot;id&quot;:&quot;Standard&quot;,&quot;name&quot;:&quot;Standard&quot;,&quot;properties&quot;:{&quot;textStyleId&quot;:&quot;Standard&quot;,&quot;markerType&quot;:&quot;arrow&quot;,&quot;markerSize&quot;:0.15,&quot;extensionLineOffset&quot;:0.1,&quot;extensionLineExtend&quot;:0.1,&quot;textOffset&quot;:0.1,&quot;textColor&quot;:&quot;#ffffff&quot;,&quot;lineColor&quot;:&quot;#ffffff&quot;,&quot;lineWidth&quot;:0.01}}]}"
+  data-text-styles="{&quot;activeStyleId&quot;:&quot;Standard&quot;,&quot;styles&quot;:[{&quot;id&quot;:&quot;Standard&quot;,&quot;name&quot;:&quot;Standard&quot;,&quot;properties&quot;:{&quot;fontFamily&quot;:&quot;Inter&quot;,&quot;fontSize&quot;:0.15,&quot;fontWeight&quot;:&quot;400&quot;,&quot;fontStyle&quot;:&quot;normal&quot;,&quot;textAnchor&quot;:&quot;start&quot;,&quot;dominantBaseline&quot;:&quot;auto&quot;,&quot;letterSpacing&quot;:0,&quot;textDecoration&quot;:&quot;none&quot;,&quot;fill&quot;:&quot;#ffffff&quot;}}]}"
+  data-block-definitions="[[&quot;Chair&quot;,{&quot;defId&quot;:&quot;block-Chair&quot;,&quot;basePoint&quot;:{&quot;x&quot;:0,&quot;y&quot;:0},&quot;elementCount&quot;:2}]]"
+  data-nanquim-converted-strokes="false">
+  <metadata id="nanquim-geometry-nodes">{"version":1,"graphs":[],"instances":[]}</metadata>
+  <defs>
+    <linearGradient id="fixture-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#777777" />
+    </linearGradient>
+    <g id="block-Chair" data-block-def="true" data-base-point="{&quot;x&quot;:0,&quot;y&quot;:0}">
+      <rect id="1" x="0" y="0" width="18" height="16" />
+      <line id="2" x1="0" y1="8" x2="18" y2="8" />
+    </g>
+  </defs>
+  <g id="collection-1" name="Fixture geometry" data-collection="true"
+    data-locked="false"
+    style="stroke:#ffffff;stroke-width:0.2;stroke-linecap:round;fill:none">
+    <line id="4" name="Datum" x1="10" y1="20" x2="145" y2="20" />
+    <rect id="5" name="Gradient panel" x="15" y="35" width="45" height="30"
+      fill="url(#fixture-gradient)" data-style-overrides="{&quot;fill&quot;:true}" />
+    <text id="6" name="Room label" x="20" y="82" data-text-style-id="Standard">Room A</text>
+    <use id="7" name="Chair" href="#block-Chair" data-block-instance="true"
+      data-block-name="Chair" x="95" y="42" />
+  </g>
+  <g id="collection-2" name="Fixture guides" data-collection="true"
+    data-locked="true"
+    style="stroke:#00ffff;stroke-width:0.1;stroke-linecap:round;fill:none;opacity:0.5">
+    <path id="3" name="Guide" d="M 75 30 V 90" />
+  </g>
+</svg>
