@@ -92,7 +92,11 @@ class DrawRectangleCommand extends Command {
     this.editor.isInteracting = true
     this.editor.signals.commandCancelled.addOnce(this._dimensionCancelHandler, this)
 
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Width: ' })
+    this.editor.signals.terminalLogged.dispatch({
+      type: 'span',
+      msg: 'Width: ',
+      recordInput: true,
+    })
 
     this._dimensionInputHandler = (wVal) => {
       this._dimensionInputHandler = null
@@ -103,7 +107,11 @@ class DrawRectangleCommand extends Command {
         return
       }
 
-      this.editor.signals.terminalLogged.dispatch({ msg: 'Height: ' })
+      this.editor.signals.terminalLogged.dispatch({
+        type: 'span',
+        msg: 'Height: ',
+        recordInput: true,
+      })
 
       Promise.resolve().then(() => {
         if (!this._dimensionModeActive) return
@@ -132,18 +140,17 @@ class DrawRectangleCommand extends Command {
     // cursor selects which of the four quadrants contains the rectangle.
     const getOrigin = (directionPoint) => getRectangleOrigin(startPoint, w, h, directionPoint)
 
-    // Ghost lives directly in the SVG root so it's invisible to the selection/snap/hover systems
-    const ghost = activeSvg.rect(w, h)
+    // Build the preview in the active collection so it receives exactly the
+    // same style as the rectangle that will be committed, then move it to the
+    // SVG root so selection, snapping, and hover systems ignore it.
+    const ghost = this.drawing.rect(w, h)
       .fill('none')
       .attr({
         'data-rectangle-preview': 'true',
-        stroke: '#8ab4f8',
-        'stroke-width': 'var(--helper-stroke-width, 0.2)',
-        'stroke-dasharray': '4 4',
-        'vector-effect': 'non-scaling-stroke',
         'pointer-events': 'none',
-        opacity: 0.7,
       })
+    applyCollectionStyleToElement(this.editor, ghost)
+    ghost.addTo(activeSvg)
 
     this._dimensionPreview = ghost
 

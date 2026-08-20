@@ -108,6 +108,8 @@ describe('rectangle dimension placement', () => {
 
   test('shows the exact-size preview immediately after typed width and height', async () => {
     const editor = createEditor({ x: 80, y: 80 })
+    const terminalEntries = []
+    editor.signals.terminalLogged.add((entry) => terminalEntries.push(entry))
     const command = new DrawRectangleCommand(editor)
     command._startPoint = { x: 100, y: 100 }
     command._rect = { draw: vi.fn() }
@@ -117,12 +119,24 @@ describe('rectangle dimension placement', () => {
     await Promise.resolve()
     editor.signals.inputValue.dispatch('20')
 
+    expect(terminalEntries.filter((entry) => entry.recordInput)).toEqual([
+      { type: 'span', msg: 'Width: ', recordInput: true },
+      { type: 'span', msg: 'Height: ', recordInput: true },
+    ])
+
     const preview = editor.svg.node.querySelector('[data-rectangle-preview="true"]')
     expect(preview).not.toBeNull()
     expect(preview.getAttribute('x')).toBe('70')
     expect(preview.getAttribute('y')).toBe('80')
     expect(preview.getAttribute('width')).toBe('30')
     expect(preview.getAttribute('height')).toBe('20')
+    expect(preview.parentNode).toBe(editor.svg.node)
+    expect(preview.style.getPropertyValue('stroke')).toBe('rgb(255, 255, 255)')
+    expect(preview.style.getPropertyValue('stroke-width')).toBe('0.25')
+    expect(preview.style.getPropertyValue('fill')).toBe('transparent')
+    expect(preview.style.getPropertyValue('opacity')).toBe('1')
+    expect(preview.hasAttribute('stroke-dasharray')).toBe(false)
+    expect(preview.hasAttribute('vector-effect')).toBe(false)
 
     editor.signals.updatedCoordinates.dispatch({ x: 120, y: 80 })
     expect(preview.getAttribute('x')).toBe('100')

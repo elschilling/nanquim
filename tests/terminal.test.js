@@ -44,6 +44,7 @@ function pressSpace(target) {
 describe('Terminal Space confirmation', () => {
   let editor
   let terminalInput
+  let terminalLog
   let foreignInput
   const documentListeners = []
 
@@ -58,6 +59,7 @@ describe('Terminal Space confirmation', () => {
     `
 
     terminalInput = document.getElementById('terminalInput')
+    terminalLog = document.getElementById('terminalLog')
     foreignInput = document.getElementById('foreignInput')
     editor = createEditor()
 
@@ -86,6 +88,7 @@ describe('Terminal Space confirmation', () => {
     editor.lastCommand = null
     editor.signals.inputValue.dispatch.mockClear()
 
+    terminalLog.replaceChildren()
     terminalInput.value = ''
     terminalInput.dispatchEvent(new Event('input', { bubbles: true }))
     terminalInput.focus()
@@ -111,6 +114,17 @@ describe('Terminal Space confirmation', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(editor.signals.inputValue.dispatch).toHaveBeenCalledWith('42.5')
     expect(terminalInput.value).toBe('')
+  })
+
+  test('records confirmed input on a terminal prompt that requests it', () => {
+    const logEntry = editor.signals.terminalLogged.add.mock.calls[0][0]
+    logEntry({ type: 'span', msg: 'Width: ', recordInput: true })
+    editor.isInteracting = true
+    terminalInput.value = '42.5'
+
+    pressSpace(terminalInput)
+
+    expect(terminalLog.lastElementChild.textContent).toBe('Width: 42.5')
   })
 
   test('Space remains native literal input while a text command is typing', () => {

@@ -29,6 +29,14 @@ function Terminal(editor) {
   let terminalText = document.getElementById('terminalInput')
   let terminalLog = document.getElementById('terminalLog')
   let terminalContainer = terminalLog && terminalLog.closest('.terminal')
+  let pendingInputLogNode = null
+
+  function recordPendingInput(value) {
+    if (!pendingInputLogNode) return
+    pendingInputLogNode.textContent += value
+    pendingInputLogNode = null
+    terminalLog.scrollTop = terminalLog.scrollHeight
+  }
 
   // ── Terminal width resize ──────────────────────────────────────────────────
   const minTerminalWidth = 300
@@ -68,9 +76,11 @@ function Terminal(editor) {
   })
 
   signals.terminalLogged.add((e) => {
+    pendingInputLogNode = null
     const node = document.createElement(e.type)
     node.textContent = e.msg
     terminalLog.appendChild(node)
+    if (e.recordInput) pendingInputLogNode = node
     terminalLog.scrollTop = terminalLog.scrollHeight
     if (e.clearSelection) {
       signals.clearSelection.dispatch()
@@ -305,6 +315,7 @@ function Terminal(editor) {
     if (editor.isInteracting || editor.isDrawing) {
       if (isConfirmKey) {
         e.preventDefault()
+        recordPendingInput(inputVal)
         
         // Interaction (Commands using promises/signals) takes priority
         if (editor.isInteracting) {
