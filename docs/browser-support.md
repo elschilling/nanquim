@@ -57,7 +57,10 @@ deleted file invalidates the handle.
 
 The portable open fallback uses `<input type="file">` and `FileReader`. It does
 not retain a disk handle. The portable save fallback downloads a new file via a
-Blob URL; it cannot overwrite the original file in place.
+Blob URL; it cannot overwrite the original file in place or confirm that the
+browser completed the download. Nanquim therefore keeps the session dirty and
+does not adopt a file association after a download-only Save As. Only a closed
+writable file handle provides a verifiable clean-save boundary.
 
 ### Clipboard limitations
 

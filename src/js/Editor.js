@@ -4,6 +4,7 @@ import { initCollections } from './Collection'
 import { SpatialIndex } from './SpatialIndex'
 import { DimensionManager } from './DimensionManager'
 import { TextStyleManager } from './TextStyleManager'
+import { DocumentState } from './document/DocumentState'
 
 function Editor() {
   const Signal = signals.Signal
@@ -48,6 +49,8 @@ function Editor() {
     nodeEvaluationCompleted: new Signal(),
     nodeEvaluationFailed: new Signal(),
     geometryNodesChanged: new Signal(),
+    documentStateChanged: new Signal(),
+    documentSessionReset: new Signal(),
     // Compatibility/event aggregation hook for consumers that only need a
     // final instance update regardless of success or failure.
     geometryNodesEvaluated: new Signal(),
@@ -151,6 +154,11 @@ function Editor() {
   // Second index covering ALL elements (used for snapping when excludeNonSelectable is off)
   this.fullSpatialIndex = new SpatialIndex()
   this.snapExcludeNonSelectable = true
+
+  // Document state is initialized after the default document structure so a
+  // new editor starts clean. It observes only persistent model/definition
+  // roots; PaperEditor can register its annotation root when it is created.
+  this.documentState = new DocumentState(this)
 }
 
 Editor.prototype = {
@@ -163,11 +171,12 @@ Editor.prototype = {
 
   addElement: function (element, parent) {
     // parent.put(element)
-    element.putIn(parent)
+    this.documentState.runWithoutTracking(() => element.putIn(parent))
     // element[0].remove()
     this.spatialIndex.markDirty()
     this.fullSpatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
+    this.documentState.markChanged('element-added')
   },
 
   removeElement: function (element) {
@@ -189,11 +198,12 @@ Editor.prototype = {
       }
     }
 
-    element.remove()
+    this.documentState.runWithoutTracking(() => element.remove())
     // element[0].remove()
     this.spatialIndex.markDirty()
     this.fullSpatialIndex.markDirty()
     this.signals.updatedOutliner.dispatch()
+    this.documentState.markChanged('element-removed')
   },
 
   resetPaperConfig: function () {

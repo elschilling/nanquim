@@ -17,6 +17,8 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const SCHEMA_VERSION = 1
+const GRAPH_VIEW_ZOOM_MIN = 0.2
+const GRAPH_VIEW_ZOOM_MAX = 2.5
 const MAX_RETAINED_GEOMETRY_NODE_DIAGNOSTICS = 128
 const SERIALIZED_GEOMETRY_NODE_LIMITS = Object.freeze({
   maxGraphs: 128,
@@ -234,6 +236,19 @@ function assertSerializedGeometryNodes(value, limits = SERIALIZED_GEOMETRY_NODE_
           assertBoundedString(socket.name, 'Geometry Nodes socket name', limits.maxLabelLength)
           assertBoundedString(socket.type, 'Geometry Nodes socket type', limits.maxIdentifierLength)
         })
+      }
+    }
+    if (graph.view !== undefined) {
+      if (!isRecord(graph.view)) throw new TypeError('Geometry Nodes graph view must be an object.')
+      if (
+        !Number.isFinite(graph.view.x)
+        || !Number.isFinite(graph.view.y)
+        || !Number.isFinite(graph.view.zoom)
+      ) {
+        throw new TypeError('Geometry Nodes graph view requires finite x, y, and zoom values.')
+      }
+      if (graph.view.zoom < GRAPH_VIEW_ZOOM_MIN || graph.view.zoom > GRAPH_VIEW_ZOOM_MAX) {
+        throw new RangeError('Geometry Nodes graph view zoom is outside the supported range.')
       }
     }
     graph.nodes.forEach((node) => {
@@ -574,6 +589,36 @@ class GeometryNodeManager {
   getActiveGraph() {
     const instance = this.getActiveInstance()
     return instance ? this.getGraph(instance.graphId) : null
+  }
+
+  setGraphView(graphId, view = {}) {
+    const graph = this.getGraph(graphId)
+    if (!graph) throw new Error(`Unknown Geometry Nodes graph: ${graphId}`)
+
+    const current = graph.view && typeof graph.view === 'object'
+      ? graph.view
+      : { x: 0, y: 0, zoom: 1 }
+    const next = {
+      x: Object.prototype.hasOwnProperty.call(view, 'x') ? Number(view.x) : Number(current.x),
+      y: Object.prototype.hasOwnProperty.call(view, 'y') ? Number(view.y) : Number(current.y),
+      zoom: Object.prototype.hasOwnProperty.call(view, 'zoom') ? Number(view.zoom) : Number(current.zoom),
+    }
+    if (!Number.isFinite(next.x) || !Number.isFinite(next.y) || !Number.isFinite(next.zoom)) {
+      throw new TypeError('Geometry Nodes graph view requires finite x, y, and zoom values.')
+    }
+    if (next.zoom < GRAPH_VIEW_ZOOM_MIN || next.zoom > GRAPH_VIEW_ZOOM_MAX) {
+      throw new RangeError('Geometry Nodes graph view zoom is outside the supported range.')
+    }
+    if (
+      Number(current.x) === next.x
+      && Number(current.y) === next.y
+      && Number(current.zoom) === next.zoom
+    ) return false
+
+    if (typeof graph.setView === 'function') graph.setView(next)
+    else graph.view = next
+    this.editor.documentState?.markChanged?.('geometry-nodes-view')
+    return true
   }
 
   setActiveByElement(element) {
@@ -1484,7 +1529,6 @@ class GeometryNodeManager {
     })
     return {
       version: SCHEMA_VERSION,
-      activeObjectId: this.activeObjectId,
       graphs: Array.from(this.graphs.values()).map((graph) => this._graphToJSON(graph)),
       instances: attachedInstances.map((instance) => ({
         id: instance.id,
@@ -1597,7 +1641,9 @@ class GeometryNodeManager {
       this.instances.set(id, instance)
     })
 
-    this.activeObjectId = data.activeObjectId || null
+    // Selection is session-only UI state. Historical files may contain an
+    // activeObjectId, but reopening must not revive or reserialize it.
+    this.activeObjectId = null
     const renderBudget = createLoadRenderBudget(this.batchBudgetLimits)
     const validationCache = new Map()
     const evaluations = []

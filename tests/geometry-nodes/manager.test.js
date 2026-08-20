@@ -90,6 +90,44 @@ describe('GeometryNodeManager lifecycle', () => {
     })])
   })
 
+  test('persists graph views only with dirty tracking and keeps active selection transient', () => {
+    const editor = createEditor()
+    editor.documentState = { markChanged: vi.fn() }
+    const line = editor.activeCollection.line(0, 0, 10, 0).stroke('#ffffff')
+    const manager = new GeometryNodeManager(editor)
+    const instance = manager.attachSelection([line], null, false)
+    const graph = manager.getGraph(instance.graphId)
+
+    const beforeView = JSON.stringify(manager.serialize())
+    expect(manager.setGraphView(graph.id, { x: 24, y: -18, zoom: 1.4 })).toBe(true)
+    expect(editor.documentState.markChanged).toHaveBeenCalledOnce()
+    expect(editor.documentState.markChanged).toHaveBeenCalledWith('geometry-nodes-view')
+    expect(manager.serialize().graphs[0].view).toEqual({ x: 24, y: -18, zoom: 1.4 })
+    expect(JSON.stringify(manager.serialize())).not.toBe(beforeView)
+
+    editor.documentState.markChanged.mockClear()
+    const savedBytes = JSON.stringify(manager.serialize())
+    expect(manager.setGraphView(graph.id, { x: 24, y: -18, zoom: 1.4 })).toBe(false)
+    expect(editor.documentState.markChanged).not.toHaveBeenCalled()
+    expect(JSON.stringify(manager.serialize())).toBe(savedBytes)
+    expect(() => manager.setGraphView(graph.id, { x: 0, y: 0, zoom: 2.6 })).toThrow(
+      /outside the supported range/,
+    )
+    expect(editor.documentState.markChanged).not.toHaveBeenCalled()
+    expect(JSON.stringify(manager.serialize())).toBe(savedBytes)
+
+    expect(manager.serialize()).not.toHaveProperty('activeObjectId')
+    manager.setActiveByElement(null)
+    expect(manager.activeObjectId).toBeNull()
+    expect(JSON.stringify(manager.serialize())).toBe(savedBytes)
+    expect(editor.documentState.markChanged).not.toHaveBeenCalled()
+
+    const restored = new GeometryNodeManager(editor)
+    restored.load({ ...manager.serialize(), activeObjectId: instance.objectId })
+    expect(restored.activeObjectId).toBeNull()
+    expect(restored.serialize()).not.toHaveProperty('activeObjectId')
+  })
+
   test('apply is undoable and restores the procedural source/output pair', () => {
     const editor = createEditor()
     const circle = editor.activeCollection.circle(10).center(5, 5).stroke('#ffffff')

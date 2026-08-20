@@ -10,6 +10,7 @@ import { StatusBar } from './js/StatusBar'
 import { Preferences } from './js/PreferencesUI'
 import { PaperEditor } from './js/PaperEditor'
 import { WelcomeScreen } from './js/WelcomeScreen'
+import { DocumentController } from './js/DocumentController'
 import { LinearDimensionCommand } from './js/commands/LinearDimensionCommand'
 import { GeometryNodeManager } from './js/geometry-nodes/GeometryNodeManager'
 import { GeometryNodeEditor } from './js/GeometryNodeEditor'
@@ -22,8 +23,11 @@ const editor = new Editor()
 const geometryNodes = new GeometryNodeManager(editor)
 editor.geometryNodes = geometryNodes
 const geometryNodeEditor = new GeometryNodeEditor(editor)
-const navbar = new Navbar(editor)
 const paperEditor = new PaperEditor(editor) // Initialize before Viewport
+editor.paperEditor = paperEditor
+const documents = new DocumentController(editor)
+editor.documents = documents
+const navbar = new Navbar(editor)
 const viewport = new Viewport(editor)
 const outliner = new Outliner(editor)
 const properties = new Properties(editor)
@@ -38,8 +42,6 @@ editor.signals.updatedSelection.add(() => {
   geometryNodes.setActiveByElement(editor.selected[0] || null)
 })
 
-// Expose paperEditor on editor so commands and UI can access it
-editor.paperEditor = paperEditor
 editor.geometryNodeEditor = geometryNodeEditor
 editor.helpSession = helpSession
 

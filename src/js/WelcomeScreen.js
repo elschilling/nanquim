@@ -11,10 +11,12 @@ const DATABASE_NAME = 'nanquim-recent-files'
 const STORE_NAME = 'files'
 const RECENT_LIMIT = 10
 
-function WelcomeScreen(editor) {
+function WelcomeScreen(editor, options = {}) {
   this.editor = editor
   this._overlay = null
   this._dismissState = null
+  this._documentActionId = 0
+  this._getRecentFiles = options.getRecentFiles || getRecentFiles
 
   // Remove snapshots written by versions that cached the file contents.
   localStorage.removeItem(LEGACY_STORAGE_KEY)
@@ -29,7 +31,7 @@ WelcomeScreen.prototype.show = async function () {
   const overlay = document.createElement('div')
   overlay.id = 'welcome-overlay'
   overlay.className = 'welcome-overlay'
-  const recentFiles = await getRecentFiles()
+  const recentFiles = await this._getRecentFiles()
   overlay.innerHTML = _buildHTML(recentFiles, _canPersistFileHandles())
 
   overlay.addEventListener('click', (e) => {
@@ -40,14 +42,18 @@ WelcomeScreen.prototype.show = async function () {
   this._overlay = overlay
 
   // Wire buttons
-  overlay.querySelector('#ws-new').addEventListener('click', () => {
-    this.dismiss()
-    // new file = just start fresh (editor already blank on load)
+  overlay.querySelector('#ws-new').addEventListener('click', async () => {
+    await this.runDocumentAction(
+      () => this.editor.documents.newDocument(),
+      'Could not create a new drawing.',
+    )
   })
 
-  overlay.querySelector('#ws-open').addEventListener('click', () => {
-    this.dismiss()
-    window.openSVG()
+  overlay.querySelector('#ws-open').addEventListener('click', async () => {
+    await this.runDocumentAction(
+      () => this.editor.documents.open(),
+      'Could not open a drawing.',
+    )
   })
 
   overlay.querySelector('#ws-dismiss').addEventListener('click', () => {
@@ -58,16 +64,42 @@ WelcomeScreen.prototype.show = async function () {
   overlay.querySelectorAll('.ws-recent-item').forEach((item) => {
     const index = parseInt(item.dataset.index, 10)
     item._recentFile = recentFiles[index]
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       const recent = item._recentFile
       if (!recent) return
-      _openRecentFile(recent, this.editor, this)
+      await this.runDocumentAction(
+        () => _openRecentFile(recent, this.editor),
+        `Could not open ${recent.name}.`,
+      )
     })
   })
 
   // Dismiss on Escape
   this._keyHandler = (e) => { if (e.key === 'Escape') this.dismiss() }
   document.addEventListener('keydown', this._keyHandler)
+}
+
+WelcomeScreen.prototype.isVisible = function () {
+  return Boolean(this._overlay?.isConnected)
+}
+
+WelcomeScreen.prototype.runDocumentAction = async function (
+  action,
+  failureMessage,
+  { dismissOnSuccess = true } = {},
+) {
+  const actionId = ++this._documentActionId
+
+  try {
+    if (typeof action !== 'function') throw new TypeError('Document action is unavailable.')
+    const result = await action()
+    if (actionId === this._documentActionId && result?.ok && dismissOnSuccess) this.dismiss()
+    return result
+  } catch (error) {
+    console.error('[WelcomeScreen] Document action failed:', error)
+    this.editor.signals?.terminalLogged?.dispatch({ msg: failureMessage })
+    return { ok: false, error }
+  }
 }
 
 WelcomeScreen.prototype.dismiss = function (onComplete) {
@@ -165,32 +197,27 @@ async function _findMatchingEntry(entries, handle) {
   return null
 }
 
-async function _openRecentFile(recent, editor, welcomeScreen) {
+async function _openRecentFile(recent, editor) {
   try {
-    // Call this directly from the click handler so the browser treats it as a
-    // user-initiated permission request. Asking for write access here also
-    // enables a later Ctrl+S direct save without another prompt.
-    const permission = await recent.handle.requestPermission({ mode: 'readwrite' })
+    // Open needs read access only. Direct Save requests write permission later,
+    // so denying write access never prevents a readable recent file from opening.
+    let permission = typeof recent.handle.queryPermission === 'function'
+      ? await recent.handle.queryPermission({ mode: 'read' })
+      : 'prompt'
+    if (permission !== 'granted' && typeof recent.handle.requestPermission === 'function') {
+      permission = await recent.handle.requestPermission({ mode: 'read' })
+    }
     if (permission !== 'granted') {
       editor.signals.terminalLogged.dispatch({ msg: `Access to ${recent.name} was not granted.` })
-      return
+      return { ok: false, permissionDenied: true }
     }
 
     const file = await recent.handle.getFile()
-    editor.currentFileName = file.name
-    editor.currentFileHandle = recent.handle
-    welcomeScreen.dismiss()
-    editor.loader.loadFile(file)
+    return await editor.documents.openFile(file, { handle: recent.handle })
   } catch (error) {
-    // A deleted or moved file has no valid handle anymore. Do not offer an old
-    // drawing snapshot in its place.
-    if (error.name === 'NotFoundError') {
-      await _removeRecentFile(recent.id)
-      welcomeScreen.dismiss(() => welcomeScreen.show())
-      return
-    }
     console.error('[WelcomeScreen] Failed to open recent file:', error)
     editor.signals.terminalLogged.dispatch({ msg: `Could not open ${recent.name}.` })
+    return { ok: false, error }
   }
 }
 
@@ -223,16 +250,6 @@ function _request(request) {
   })
 }
 
-async function _removeRecentFile(id) {
-  const db = await _openDatabase()
-  if (!db) return
-  try {
-    await _delete(db, id)
-  } finally {
-    db.close()
-  }
-}
-
 // ── HTML builder ─────────────────────────────────────────────────────────────
 
 function _formatDate(ts) {
@@ -248,7 +265,7 @@ function _canPersistFileHandles() {
 function _buildHTML(recentFiles, canPersistFileHandles) {
   const recentHTML = recentFiles.length
     ? recentFiles.map((f, i) => /* html */`
-        <div class="ws-recent-item" data-index="${i}" title="${f.name}">
+        <div class="ws-recent-item" data-index="${i}" title="${_esc(f.name)}">
           <span class="ws-recent-icon icon icon-canvas"></span>
           <span class="ws-recent-name">${_esc(f.name)}</span>
           <span class="ws-recent-date">${_formatDate(f.timestamp)}</span>

@@ -383,14 +383,7 @@ class GeometryNodeEditor {
     }, { passive: false })
 
     window.addEventListener('pointermove', (event) => {
-      if (this.panState && event.pointerId === this.panState.pointerId) {
-        const dx = event.clientX - this.panState.startX
-        const dy = event.clientY - this.panState.startY
-        if (Math.abs(dx) + Math.abs(dy) > 2) this.panState.moved = true
-        this.pan.x = this.panState.panX + dx
-        this.pan.y = this.panState.panY + dy
-        this._applyTransform()
-      }
+      this._updatePan(event)
       if (this.dragState && event.pointerId === this.dragState.pointerId) this._moveNodes(event)
       if (this.connecting && (
         this.connecting.pointerId === null || event.pointerId === this.connecting.pointerId
@@ -542,6 +535,43 @@ class GeometryNodeEditor {
     })
     listen('nodeEvaluationCompleted', () => this.render())
     listen('geometryNodesChanged', () => this.render())
+    listen('documentSessionReset', () => this._resetDocumentSession())
+  }
+
+  _resetDocumentSession() {
+    const releaseCapture = (element, state) => {
+      const pointerId = state?.pointerId
+      if (pointerId === undefined || pointerId === null) return
+      if (!element?.hasPointerCapture?.(pointerId)) return
+      try { element.releasePointerCapture(pointerId) } catch (_) { /* capture already ended */ }
+    }
+
+    releaseCapture(this.stage, this.panState)
+    releaseCapture(this.resizer, this.resizeState)
+    this._cancelAutoLayoutAnimation(false)
+    this._cancelConnection()
+    this._closePalette()
+    this._clearWireInsertionPreview()
+    this.dragState = null
+    this.panState = null
+    this.resizeState = null
+    this.spaceDown = false
+    this.stage?.classList.remove('is-panning')
+    this.resizer?.classList.remove('is-resizing')
+    this.selectedNodes.clear()
+    this.selectedLinks.clear()
+    this._views?.clear()
+    this.graphId = null
+    this.pan = { x: 80, y: 42 }
+    this.zoom = 1
+    this.root?.classList.remove('is-open', 'is-collapsed')
+    this.root?.setAttribute('aria-hidden', 'true')
+    this.host?.classList.remove('is-geometry-nodes-open')
+    if (this.editor.activeEditor !== 'canvas') {
+      this.editor.activeEditor = 'canvas'
+      this.editor.signals?.activeEditorChanged?.dispatch('canvas')
+    }
+    this.render()
   }
 
   _bindCanvasFocus() {
@@ -1622,6 +1652,18 @@ class GeometryNodeEditor {
     return { x: clientX - rect.left, y: clientY - rect.top }
   }
 
+  _updatePan(event) {
+    if (!this.panState || event.pointerId !== this.panState.pointerId) return false
+    const dx = event.clientX - this.panState.startX
+    const dy = event.clientY - this.panState.startY
+    if (Math.abs(dx) + Math.abs(dy) > 2) this.panState.moved = true
+    this.pan.x = this.panState.panX + dx
+    this.pan.y = this.panState.panY + dy
+    if (this.panState.moved) this._rememberView()
+    this._applyTransform()
+    return true
+  }
+
   _applyTransform() {
     if (!this.world || !this.stage) return
     this.world.style.transform = `translate(${this.pan.x}px, ${this.pan.y}px) scale(${this.zoom})`
@@ -1919,16 +1961,39 @@ class GeometryNodeEditor {
 
   _rememberView() {
     if (!this.graphId) return
+    const view = { x: this.pan.x, y: this.pan.y, zoom: this.zoom }
     if (!this._views) this._views = new Map()
-    this._views.set(String(this.graphId), { x: this.pan.x, y: this.pan.y, zoom: this.zoom })
+    this._views.set(String(this.graphId), view)
+
+    if (typeof this.manager?.setGraphView === 'function') {
+      return this.manager.setGraphView(this.graphId, view)
+    }
+
+    const graph = this._graph()
+    const previous = graph?.view
+    if (
+      !graph
+      || (
+        Number(previous?.x) === view.x
+        && Number(previous?.y) === view.y
+        && Number(previous?.zoom) === view.zoom
+      )
+    ) return false
+    if (typeof graph.setView === 'function') graph.setView(view)
+    else graph.view = view
+    this.editor.documentState?.markChanged?.('geometry-nodes-view')
+    return true
   }
 
   _hasViewForGraph(graphId) {
-    return Boolean(this._views?.has(String(graphId)))
+    if (!graphId) return false
+    const graph = this.manager?.getGraph?.(graphId)
+    return Boolean(this._normaliseView(graph?.view) || this._views?.has(String(graphId)))
   }
 
   _loadRememberedView() {
-    const view = this._views?.get(String(this.graphId))
+    const graph = this.graphId ? this.manager?.getGraph?.(this.graphId) : null
+    const view = this._normaliseView(graph?.view) || this._views?.get(String(this.graphId))
     if (view) {
       this.pan = { x: view.x, y: view.y }
       this.zoom = view.zoom
@@ -1937,6 +2002,21 @@ class GeometryNodeEditor {
       this.zoom = 1
     }
     this._applyTransform()
+  }
+
+  _normaliseView(view) {
+    if (!view || typeof view !== 'object') return null
+    const x = Number(view.x)
+    const y = Number(view.y)
+    const zoom = Number(view.zoom)
+    if (
+      !Number.isFinite(x)
+      || !Number.isFinite(y)
+      || !Number.isFinite(zoom)
+      || zoom < 0.2
+      || zoom > 2.5
+    ) return null
+    return { x, y, zoom }
   }
 
   _restoreHeight() {

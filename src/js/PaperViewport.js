@@ -36,6 +36,8 @@ function PaperViewport(editor, parentGroup, opts) {
     scale = 100,
     modelOriginX = 0,
     modelOriginY = 0,
+    visible = true,
+    locked = false,
   } = opts
 
   this.id = id
@@ -46,10 +48,13 @@ function PaperViewport(editor, parentGroup, opts) {
   this.scale = scale
   this.modelOriginX = modelOriginX
   this.modelOriginY = modelOriginY
-  this.visible = true
-  this.locked = false
+  this.visible = visible !== false
+  this.locked = locked === true
 
-  const svgRoot = editor.paperSvg
+  // Document loading can construct a complete Paper candidate off-DOM. Once
+  // adopted, editor.paperSvg points to this same root; interactive methods can
+  // continue to use the editor normally.
+  const svgRoot = opts.svgRoot || editor.paperSvg
 
   // ── Build SVG structure ───────────────────────────────────────────────────
 
@@ -98,6 +103,7 @@ function PaperViewport(editor, parentGroup, opts) {
 
   // Apply initial transform
   this.refreshTransform()
+  if (!this.visible) group.hide()
 
   // ── Interactions: Selection & Panning ─────────────────────────────────────
   this._attachInteractions()
@@ -151,33 +157,99 @@ PaperViewport.prototype.refreshGeometry = function () {
 }
 
 /**
+ * Replace persisted viewport bounds as one user-visible change. Interactive
+ * command previews may still assign temporary values directly and let History
+ * own the final dirty-state transition.
+ */
+PaperViewport.prototype.setGeometry = function (values = {}, options = {}) {
+  const next = {
+    x: values.x ?? this.x,
+    y: values.y ?? this.y,
+    w: values.w ?? values.width ?? this.w,
+    h: values.h ?? values.height ?? this.h,
+  }
+  if (
+    !Number.isFinite(next.x)
+    || !Number.isFinite(next.y)
+    || !Number.isFinite(next.w)
+    || !Number.isFinite(next.h)
+    || next.w <= 0
+    || next.h <= 0
+  ) return false
+  if (next.x === this.x && next.y === this.y && next.w === this.w && next.h === this.h) {
+    return false
+  }
+
+  Object.assign(this, next)
+  this.refreshGeometry()
+  this._persistChange('paper-viewport-geometry', options)
+  return true
+}
+
+/**
  * Set the model origin (the model-space point that appears at the
  * top-left of the viewport). Usually set by panning inside the viewport.
  */
-PaperViewport.prototype.setModelOrigin = function (mx, my) {
+PaperViewport.prototype.setModelOrigin = function (mx, my, options = {}) {
+  if (this.modelOriginX === mx && this.modelOriginY === my) return false
   this.modelOriginX = mx
   this.modelOriginY = my
   this.refreshTransform()
+  this._persistChange('paper-viewport-origin', options)
+  return true
 }
 
 /**
  * Set the drawing scale (e.g. 100 for 1:100).
  */
-PaperViewport.prototype.setScale = function (scale) {
+PaperViewport.prototype.setScale = function (scale, options = {}) {
+  if (this.scale === scale) return false
   this.scale = scale
-  this.refreshTransform()
   this.refreshGeometry()
+  this._persistChange('paper-viewport-scale', options)
+  return true
 }
 
 /**
  * Toggle viewport visibility.
  */
-PaperViewport.prototype.setVisible = function (visible) {
-  this.visible = visible
-  if (visible) {
+PaperViewport.prototype.setVisible = function (visible, options = {}) {
+  const nextVisible = visible !== false
+  if (this.visible === nextVisible) return false
+  this.visible = nextVisible
+  if (nextVisible) {
     this._group.show()
   } else {
     this._group.hide()
+  }
+  this._persistChange('paper-viewport-visibility', options)
+  return true
+}
+
+/**
+ * Toggle whether the viewport can be selected or panned.
+ */
+PaperViewport.prototype.setLocked = function (locked, options = {}) {
+  const nextLocked = locked === true
+  if (this.locked === nextLocked) return false
+  this.locked = nextLocked
+  if (nextLocked) this.deactivate()
+  this._persistChange('paper-viewport-lock', options)
+  return true
+}
+
+/**
+ * Record one persisted viewport change. Restoring a document can pass
+ * `{ silent: true }`; the surrounding document transaction then owns the
+ * resulting dirty-state transition.
+ */
+PaperViewport.prototype._persistChange = function (reason, options = {}) {
+  const silent = options === true || options.silent === true || options.restoring === true
+  if (!silent && this._editor.documentState) {
+    this._editor.documentState.markChanged(reason)
+  }
+  if (options.notify !== false) {
+    this._editor.signals.paperViewportsChanged?.dispatch()
   }
 }
 
@@ -189,7 +261,7 @@ PaperViewport.prototype._attachInteractions = function() {
 
   this.activeForPanning = false
   this._onDblClick = (e) => {
-    if (_editor.mode !== 'paper' || _editor.isDrawing) return
+    if (_editor.mode !== 'paper' || _editor.isDrawing || this.locked) return
     if (e.button !== 0) return // Only left double click to activate
     e.stopPropagation()
     
@@ -205,7 +277,7 @@ PaperViewport.prototype._attachInteractions = function() {
 
   this._onMouseDown = (e) => {
     // Only intercept if we are in Paper mode (sanity check) and not actively drawing lines
-    if (_editor.mode !== 'paper' || _editor.isDrawing) return
+    if (_editor.mode !== 'paper' || _editor.isDrawing || this.locked) return
 
     // Standard Select (Left Click)
     if (e.button === 0) {
@@ -225,9 +297,9 @@ PaperViewport.prototype._attachInteractions = function() {
       e.preventDefault()
       e.stopPropagation() // Prevent the main canvas from panning the paper sheet
 
-      const svgEl = _editor.paperSvg.node
       const startMouse = { x: e.clientX, y: e.clientY }
       const startOrigin = { x: this.modelOriginX, y: this.modelOriginY }
+      const panState = { moved: false, onMove: null, onUp: null }
 
       const onMove = (ev) => {
         // Delta in screen pixels
@@ -246,14 +318,21 @@ PaperViewport.prototype._attachInteractions = function() {
         const modelDx = -svgDx * this.scale
         const modelDy = -svgDy * this.scale
 
-        this.setModelOrigin(startOrigin.x + modelDx, startOrigin.y + modelDy)
+        panState.moved = this.setModelOrigin(
+          startOrigin.x + modelDx,
+          startOrigin.y + modelDy,
+          { notify: false },
+        ) || panState.moved
       }
 
       const onUp = () => {
-        document.removeEventListener('mousemove', onMove)
-        document.removeEventListener('mouseup', onUp)
+        this._finishActivePan()
       }
 
+      this._finishActivePan({ persist: false })
+      panState.onMove = onMove
+      panState.onUp = onUp
+      this._panState = panState
       document.addEventListener('mousemove', onMove)
       document.addEventListener('mouseup', onUp)
     }
@@ -261,6 +340,21 @@ PaperViewport.prototype._attachInteractions = function() {
 
   _frame.node.addEventListener('dblclick', this._onDblClick)
   _frame.node.addEventListener('mousedown', this._onMouseDown)
+}
+
+PaperViewport.prototype._finishActivePan = function ({ persist = true } = {}) {
+  const state = this._panState
+  if (!state) return false
+  document.removeEventListener('mousemove', state.onMove)
+  document.removeEventListener('mouseup', state.onUp)
+  this._panState = null
+  if (persist && state.moved) {
+    // Each meaningful move is already revisioned so a concurrent Save token
+    // cannot make later drag coordinates appear clean. Completion only
+    // notifies dependent Paper UI without inventing another document change.
+    this._persistChange('paper-viewport-origin', { silent: true })
+  }
+  return state.moved
 }
 
 /**
@@ -279,7 +373,8 @@ PaperViewport.prototype.activate = function() {
   }
   
   // Use a slight timeout to prevent the current double-click from immediately deactivating
-  setTimeout(() => {
+  this._activationTimer = setTimeout(() => {
+    this._activationTimer = null
     window.addEventListener('mousedown', this._onOutsideClick)
   }, 10)
 }
@@ -287,7 +382,12 @@ PaperViewport.prototype.activate = function() {
 /**
  * Deactivates this viewport.
  */
-PaperViewport.prototype.deactivate = function() {
+PaperViewport.prototype.deactivate = function(options = {}) {
+  this._finishActivePan({ persist: options.persistPan !== false })
+  if (this._activationTimer) {
+    clearTimeout(this._activationTimer)
+    this._activationTimer = null
+  }
   if (!this.activeForPanning) return
   this.activeForPanning = false
   this._frame.attr('stroke-width', 0.02)
@@ -302,7 +402,7 @@ PaperViewport.prototype.deactivate = function() {
  * Remove from the SVG and clean up.
  */
 PaperViewport.prototype.destroy = function () {
-  this.deactivate()
+  this.deactivate({ persistPan: false })
   if (this._frame && this._frame.node) {
     this._frame.node.removeEventListener('dblclick', this._onDblClick)
     this._frame.node.removeEventListener('mousedown', this._onMouseDown)

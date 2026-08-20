@@ -33,7 +33,7 @@ release deliberately changes that format and includes migration tests.
 | --- | --- | --- |
 | Application | `package.json` | Use SemVer without a leading `v`. The build derives all visible application labels from this value. |
 | Git tag and GitHub release | Git | Prefix the application version with `v`, for example `v0.1.0-alpha.1`. |
-| Native SVG document | `data-nanquim-version` in the save/load boundary | Version independently; currently schema 2. |
+| Native SVG document | `DOCUMENT_SCHEMA_VERSION` in `src/js/document/DocumentSerializer.js` and `data-nanquim-version` in saved SVG | Version independently; currently schema 3. |
 | Geometry Nodes metadata | Geometry Nodes manager and graph serializers | Version independently; currently schema 1. |
 
 ## Prepare a release

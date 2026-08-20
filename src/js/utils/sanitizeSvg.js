@@ -202,20 +202,37 @@ function sanitizeCssValue(rawValue) {
   return value
 }
 
-function sanitizeStyleDeclarations(cssText) {
-  const withoutComments = String(cssText).replace(/\/\*[\s\S]*?\*\//g, '')
+function sanitizeStyleDeclarationsDetailed(cssText) {
+  const source = String(cssText)
+  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const declarations = []
+  let filtered = withoutComments !== source
 
   splitCssTopLevel(withoutComments, ';').forEach((candidate) => {
+    if (!candidate.trim()) return
     const colon = findCssColon(candidate)
-    if (colon < 1) return
+    if (colon < 1) {
+      filtered = true
+      return
+    }
     const property = candidate.slice(0, colon).trim().toLowerCase()
-    if (!CSS_PROPERTIES.has(property) && !/^--[a-z0-9_-]{1,64}$/i.test(property)) return
+    if (!CSS_PROPERTIES.has(property) && !/^--[a-z0-9_-]{1,64}$/i.test(property)) {
+      filtered = true
+      return
+    }
     const value = sanitizeCssValue(candidate.slice(colon + 1))
-    if (value !== null) declarations.push(`${property}:${value}`)
+    if (value === null) {
+      filtered = true
+      return
+    }
+    declarations.push(`${property}:${value}`)
   })
 
-  return declarations.join(';')
+  return { value: declarations.join(';'), filtered }
+}
+
+function sanitizeStyleDeclarations(cssText) {
+  return sanitizeStyleDeclarationsDetailed(cssText).value
 }
 
 function scopeSelector(selector, scope, stylesheetRoot = scope) {
@@ -256,12 +273,19 @@ function scopeSelector(selector, scope, stylesheetRoot = scope) {
   return `${scope} ${trimmed}`
 }
 
-function sanitizeStyleSheet(cssText, scope = '#Collection', stylesheetRoot = scope) {
-  const css = String(cssText)
+function sanitizeStyleSheetDetailed(cssText, scope = '#Collection', stylesheetRoot = scope) {
+  const source = String(cssText)
+  let filtered = /\/\*[\s\S]*?\*\//.test(source)
+  let removedStatementRule = false
+  const css = source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     // Remove statement-form at-rules independently so a leading @import does
     // not cause the following ordinary (and otherwise safe) rule to be lost.
-    .replace(/@(import|charset|namespace)\b[\s\S]*?;/gi, '')
+    .replace(/@(import|charset|namespace)\b[\s\S]*?;/gi, () => {
+      removedStatementRule = true
+      return ''
+    })
+  filtered ||= removedStatementRule
   const rules = []
   let cursor = 0
 
@@ -277,17 +301,32 @@ function sanitizeStyleSheet(cssText, scope = '#Collection', stylesheetRoot = sco
     // Nested blocks and at-rules (including @import and @font-face) are not
     // needed for technical SVG styling and substantially widen the attack
     // surface, so discard the complete rule.
-    if (!prelude || prelude.startsWith('@') || /[{}]/.test(body)) continue
-    const declarations = sanitizeStyleDeclarations(body)
-    if (!declarations) continue
+    if (!prelude || prelude.startsWith('@') || /[{}]/.test(body)) {
+      filtered = true
+      continue
+    }
+    const declarationResult = sanitizeStyleDeclarationsDetailed(body)
+    filtered ||= declarationResult.filtered
+    const declarations = declarationResult.value
+    if (!declarations) {
+      filtered = true
+      continue
+    }
 
-    const selectors = splitCssTopLevel(prelude, ',')
+    const selectorCandidates = splitCssTopLevel(prelude, ',')
+    const selectors = selectorCandidates
       .map((selector) => scopeSelector(selector, scope, stylesheetRoot))
       .filter(Boolean)
+    if (selectors.length !== selectorCandidates.length) filtered = true
     if (selectors.length > 0) rules.push(`${selectors.join(',')}{${declarations}}`)
   }
 
-  return rules.join('\n')
+  if (css.slice(cursor).trim()) filtered = true
+  return { value: rules.join('\n'), filtered }
+}
+
+function sanitizeStyleSheet(cssText, scope = '#Collection', stylesheetRoot = scope) {
+  return sanitizeStyleSheetDetailed(cssText, scope, stylesheetRoot).value
 }
 
 function sanitizeHref(rawValue, elementName) {
@@ -309,7 +348,12 @@ function safeNamespaceAttribute(attribute, element) {
   return !attribute.namespaceURI
 }
 
-function sanitizeAttributes(element) {
+function markSanitized(state) {
+  state.changed = true
+  state.mutations += 1
+}
+
+function sanitizeAttributes(element, state) {
   const elementName = element.localName.toLowerCase()
   Array.from(element.attributes).forEach((attribute) => {
     const localName = attribute.localName.toLowerCase()
@@ -319,40 +363,52 @@ function sanitizeAttributes(element) {
 
     if (!safeNamespaceAttribute(attribute, element)) {
       element.removeAttributeNode(attribute)
+      markSanitized(state)
       return
     }
     if (localName.startsWith('on') || qualifiedName.startsWith('on')) {
       element.removeAttributeNode(attribute)
+      markSanitized(state)
       return
     }
     if (isData && qualifiedName.split(/[-:]/).some((part) => DANGEROUS_JSON_KEYS.has(part))) {
       element.removeAttributeNode(attribute)
+      markSanitized(state)
       return
     }
     if (!isData && !isAria && !ALLOWED_ATTRIBUTES.has(localName) && attribute.namespaceURI !== XMLNS_NS && attribute.namespaceURI !== XML_NS) {
       element.removeAttributeNode(attribute)
+      markSanitized(state)
       return
     }
     if (attribute.value.length > 4 * 1024 * 1024 && localName !== 'href') {
       element.removeAttributeNode(attribute)
+      markSanitized(state)
       return
     }
 
     if (localName === 'href') {
       const safeHref = sanitizeHref(attribute.value, elementName)
-      if (safeHref === null) element.removeAttributeNode(attribute)
+      if (safeHref === null) {
+        element.removeAttributeNode(attribute)
+        markSanitized(state)
+      }
       else attribute.value = safeHref
       return
     }
     if (localName === 'style') {
-      const safeStyle = sanitizeStyleDeclarations(attribute.value)
-      if (safeStyle) attribute.value = safeStyle
+      const result = sanitizeStyleDeclarationsDetailed(attribute.value)
+      if (result.value) attribute.value = result.value
       else element.removeAttributeNode(attribute)
+      if (result.filtered || !result.value) markSanitized(state)
       return
     }
     if (CSS_URL_ATTRIBUTES.has(localName)) {
       const safeValue = sanitizeCssValue(attribute.value)
-      if (safeValue === null) element.removeAttributeNode(attribute)
+      if (safeValue === null) {
+        element.removeAttributeNode(attribute)
+        markSanitized(state)
+      }
       else attribute.value = safeValue
     }
   })
@@ -370,29 +426,35 @@ function sanitizeElement(element, options, state, depth) {
   const name = element.localName.toLowerCase()
   if (element.namespaceURI !== SVG_NS || DROP_WITH_CONTENT.has(name) || !ALLOWED_ELEMENTS.has(name)) {
     element.remove()
+    markSanitized(state)
     return
   }
 
-  sanitizeAttributes(element)
+  sanitizeAttributes(element, state)
 
   if (name === 'style') {
-    const safeCss = sanitizeStyleSheet(
+    const result = sanitizeStyleSheetDetailed(
       element.textContent,
       options.deferStyleScoping ? null : options.scopeSelector,
       options.deferStyleScoping ? null : options.stylesheetRootSelector,
     )
-    if (!safeCss) element.remove()
-    else element.textContent = safeCss
+    if (!result.value) element.remove()
+    else element.textContent = result.value
+    if (result.filtered || !result.value) markSanitized(state)
     return
   }
   if (name === 'metadata' && element.textContent.length > options.maxMetadataLength) {
     element.remove()
+    markSanitized(state)
     return
   }
 
   Array.from(element.childNodes).forEach((child) => {
     if (child.nodeType === 1) sanitizeElement(child, options, state, depth + 1)
-    else if (child.nodeType !== 3) child.remove()
+    else if (child.nodeType !== 3) {
+      child.remove()
+      markSanitized(state)
+    }
   })
 }
 
@@ -421,7 +483,12 @@ function sanitizeSvgDocument(documentRef, options = {}) {
       : 128,
     deferStyleScoping: options.deferStyleScoping === true,
   }
-  sanitizeElement(root, normalizedOptions, { elements: 0 }, 0)
+  const state = { changed: false, elements: 0, mutations: 0 }
+  sanitizeElement(root, normalizedOptions, state, 0)
+  if (options.report && typeof options.report === 'object') {
+    options.report.changed = state.changed
+    options.report.mutations = state.mutations
+  }
   return root
 }
 
@@ -668,6 +735,8 @@ export {
   scopeSvgStyleElements,
   sanitizeCssValue,
   sanitizeStyleDeclarations,
+  sanitizeStyleDeclarationsDetailed,
   sanitizeStyleSheet,
+  sanitizeStyleSheetDetailed,
   sanitizeSvgDocument,
 }

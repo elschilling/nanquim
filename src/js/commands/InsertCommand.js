@@ -1,5 +1,5 @@
 import { Command } from '../Command'
-import { insertBlockInstance, getBlockNames } from '../BlockManager'
+import { getBlockDefinition, insertBlockInstance, getBlockNames } from '../BlockManager'
 
 class InsertCommand extends Command {
   constructor(editor) {
@@ -32,8 +32,7 @@ class InsertCommand extends Command {
   // ── Modal UI ──────────────────────────────────────────────────────────────
 
   _buildBlockThumbnail(name) {
-    const defId = 'block-' + name
-    const defEl = this.editor.svg.defs().findOne('#' + CSS.escape(defId))
+    const defEl = getBlockDefinition(this.editor, name)
     if (!defEl) return ''
 
     // Get bounding box of the definition content
@@ -176,8 +175,7 @@ class InsertCommand extends Command {
   // ── Ghost preview ─────────────────────────────────────────────────────────
 
   _spawnGhost() {
-    const defId = 'block-' + this.blockName
-    const defEl = this.editor.svg.defs().findOne('#' + CSS.escape(defId))
+    const defEl = getBlockDefinition(this.editor, this.blockName)
     if (!defEl) return
 
     const parent = this.editor.activeCollection

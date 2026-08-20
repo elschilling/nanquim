@@ -30,11 +30,30 @@ const PAPER_SIZES = {
   custom: { width: 210, height: 297 },
 }
 
+const PAPER_ANNOTATIONS_ID = 'paper-annotations'
+const PAPER_ANNOTATION_STYLE = Object.freeze({
+  stroke: 'black',
+  'stroke-width': 0.1,
+  'stroke-linecap': 'round',
+  fill: 'transparent',
+})
+
+function domNode(value) {
+  return value && (value.node || value)
+}
+
+function isElement(value) {
+  return Boolean(value && value.nodeType === 1)
+}
+
 function PaperEditor(editor) {
   const signals = editor.signals
 
   // Paper SVG instance (separate from draw SVG)
   let paperSvg = null
+  // Owning container, retained separately so a partial SVG build can be
+  // removed without targeting another editor's DOM by global id alone.
+  let paperCanvasElement = null
   // SVG group for the white paper sheet rect
   let paperSheet = null
   // Annotation layer group (user draws here)
@@ -49,6 +68,10 @@ function PaperEditor(editor) {
   let paperHandlers = null
   // Saved active collection to restore after deactivating paper mode
   let savedActiveCollection = null
+  // Last known annotation collection state. Model collection hydration clears
+  // editor.collections, but must not discard this separate Paper collection.
+  let annotationCollectionState = null
+  const preparedDocumentStates = new WeakSet()
 
   // ── Activation / Deactivation ───────────────────────────────────────────────
 
@@ -64,16 +87,16 @@ function PaperEditor(editor) {
     // Hide the draw SVG (preserving the terminal inside editor.canvas)
     editor.svg.node.style.display = 'none'
 
-    // Create the paper SVG container if needed
-    if (!paperSvg) {
-      _buildPaperSVG()
-    } else {
-      document.getElementById('paper-canvas').style.display = 'flex'
-    }
+    // Create the paper document infrastructure if needed, then reveal it.
+    // Infrastructure creation itself never changes editor mode or hides Model
+    // Space, which lets the document loader restore Paper state atomically.
+    ensureDocumentInfrastructure()
+    const paperCanvasEl = paperCanvasElement
+    if (paperCanvasEl) paperCanvasEl.style.display = 'flex'
 
     _renderPaperSheet()
     _refreshAllViewports()
-    _applyLiveColorMapping()
+    _withoutDocumentTracking(_applyLiveColorMapping)
 
     // Swap handlers to the paper canvas
     if (paperHandlers) {
@@ -94,119 +117,369 @@ function PaperEditor(editor) {
     editor.svg.node.style.display = ''
 
     // Hide paper SVG container
-    const paperCanvasEl = document.getElementById('paper-canvas')
+    const paperCanvasEl = paperCanvasElement
     if (paperCanvasEl) {
       paperCanvasEl.style.display = 'none'
     }
 
     // Restore draw handlers
     editor.handlers = editor.modelHandlers
-    _clearLiveColorMapping()
+    _withoutDocumentTracking(_clearLiveColorMapping)
 
-    // Restore active collection
-    if (savedActiveCollection) {
-      editor.activeCollection = savedActiveCollection
-    }
+    // Restore the model collection once. Keeping this pointer after leaving
+    // Paper Space lets a later document-session notification revive a group
+    // from the previous drawing.
+    const collectionToRestore = savedActiveCollection
+    savedActiveCollection = null
+    if (collectionToRestore) editor.activeCollection = collectionToRestore
     
     signals.updatedOutliner.dispatch()
     signals.updatedProperties.dispatch()
   }
 
-  // ── Internal build helpers ──────────────────────────────────────────────────
+  function getActiveModelCollection() {
+    const drawing = domNode(editor.drawing)
+    const active = domNode(editor.activeCollection)
+    if (drawing && active && drawing.contains(active)) return editor.activeCollection
 
-  function _buildPaperSVG() {
-    const canvasContainer = editor.canvas // #canvas (holds SVG and terminal)
-
-    // Create a new container div for the paper canvas
-    const paperCanvasEl = document.createElement('div')
-    paperCanvasEl.id = 'paper-canvas'
-    paperCanvasEl.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:#6b6b6b;overflow:hidden;display:flex;align-items:center;justify-content:center;'
-    
-    // Insert before terminal to keep terminal at the bottom
-    const terminalEl = canvasContainer.querySelector('.terminal')
-    if (terminalEl) {
-      canvasContainer.insertBefore(paperCanvasEl, terminalEl)
-    } else {
-      canvasContainer.appendChild(paperCanvasEl)
-    }
-
-    // Create SVG.js instance
-    paperSvg = SVG().addTo('#paper-canvas')
-      .size('100%', '100%')
-    paperSvg.addClass('paper-canvas-svg')
-    paperSvg.node.style.cssText = 'width:100%;height:100%;'
-
-    // Groups in stacking order
-    const bgGroup = paperSvg.group().attr('id', 'paper-background')
-    paperSheet = bgGroup
-
-    viewportsGroup = paperSvg.group().attr('id', 'paper-viewports')
-    annotationsGroup = paperSvg.group().attr('id', 'paper-annotations')
-    annotationsGroup.attr('data-collection', 'true')
-    annotationsGroup.attr('name', 'Annotations')
-
-    // Register annotationsGroup in editor.collections for styling and outliner
-    if (editor.collections) {
-      editor.collections.set('paper-annotations', {
-        group: annotationsGroup,
-        visible: true,
-        locked: false,
-        style: {
-          stroke: 'black',
-          'stroke-width': 0.1,
-          'stroke-linecap': 'round',
-          fill: 'transparent',
-        },
-      })
-    }
-
-    paperHandlers = paperSvg.group().attr('id', 'paper-handlers')
-
-    // Store reference so commands can add to annotations
-    editor.paperAnnotations = annotationsGroup
-    editor.paperViewportsGroup = viewportsGroup
-    editor.paperSvg = paperSvg
-    editor.paperViewports = viewports
-
-    // Set initial viewbox to paper sheet dimensions
-    _updatePaperViewbox()
+    const saved = domNode(savedActiveCollection)
+    return drawing && saved && drawing.contains(saved) ? savedActiveCollection : null
   }
 
-  function _renderPaperSheet() {
-    if (!paperSvg) return
-    paperSheet.clear()
+  // ── Internal build helpers ──────────────────────────────────────────────────
 
-    const { wSVG, hSVG } = _getPaperDimsSVG()
+  function _paperDimensions(config) {
+    const scale = config.unitsPerCm / 10
+    return {
+      wSVG: config.width * scale,
+      hSVG: config.height * scale,
+    }
+  }
 
-    // Shadow
-    paperSheet.rect(wSVG, hSVG)
+  function _renderPaperSheetFor(sheet, config) {
+    sheet.clear()
+    const { wSVG, hSVG } = _paperDimensions(config)
+    sheet.rect(wSVG, hSVG)
       .move(0.2, 0.2)
       .fill('#00000033')
       .stroke('none')
-
-    // White paper surface
-    paperSheet.rect(wSVG, hSVG)
+    sheet.rect(wSVG, hSVG)
       .move(0, 0)
       .fill('white')
       .stroke('#cccccc')
       .attr('stroke-width', 0.02)
   }
 
-  function _updatePaperViewbox() {
-    const { wSVG, hSVG } = _getPaperDimsSVG()
-    // Show paper with some margin around it
+  function _updatePaperViewboxFor(svg, config) {
+    const { wSVG, hSVG } = _paperDimensions(config)
     const margin = Math.max(wSVG, hSVG) * 0.15
-    paperSvg.viewbox(-margin, -margin, wSVG + margin * 2, hSVG + margin * 2)
+    svg.viewbox(-margin, -margin, wSVG + margin * 2, hSVG + margin * 2)
+  }
+
+  function _populateAnnotations(group, source) {
+    const node = group.node
+    group.clear()
+    Array.from(node.attributes).forEach(attribute => node.removeAttributeNode(attribute))
+
+    if (source) {
+      Array.from(source.attributes).forEach((attribute) => {
+        if (
+          attribute.name === 'id'
+          || attribute.name === 'data-collection'
+          || attribute.name === 'data-nanquim-paper-annotations'
+        ) return
+        if (attribute.namespaceURI) {
+          node.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value)
+        } else {
+          node.setAttribute(attribute.name, attribute.value)
+        }
+      })
+      Array.from(source.childNodes).forEach((child) => {
+        node.appendChild(document.importNode(child, true))
+      })
+    }
+
+    group.attr({
+      id: PAPER_ANNOTATIONS_ID,
+      name: group.attr('name') || 'Annotations',
+      'data-collection': 'true',
+      'data-locked': group.attr('data-locked') === 'true' ? 'true' : 'false',
+      'data-nanquim-paper-annotations': 'true',
+    })
+    Object.entries(PAPER_ANNOTATION_STYLE).forEach(([property, fallback]) => {
+      if (!node.style.getPropertyValue(property) && !node.hasAttribute(property)) {
+        group.css(property, fallback)
+      }
+    })
+  }
+
+  function _createPaperInfrastructure({
+    config = editor.paperConfig,
+    annotations = null,
+    viewportStates = [],
+  } = {}) {
+    const canvas = document.createElement('div')
+    canvas.id = 'paper-canvas'
+    canvas.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:#6b6b6b;overflow:hidden;display:none;align-items:center;justify-content:center;'
+
+    const infrastructure = {
+      annotationsGroup: null,
+      canvas,
+      config: {
+        ...config,
+        colorMap: { ...(config?.colorMap || {}) },
+      },
+      paperHandlers: null,
+      paperSheet: null,
+      paperSvg: null,
+      viewportCounter: 0,
+      viewports: [],
+      viewportsGroup: null,
+    }
+
+    try {
+      infrastructure.paperSvg = SVG().addTo(canvas).size('100%', '100%')
+      infrastructure.paperSvg.addClass('paper-canvas-svg')
+      infrastructure.paperSvg.node.style.cssText = 'width:100%;height:100%;'
+      infrastructure.paperSheet = infrastructure.paperSvg.group().attr('id', 'paper-background')
+      infrastructure.viewportsGroup = infrastructure.paperSvg.group().attr('id', 'paper-viewports')
+      infrastructure.annotationsGroup = infrastructure.paperSvg.group()
+      _populateAnnotations(infrastructure.annotationsGroup, annotations)
+      infrastructure.paperHandlers = infrastructure.paperSvg.group().attr('id', 'paper-handlers')
+      _renderPaperSheetFor(infrastructure.paperSheet, infrastructure.config)
+      _updatePaperViewboxFor(infrastructure.paperSvg, infrastructure.config)
+
+      const usedIds = new Set(viewportStates.map(state => state.id).filter(Boolean))
+      usedIds.forEach((id) => {
+        const match = /^vp-(\d+)$/.exec(id)
+        if (match) {
+          infrastructure.viewportCounter = Math.max(
+            infrastructure.viewportCounter,
+            Number(match[1]),
+          )
+        }
+      })
+      viewportStates.forEach((state) => {
+        let id = state.id
+        if (!id) {
+          do {
+            infrastructure.viewportCounter += 1
+            id = `vp-${infrastructure.viewportCounter}`
+          } while (usedIds.has(id))
+        }
+        usedIds.add(id)
+        const viewport = new PaperViewport(editor, infrastructure.viewportsGroup, {
+          ...state,
+          id,
+          svgRoot: infrastructure.paperSvg,
+        })
+        infrastructure.viewports.push(viewport)
+      })
+      return infrastructure
+    } catch (error) {
+      infrastructure.viewports.forEach((viewport) => {
+        try { viewport.destroy() } catch (_) { /* detached best-effort cleanup */ }
+      })
+      canvas.remove()
+      throw error
+    }
+  }
+
+  function _insertPaperCanvas(canvas) {
+    const terminal = editor.canvas.querySelector('.terminal')
+    editor.canvas.insertBefore(canvas, terminal || null)
+  }
+
+  function _currentInfrastructure() {
+    if (!paperSvg) return null
+    return {
+      annotationsGroup,
+      canvas: paperCanvasElement,
+      config: editor.paperConfig,
+      paperHandlers,
+      paperSheet,
+      paperSvg,
+      viewportCounter,
+      viewports,
+      viewportsGroup,
+    }
+  }
+
+  function _installInfrastructure(infrastructure) {
+    paperSvg = infrastructure?.paperSvg || null
+    paperCanvasElement = infrastructure?.canvas || null
+    paperSheet = infrastructure?.paperSheet || null
+    annotationsGroup = infrastructure?.annotationsGroup || null
+    viewportsGroup = infrastructure?.viewportsGroup || null
+    viewports = infrastructure?.viewports || []
+    viewportCounter = infrastructure?.viewportCounter || 0
+    paperHandlers = infrastructure?.paperHandlers || null
+
+    if (!infrastructure) {
+      delete editor.paperAnnotations
+      delete editor.paperViewportsGroup
+      delete editor.paperSvg
+      delete editor.paperViewports
+      return
+    }
+    editor.paperAnnotations = annotationsGroup
+    editor.paperViewportsGroup = viewportsGroup
+    editor.paperSvg = paperSvg
+    editor.paperViewports = viewports
+  }
+
+  function _buildPaperSVG() {
+    const infrastructure = _createPaperInfrastructure()
+    _insertPaperCanvas(infrastructure.canvas)
+    _installInfrastructure(infrastructure)
+  }
+
+  function _annotationStyleFromGroup() {
+    const style = {}
+    const node = annotationsGroup.node
+    for (let index = 0; index < node.style.length; index += 1) {
+      const property = node.style.item(index)
+      if (property === 'display') continue
+      style[property] = node.style.getPropertyValue(property)
+    }
+    Object.entries(PAPER_ANNOTATION_STYLE).forEach(([property, fallback]) => {
+      if (style[property] === undefined || style[property] === '') {
+        style[property] = annotationsGroup.attr(property) || fallback
+      }
+    })
+    return style
+  }
+
+  function _registerAnnotationsCollection() {
+    if (!annotationsGroup || !editor.collections) return null
+
+    const existing = editor.collections.get(PAPER_ANNOTATIONS_ID)
+    if (existing && existing.group === annotationsGroup) {
+      annotationCollectionState = {
+        visible: existing.visible !== false,
+        locked: existing.locked === true,
+        style: { ...(existing.style || {}) },
+        collapsed: existing.collapsed === true,
+      }
+      return existing
+    }
+
+    const saved = annotationCollectionState
+    const data = {
+      group: annotationsGroup,
+      visible: saved ? saved.visible : annotationsGroup.css('display') !== 'none',
+      locked: saved ? saved.locked : annotationsGroup.attr('data-locked') === 'true',
+      style: saved ? { ...saved.style } : _annotationStyleFromGroup(),
+      collapsed: saved ? saved.collapsed : existing?.collapsed === true,
+    }
+    editor.collections.set(PAPER_ANNOTATIONS_ID, data)
+    annotationCollectionState = {
+      visible: data.visible,
+      locked: data.locked,
+      style: { ...data.style },
+      collapsed: data.collapsed,
+    }
+    return data
+  }
+
+  /**
+   * Build and register the persistent Paper roots without switching mode,
+   * replacing handlers, hiding Model Space, or changing the active collection.
+   */
+  function ensureDocumentInfrastructure() {
+    if (!paperSvg) _buildPaperSVG()
+
+    editor.paperAnnotations = annotationsGroup
+    editor.paperViewportsGroup = viewportsGroup
+    editor.paperSvg = paperSvg
+    editor.paperViewports = viewports
+    _registerAnnotationsCollection()
+    editor.documentState?.refreshPersistentRoots()
+
+    return {
+      svg: paperSvg,
+      annotations: annotationsGroup,
+      viewportsGroup,
+    }
+  }
+
+  /**
+   * Remove all Paper DOM and state so a failed document transaction can
+   * restore the exact pre-infrastructure state. Removing the owning canvas is
+   * deliberate: it also cleans up SVG nodes left by a partially constructed
+   * viewport that was never added to the viewports array.
+   */
+  function destroyDocumentInfrastructure(options = {}) {
+    const paperCanvas = paperCanvasElement || domNode(paperSvg)?.closest?.('#paper-canvas')
+    const hadInfrastructure = Boolean(
+      paperSvg
+      || paperSheet
+      || annotationsGroup
+      || viewportsGroup
+      || paperHandlers
+      || paperCanvas,
+    )
+    if (!hadInfrastructure) return false
+
+    const previous = {
+      annotationsGroup,
+      paperHandlers,
+      paperSvg,
+      viewports,
+      viewportsGroup,
+    }
+    editor.documentState?.unobservePersistentRoot(previous.annotationsGroup)
+
+    let cleanupError = null
+    previous.viewports.forEach((viewport) => {
+      try {
+        viewport.destroy()
+      } catch (error) {
+        cleanupError ||= error
+      }
+    })
+    paperCanvas?.remove()
+
+    if (editor.collections?.get(PAPER_ANNOTATIONS_ID)?.group === previous.annotationsGroup) {
+      editor.collections.delete(PAPER_ANNOTATIONS_ID)
+    }
+    if (editor.activeCollection === previous.annotationsGroup) {
+      editor.activeCollection = savedActiveCollection || null
+    }
+    if (editor.handlers === previous.paperHandlers) editor.handlers = editor.modelHandlers
+    if (editor.paperSvg === previous.paperSvg) delete editor.paperSvg
+    if (editor.paperAnnotations === previous.annotationsGroup) delete editor.paperAnnotations
+    if (editor.paperViewportsGroup === previous.viewportsGroup) delete editor.paperViewportsGroup
+    if (editor.paperViewports === previous.viewports) delete editor.paperViewports
+
+    paperSvg = null
+    paperCanvasElement = null
+    paperSheet = null
+    annotationsGroup = null
+    viewportsGroup = null
+    viewports = []
+    viewportCounter = 0
+    paperHandlers = null
+    savedActiveCollection = null
+    annotationCollectionState = null
+
+    if (options.notify !== false) _notifyViewportChange()
+    _markDocumentChanged('paper-infrastructure-destroyed', options)
+    if (cleanupError) throw cleanupError
+    return true
+  }
+
+  function _renderPaperSheet() {
+    if (!paperSvg) return
+    _renderPaperSheetFor(paperSheet, editor.paperConfig)
+  }
+
+  function _updatePaperViewbox() {
+    _updatePaperViewboxFor(paperSvg, editor.paperConfig)
   }
 
   function _getPaperDimsSVG() {
-    const cfg = editor.paperConfig
-    // Convert mm → SVG units: unitsPerCm means 1cm = unitsPerCm SVG units
-    // paperWidth mm / 10 = cm, then × unitsPerCm = SVG units
-    const scale = cfg.unitsPerCm / 10 // SVG units per mm
-    const wSVG = cfg.width * scale
-    const hSVG = cfg.height * scale
-    return { wSVG, hSVG }
+    return _paperDimensions(editor.paperConfig)
   }
 
   function _refreshAllViewports() {
@@ -226,44 +499,332 @@ function PaperEditor(editor) {
    * @param {number} h - height in SVG units
    * @param {number} scale - drawing scale denominator (e.g. 100 for 1:100)
    */
-  function createViewport(x, y, w, h, scale = 100) {
+  function _finiteViewportNumber(value, label, { positive = false } = {}) {
+    const number = Number(value)
+    if (!Number.isFinite(number) || (positive && number <= 0)) {
+      throw new TypeError(`${label} must be ${positive ? 'positive and ' : ''}finite.`)
+    }
+    return Object.is(number, -0) ? 0 : number
+  }
+
+  function _normalizeViewportId(value, index) {
+    if (value === undefined || value === null || value === '') return null
+    if (typeof value !== 'string' || value.length > 256 || /[\s\u0000-\u001f\u007f#()"']/.test(value)) {
+      throw new TypeError(`Paper viewport ${index + 1} has an invalid id.`)
+    }
+    return value
+  }
+
+  function _normalizeViewportState(value, index) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new TypeError(`Paper viewport ${index + 1} is invalid.`)
+    }
+    return {
+      id: _normalizeViewportId(value.id, index),
+      x: _finiteViewportNumber(value.x, `Paper viewport ${index + 1} x`),
+      y: _finiteViewportNumber(value.y, `Paper viewport ${index + 1} y`),
+      w: _finiteViewportNumber(value.w, `Paper viewport ${index + 1} width`, { positive: true }),
+      h: _finiteViewportNumber(value.h, `Paper viewport ${index + 1} height`, { positive: true }),
+      scale: _finiteViewportNumber(value.scale, `Paper viewport ${index + 1} scale`, { positive: true }),
+      modelOriginX: _finiteViewportNumber(
+        value.modelOriginX,
+        `Paper viewport ${index + 1} model origin x`,
+      ),
+      modelOriginY: _finiteViewportNumber(
+        value.modelOriginY,
+        `Paper viewport ${index + 1} model origin y`,
+      ),
+      visible: value.visible !== false,
+      locked: value.locked === true,
+    }
+  }
+
+  function _rememberViewportId(id) {
+    const match = /^vp-(\d+)$/.exec(id)
+    if (!match) return
+    const numericId = Number(match[1])
+    if (Number.isSafeInteger(numericId)) viewportCounter = Math.max(viewportCounter, numericId)
+  }
+
+  function _nextViewportId() {
+    let id
+    do {
+      viewportCounter += 1
+      id = `vp-${viewportCounter}`
+    } while (viewports.some(viewport => viewport.id === id))
+    return id
+  }
+
+  function _appendViewport(state) {
+    const id = state.id || _nextViewportId()
+    if (viewports.some(viewport => viewport.id === id)) {
+      throw new TypeError(`Paper viewport id "${id}" is duplicated.`)
+    }
+    _rememberViewportId(id)
+
+    const vp = new PaperViewport(editor, viewportsGroup, { ...state, id })
+    viewports.push(vp)
+    editor.paperViewports = viewports
+    return vp
+  }
+
+  function _markDocumentChanged(reason, options = {}) {
+    if (options.silent === true || options.restoring === true) return false
+    return editor.documentState?.markChanged(reason) || false
+  }
+
+  function _withoutDocumentTracking(callback) {
+    return editor.documentState?.runWithoutTracking
+      ? editor.documentState.runWithoutTracking(callback)
+      : callback()
+  }
+
+  function _notifyViewportChange() {
+    signals.paperViewportsChanged.dispatch()
+    signals.updatedOutliner.dispatch()
+  }
+
+  function createViewport(x, y, w, h, scale = 100, options = {}) {
+    ensureDocumentInfrastructure()
+
     // Compute model origin so that the drawing content is centered in the viewport
-    let modelOriginX = 0
-    let modelOriginY = 0
+    let modelOriginX = options.modelOriginX
+    let modelOriginY = options.modelOriginY
     const bbox = editor._drawingBBox
-    if (bbox) {
+    if (modelOriginX === undefined && modelOriginY === undefined && bbox) {
       const cx = bbox.x + bbox.width / 2
       const cy = bbox.y + bbox.height / 2
       modelOriginX = cx - (w / 2) * scale
       modelOriginY = cy - (h / 2) * scale
     }
+    if (modelOriginX === undefined) modelOriginX = 0
+    if (modelOriginY === undefined) modelOriginY = 0
 
-    viewportCounter++
-    const vp = new PaperViewport(editor, viewportsGroup, {
-      id: 'vp-' + viewportCounter,
+    const state = _normalizeViewportState({
+      id: options.id,
       x, y, w, h,
       scale,
       modelOriginX,
       modelOriginY,
-    })
-    viewports.push(vp)
-    editor.paperViewports = viewports
-    signals.paperViewportsChanged.dispatch()
-    signals.updatedOutliner.dispatch()
+      visible: options.visible,
+      locked: options.locked,
+    }, viewports.length)
+    const vp = _appendViewport(state)
+    if (options.notify !== false) _notifyViewportChange()
+    _markDocumentChanged('paper-viewport-created', options)
     return vp
   }
 
   /**
    * Remove a viewport by id.
    */
-  function removeViewport(vpId) {
+  function removeViewport(vpId, options = {}) {
     const idx = viewports.findIndex(v => v.id === vpId)
-    if (idx === -1) return
+    if (idx === -1) return false
     viewports[idx].destroy()
     viewports.splice(idx, 1)
     editor.paperViewports = viewports
-    signals.paperViewportsChanged.dispatch()
-    signals.updatedOutliner.dispatch()
+    if (options.notify !== false) _notifyViewportChange()
+    _markDocumentChanged('paper-viewport-removed', options)
+    return true
+  }
+
+  function _replaceAnnotations(source) {
+    _populateAnnotations(annotationsGroup, source)
+
+    editor.collections?.delete(PAPER_ANNOTATIONS_ID)
+    annotationCollectionState = null
+    _registerAnnotationsCollection()
+  }
+
+  /**
+   * Construct a complete Paper document off-DOM. No live editor references,
+   * collections, selection, or existing viewport objects are touched here.
+   */
+  function prepareDocumentState(state = {}) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      throw new TypeError('Paper document state must be an object.')
+    }
+    const annotationNode = domNode(state.annotations)
+    if (annotationNode && !isElement(annotationNode)) {
+      throw new TypeError('Paper annotations must be an SVG element.')
+    }
+    const annotationSnapshot = annotationNode ? annotationNode.cloneNode(true) : null
+    const sourceViewports = state.viewports === undefined || state.viewports === null
+      ? []
+      : state.viewports
+    if (!Array.isArray(sourceViewports) || sourceViewports.length > 256) {
+      throw new TypeError('Paper viewports must be an array with at most 256 entries.')
+    }
+    const normalizedViewports = sourceViewports.map(_normalizeViewportState)
+    const ids = new Set()
+    normalizedViewports.forEach((viewport) => {
+      if (!viewport.id) return
+      if (ids.has(viewport.id)) throw new TypeError(`Paper viewport id "${viewport.id}" is duplicated.`)
+      ids.add(viewport.id)
+    })
+
+    const sourceConfig = state.config === undefined ? editor.paperConfig : state.config
+    if (!sourceConfig || typeof sourceConfig !== 'object' || Array.isArray(sourceConfig)) {
+      throw new TypeError('Paper configuration must be an object.')
+    }
+    for (const property of ['width', 'height', 'unitsPerCm']) {
+      const value = Number(sourceConfig[property])
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new TypeError(`Paper configuration ${property} must be positive and finite.`)
+      }
+    }
+
+    const prepared = {
+      infrastructure: _createPaperInfrastructure({
+        annotations: annotationSnapshot,
+        config: sourceConfig,
+        viewportStates: normalizedViewports,
+      }),
+      status: 'prepared',
+      transaction: null,
+    }
+    preparedDocumentStates.add(prepared)
+    return prepared
+  }
+
+  function _disposeInfrastructure(infrastructure) {
+    if (!infrastructure) return
+    infrastructure.viewports.forEach((viewport) => {
+      try { viewport.destroy() } catch (_) { /* detached best-effort cleanup */ }
+    })
+    try { infrastructure.canvas?.remove() } catch (_) { /* detached best-effort cleanup */ }
+  }
+
+  function disposePreparedDocumentState(prepared) {
+    if (!preparedDocumentStates.has(prepared) || prepared.status !== 'prepared') return false
+    _disposeInfrastructure(prepared.infrastructure)
+    prepared.status = 'disposed'
+    return true
+  }
+
+  /**
+   * Atomically adopt a prepared Paper document. The previous infrastructure is
+   * detached but kept intact until finalize(), so rollback() restores the exact
+   * viewport objects, SVG nodes, listeners, and collection entry.
+   */
+  function adoptPreparedDocumentState(prepared, options = {}) {
+    if (!preparedDocumentStates.has(prepared) || prepared.status !== 'prepared') {
+      throw new TypeError('A prepared Paper document is required.')
+    }
+
+    const candidate = prepared.infrastructure
+    const previous = _currentInfrastructure()
+    const previousConfig = editor.paperConfig
+    const previousAnnotationCollectionState = annotationCollectionState
+    const collections = editor.collections
+    const hadCollection = collections?.has(PAPER_ANNOTATIONS_ID) === true
+    const previousCollection = collections?.get(PAPER_ANNOTATIONS_ID)
+    const previousParent = previous?.canvas?.parentNode || null
+    const previousNextSibling = previous?.canvas?.nextSibling || null
+    prepared.status = 'adopting'
+
+    const rollback = () => {
+      if (!['adopting', 'adopted'].includes(prepared.status)) return false
+      try {
+        editor.documentState?.unobservePersistentRoot(candidate.annotationsGroup)
+      } catch (_) { /* continue exact structural restoration */ }
+
+      try {
+        if (candidate.canvas.parentNode) {
+          if (previous?.canvas && !previous.canvas.parentNode) {
+            candidate.canvas.parentNode.replaceChild(previous.canvas, candidate.canvas)
+          } else {
+            candidate.canvas.remove()
+          }
+        } else if (previous?.canvas && !previous.canvas.parentNode && previousParent) {
+          const reference = previousNextSibling?.parentNode === previousParent
+            ? previousNextSibling
+            : null
+          previousParent.insertBefore(previous.canvas, reference)
+        }
+      } catch (error) {
+        console.error('[PaperEditor] Failed to restore the previous Paper canvas.', error)
+      }
+
+      _installInfrastructure(previous)
+      editor.paperConfig = previousConfig
+      annotationCollectionState = previousAnnotationCollectionState
+      try {
+        if (collections) {
+          if (hadCollection) collections.set(PAPER_ANNOTATIONS_ID, previousCollection)
+          else collections.delete(PAPER_ANNOTATIONS_ID)
+        }
+      } catch (error) {
+        console.error('[PaperEditor] Failed to restore the Paper collection entry.', error)
+      }
+      try {
+        editor.documentState?.observePersistentRoot(previous?.annotationsGroup)
+      } catch (_) { /* the exact root remains installed even if observation fails */ }
+      _disposeInfrastructure(candidate)
+      prepared.status = 'rolled-back'
+      return true
+    }
+
+    try {
+      editor.documentState?.unobservePersistentRoot(previous?.annotationsGroup)
+      if (previous?.canvas?.parentNode) {
+        previous.canvas.parentNode.replaceChild(candidate.canvas, previous.canvas)
+      } else {
+        _insertPaperCanvas(candidate.canvas)
+      }
+      _installInfrastructure(candidate)
+      editor.paperConfig = candidate.config
+      annotationCollectionState = null
+      _registerAnnotationsCollection()
+      editor.documentState?.refreshPersistentRoots()
+      prepared.status = 'adopted'
+    } catch (error) {
+      rollback()
+      throw error
+    }
+
+    const transaction = {
+      rollback,
+      finalize() {
+        if (prepared.status !== 'adopted') return false
+        _disposeInfrastructure(previous)
+        prepared.status = 'finalized'
+        return true
+      },
+    }
+    prepared.transaction = transaction
+    return transaction
+  }
+
+  /**
+   * Replace Paper annotations and viewports from a fully validated document
+   * candidate. The source annotation tree is cloned and never attached.
+   */
+  function replaceDocumentState(state = {}, options = {}) {
+    const prepared = prepareDocumentState(state)
+    let transaction
+    try {
+      transaction = _withoutDocumentTracking(
+        () => adoptPreparedDocumentState(prepared, { ...options, notify: false }),
+      )
+      transaction.finalize()
+    } catch (error) {
+      if (prepared.status === 'prepared') disposePreparedDocumentState(prepared)
+      else transaction?.rollback()
+      throw error
+    }
+
+    if (options.notify !== false) _notifyViewportChange()
+    _markDocumentChanged(options.reason || 'paper-document-replaced', options)
+    return { annotations: annotationsGroup, viewports }
+  }
+
+  function resetDocumentState(options = {}) {
+    return replaceDocumentState({ annotations: null, viewports: [] }, {
+      ...options,
+      reason: 'paper-document-reset',
+    })
   }
 
   /**
@@ -293,8 +854,9 @@ function PaperEditor(editor) {
   /**
    * Update the paper size (preset or custom).
    */
-  function setPaperSize(sizeKey, customW, customH) {
+  function setPaperSize(sizeKey, customW, customH, options = {}) {
     const cfg = editor.paperConfig
+    const previous = { size: cfg.size, width: cfg.width, height: cfg.height }
     if (sizeKey === 'custom') {
       cfg.size = 'custom'
       cfg.width = customW || cfg.width
@@ -309,24 +871,56 @@ function PaperEditor(editor) {
         cfg.width = dims.width
         cfg.height = dims.height
       }
+    } else {
+      return false
     }
+    const changed = previous.size !== cfg.size
+      || previous.width !== cfg.width
+      || previous.height !== cfg.height
+    if (!changed) return false
+
+    ensureDocumentInfrastructure()
     _renderPaperSheet()
     _updatePaperViewbox()
+    _markDocumentChanged('paper-size', options)
+    return true
   }
 
   /**
    * Toggle orientation between portrait and landscape.
    */
-  function setOrientation(orientation) {
+  function setOrientation(orientation, options = {}) {
     const cfg = editor.paperConfig
-    if (cfg.orientation === orientation) return
+    if (!['portrait', 'landscape'].includes(orientation) || cfg.orientation === orientation) return false
     cfg.orientation = orientation
     // Swap dimensions
     const tmp = cfg.width
     cfg.width = cfg.height
     cfg.height = tmp
+    ensureDocumentInfrastructure()
     _renderPaperSheet()
     _updatePaperViewbox()
+    _markDocumentChanged('paper-orientation', options)
+    return true
+  }
+
+  /**
+   * Set the conversion between drawing units and one paper centimeter.
+   */
+  function setUnitsPerCm(value, options = {}) {
+    const unitsPerCm = Number(value)
+    if (!Number.isFinite(unitsPerCm) || unitsPerCm <= 0 || unitsPerCm > 1000000) {
+      return false
+    }
+    if (editor.paperConfig.unitsPerCm === unitsPerCm) return false
+
+    editor.paperConfig.unitsPerCm = unitsPerCm
+    ensureDocumentInfrastructure()
+    _renderPaperSheet()
+    _updatePaperViewbox()
+    _refreshAllViewports()
+    _markDocumentChanged('paper-units-per-centimeter', options)
+    return true
   }
 
   // Export wrappers
@@ -418,25 +1012,31 @@ function PaperEditor(editor) {
   signals.modelContentChanged.add(() => {
     if (editor.mode === 'paper') {
       _refreshAllViewports()
-      _applyLiveColorMapping()
+      _withoutDocumentTracking(_applyLiveColorMapping)
     }
   })
 
   signals.colorMapUpdated.add(() => {
     if (editor.mode === 'paper') {
-      _applyLiveColorMapping()
+      _withoutDocumentTracking(_applyLiveColorMapping)
     }
+    _markDocumentChanged('paper-color-map-updated')
   })
 
   signals.updatedCollections.add(() => {
+    // Model collection hydration replaces the registry Map. Paper annotations
+    // live in a separate persistent root, so restore their entry whenever the
+    // model registry changes.
+    if (annotationsGroup) _registerAnnotationsCollection()
     if (editor.mode === 'paper') {
-      _applyLiveColorMapping()
+      _withoutDocumentTracking(_applyLiveColorMapping)
     }
   })
 
   signals.updatedOutliner.add(() => {
+    if (annotationsGroup) _registerAnnotationsCollection()
     if (editor.mode === 'paper') {
-      _applyLiveColorMapping()
+      _withoutDocumentTracking(_applyLiveColorMapping)
     }
   })
 
@@ -451,11 +1051,20 @@ function PaperEditor(editor) {
   // ── Public interface ────────────────────────────────────────────────────────
   this.activate = activate
   this.deactivate = deactivate
+  this.getActiveModelCollection = getActiveModelCollection
+  this.ensureDocumentInfrastructure = ensureDocumentInfrastructure
+  this.destroyDocumentInfrastructure = destroyDocumentInfrastructure
+  this.prepareDocumentState = prepareDocumentState
+  this.adoptPreparedDocumentState = adoptPreparedDocumentState
+  this.disposePreparedDocumentState = disposePreparedDocumentState
+  this.replaceDocumentState = replaceDocumentState
+  this.resetDocumentState = resetDocumentState
   this.createViewport = createViewport
   this.removeViewport = removeViewport
   this.getUsedColors = getUsedColors
   this.setPaperSize = setPaperSize
   this.setOrientation = setOrientation
+  this.setUnitsPerCm = setUnitsPerCm
   this.exportSVG = doExportSVG
   this.exportPDF = doExportPDF
   this.getPaperDimsSVG = _getPaperDimsSVG
