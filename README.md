@@ -4,7 +4,7 @@
 
 [Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
-[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Browser support](docs/browser-support.md)
+[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Native document format](docs/native-document-format.md) · [Browser support](docs/browser-support.md)
 
 > [!WARNING]
 > Nanquim is in active, pre-1.0 development. Features and saved metadata may still change, and some CAD and file-format edge cases are not covered by automated tests. Use copies of important drawings and please report anything that breaks.
@@ -67,11 +67,17 @@ limitations.
 
 ### SVG, DXF, and browser files
 
-- Open and save editable SVG drawings with Nanquim metadata for collections, specialized geometry, styles, blocks, Paper Space, and Geometry Nodes.
+- Create, open, save, and Save As editable schema-v3 SVG documents with
+  transactional replacement, dirty-state protection, and metadata for
+  collections, specialized geometry, styles, blocks, Paper Space, and Geometry
+  Nodes. Historical schema-v1/v2 documents migrate on Open.
 - Import supported DXF geometry and export common DXF entities, including lines, circles, ellipses, arcs, polylines, and text. DXF text import is not supported yet.
 - Copy and paste Nanquim SVG elements with ID cleanup.
 - Welcome screen and recent disk files where the browser supports persistent file handles.
-- `Ctrl+O` and `Ctrl+S` file shortcuts, with download/upload fallbacks when direct file access is unavailable.
+- `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` cover New, Open, Save, and
+  Save As, with download/upload fallbacks when direct file access is
+  unavailable. Because browsers cannot confirm a portable download was kept,
+  download-only Save As conservatively leaves the drawing marked unsaved.
 
 DXF is a broad format and round-trip support is not complete. Real-world SVG and DXF compatibility reports are especially useful.
 
@@ -111,6 +117,10 @@ Enter a command or alias in the terminal, then follow its prompt.
 | `Space` or `Enter` | Confirm terminal input; blank Space repeats the previous command |
 | `Esc` | Cancel the active command or interaction |
 | `Delete` | Delete the current selection |
+| `Ctrl+N` | Create a new drawing |
+| `Ctrl+O` | Open an SVG or DXF drawing |
+| `Ctrl+S` | Save the editable native SVG document |
+| `Ctrl+Shift+S` | Save the editable document under a new name |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
 | `F2` | Expand or restore the terminal |
 | `F3` | Toggle all viewport overlays |

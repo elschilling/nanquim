@@ -10,6 +10,10 @@ import {
   markupFitsSvgImportElementBudget,
 } from '../src/js/utils/DXFloader.js'
 import {
+  DEFAULT_DIMENSION_STYLE_PROPERTIES,
+  DEFAULT_TEXT_STYLE_PROPERTIES,
+} from '../src/js/document/DocumentMetadata.js'
+import {
   rewriteStyleReferences,
   parseSafeJson,
   sanitizeStyleSheet,
@@ -306,7 +310,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
     editor.dimensionManager.fromJSON.mockImplementation(() => { throw new TypeError('bad dimension schema') })
     editor.textStyleManager.fromJSON.mockImplementation(() => { throw new TypeError('bad text schema') })
     await openSvg(editor, `
-      <svg xmlns="${SVG_NS}" data-element-index="999999999999999999999999999999"
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3" data-element-index="999999999999999999999999999999"
         data-paper-config='{"__proto__":{"polluted":true}}'
         data-dim-styles='{"styles":[]}' data-text-styles='{"styles":[]}'>
         <defs>
@@ -426,7 +430,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
     }
 
     await openSvg(editor, `
-      <svg xmlns="${SVG_NS}"
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3"
         data-text-styles="${metadataAttribute(textStyles)}"
         data-dim-styles="${metadataAttribute(dimensionStyles)}">
         <defs><linearGradient id="local-paint"><stop offset="0" stop-color="#fff"/></linearGradient></defs>
@@ -441,11 +445,16 @@ describe('DXFLoader SVG sanitization boundary', () => {
     expect(editor.textStyleManager.fromJSON).toHaveBeenCalledWith({
       activeStyleId: 'SafeText',
       styles: [
-        { id: 'Standard', name: 'Standard', properties: {} },
+        {
+          id: 'Standard',
+          name: 'Standard',
+          properties: { ...DEFAULT_TEXT_STYLE_PROPERTIES },
+        },
         {
           id: 'SafeText',
           name: 'Safe Text',
           properties: {
+            ...DEFAULT_TEXT_STYLE_PROPERTIES,
             fontFamily: 'Fira Code, monospace',
             fontSize: 0.25,
             fontWeight: '500',
@@ -457,7 +466,11 @@ describe('DXFLoader SVG sanitization boundary', () => {
             fill: 'rgb(12, 34, 56)',
           },
         },
-        { id: 'HostileText', name: 'Hostile Text', properties: {} },
+        {
+          id: 'HostileText',
+          name: 'Hostile Text',
+          properties: { ...DEFAULT_TEXT_STYLE_PROPERTIES },
+        },
       ],
     })
     expect(editor.dimensionManager.fromJSON).toHaveBeenCalledWith({
@@ -467,6 +480,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
           id: 'SafeDim',
           name: 'Safe Dimension',
           properties: {
+            ...DEFAULT_DIMENSION_STYLE_PROPERTIES,
             textStyleId: 'SafeText',
             markerType: 'bullet',
             markerSize: 0.2,
@@ -482,6 +496,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
           id: 'Legacy',
           name: 'Legacy Dimension',
           properties: {
+            ...DEFAULT_DIMENSION_STYLE_PROPERTIES,
             textStyleId: 'Standard',
             markerType: 'tick',
             markerSize: 0.08,
@@ -496,7 +511,12 @@ describe('DXFLoader SVG sanitization boundary', () => {
         {
           id: 'HostileDim',
           name: 'Hostile Dimension',
-          properties: { textStyleId: 'Standard', markerType: 'arrow' },
+          properties: { ...DEFAULT_DIMENSION_STYLE_PROPERTIES },
+        },
+        {
+          id: 'Standard',
+          name: 'Standard',
+          properties: { ...DEFAULT_DIMENSION_STYLE_PROPERTIES },
         },
       ],
     })
@@ -504,12 +524,18 @@ describe('DXFLoader SVG sanitization boundary', () => {
       editor.textStyleManager.fromJSON.mock.calls,
       editor.dimensionManager.fromJSON.mock.calls,
     ])).not.toMatch(/attacker|https?:|image-set|paint\(attacker\)|unknownProperty/i)
+    expect(editor.signals.terminalLogged.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      msg: 'Invalid text styles were reset.',
+    }))
+    expect(editor.signals.terminalLogged.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      msg: 'Invalid dimension styles were reset.',
+    }))
   })
 
-  test('rejects over-count, overlong and oversized style metadata without partial manager loads', async () => {
+  test('resets over-count, overlong and oversized style metadata without retaining prior state', async () => {
     const invalidIdentityEditor = createLoaderEditor()
     await openSvg(invalidIdentityEditor, `
-      <svg xmlns="${SVG_NS}"
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3"
         data-text-styles="${metadataAttribute({
           styles: [{ id: 'Text', name: 'n'.repeat(NATIVE_STYLE_METADATA_LIMITS.maxNameLength + 1), properties: {} }],
         })}"
@@ -519,8 +545,10 @@ describe('DXFLoader SVG sanitization boundary', () => {
         <g data-collection="true"><line/></g>
       </svg>
     `, 'invalid-style-identities.svg')
-    expect(invalidIdentityEditor.textStyleManager.fromJSON).not.toHaveBeenCalled()
-    expect(invalidIdentityEditor.dimensionManager.fromJSON).not.toHaveBeenCalled()
+    expect(invalidIdentityEditor.textStyleManager.fromJSON).toHaveBeenCalledOnce()
+    expect(invalidIdentityEditor.dimensionManager.fromJSON).toHaveBeenCalledOnce()
+    expect(invalidIdentityEditor.textStyleManager.fromJSON.mock.calls[0][0]).toMatchObject({ activeStyleId: 'Standard' })
+    expect(invalidIdentityEditor.dimensionManager.fromJSON.mock.calls[0][0]).toMatchObject({ activeStyleId: 'Standard' })
 
     const overCountEditor = createLoaderEditor()
     const tooManyStyles = Array.from(
@@ -528,11 +556,12 @@ describe('DXFLoader SVG sanitization boundary', () => {
       (_entry, index) => ({ id: `style-${index}`, name: `Style ${index}`, properties: {} }),
     )
     await openSvg(overCountEditor, `
-      <svg xmlns="${SVG_NS}" data-text-styles="${metadataAttribute({ styles: tooManyStyles })}">
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3" data-text-styles="${metadataAttribute({ styles: tooManyStyles })}">
         <g data-collection="true"><line/></g>
       </svg>
     `, 'too-many-styles.svg')
-    expect(overCountEditor.textStyleManager.fromJSON).not.toHaveBeenCalled()
+    expect(overCountEditor.textStyleManager.fromJSON).toHaveBeenCalledOnce()
+    expect(overCountEditor.textStyleManager.fromJSON.mock.calls[0][0]).toMatchObject({ activeStyleId: 'Standard' })
 
     const oversizedEditor = createLoaderEditor()
     const oversizedStyles = {
@@ -543,11 +572,58 @@ describe('DXFLoader SVG sanitization boundary', () => {
       }],
     }
     await openSvg(oversizedEditor, `
-      <svg xmlns="${SVG_NS}" data-text-styles="${metadataAttribute(oversizedStyles)}">
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3" data-text-styles="${metadataAttribute(oversizedStyles)}">
         <g data-collection="true"><line/></g>
       </svg>
     `, 'oversized-style-metadata.svg')
-    expect(oversizedEditor.textStyleManager.fromJSON).not.toHaveBeenCalled()
+    expect(oversizedEditor.textStyleManager.fromJSON).toHaveBeenCalledOnce()
+    expect(oversizedEditor.textStyleManager.fromJSON.mock.calls[0][0]).toMatchObject({
+      activeStyleId: 'Standard',
+      styles: [expect.objectContaining({
+        id: 'Standard',
+        properties: expect.objectContaining({ fontFamily: 'Inter', fontSize: 0.15 }),
+      })],
+    })
+    expect(oversizedEditor.signals.terminalLogged.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      msg: 'Invalid text-style metadata was ignored.',
+    }))
+  })
+
+  test('does not revive duplicate Geometry Nodes metadata after parser rejection', async () => {
+    const editor = createLoaderEditor()
+    const rejected = {
+      version: 1,
+      activeObjectId: null,
+      graphs: [{
+        schemaVersion: 1,
+        id: 'rejected-graph',
+        name: 'Rejected graph',
+        nodes: [],
+        links: [],
+        interface: { inputs: [], outputs: [] },
+      }],
+      instances: [],
+    }
+
+    await openSvg(editor, `
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3">
+        <metadata id="nanquim-geometry-nodes">${JSON.stringify(rejected)}</metadata>
+        <metadata id="nanquim-geometry-nodes">{"version":1,"graphs":[],"instances":[]}</metadata>
+        <g id="collection-native" data-collection="true"><line id="1"/></g>
+      </svg>
+    `, 'duplicate-geometry-nodes.svg')
+
+    expect(editor.geometryNodes.load).toHaveBeenCalledWith({
+      version: 1,
+      graphs: [],
+      instances: [],
+    })
+    expect(editor.svg.node.querySelectorAll(
+      '[data-nanquim-root-semantics="true"] metadata',
+    )).toHaveLength(0)
+    expect(editor.signals.terminalLogged.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      msg: 'Duplicate Geometry Nodes metadata was ignored; safe cached SVG remains available.',
+    }))
   })
 
   test('sanitizes foreign geometry and scopes CSS before cloning it into the live SVG', async () => {
@@ -635,6 +711,31 @@ describe('DXFLoader SVG sanitization boundary', () => {
     expect(new Set(liveIds).size).toBe(liveIds.length)
   })
 
+  test('keeps a missing native reference unresolved when the source claims the dangling-id namespace', async () => {
+    const editor = createLoaderEditor()
+    const claimedDanglingId = 'nanquim-unresolved-import-0-0'
+
+    await openSvg(editor, `
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3">
+        <defs>
+          <linearGradient id="${claimedDanglingId}" data-collision-target="true">
+            <stop offset="0" stop-color="#ffffff"/>
+          </linearGradient>
+        </defs>
+        <g id="collection-native" data-collection="true">
+          <use id="missing-reference" data-missing-reference="true" href="#not-in-source"/>
+        </g>
+      </svg>
+    `, 'claimed-dangling-id.svg')
+
+    const target = editor.svg.node.querySelector('[data-collision-target="true"]')
+    const reference = editor.drawing.node.querySelector('[data-missing-reference="true"]')
+    const rewrittenId = reference.getAttribute('href').slice(1)
+    expect(target.id).toBe(claimedDanglingId)
+    expect(rewrittenId).not.toBe(claimedDanglingId)
+    expect(document.getElementById(rewrittenId)).toBeNull()
+  })
+
   test('keeps native block definitions and instances aligned through host ID collisions', async () => {
     const editor = createLoaderEditor()
     const appOwned = document.createElementNS(SVG_NS, 'marker')
@@ -642,7 +743,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
     editor.svg.defs().node.appendChild(appOwned)
 
     await openSvg(editor, `
-      <svg xmlns="${SVG_NS}">
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3">
         <defs>
           <g id="block-Door" data-block-def="true" data-base-point='{"x":0,"y":0}'>
             <rect width="4" height="8"/>
@@ -659,19 +760,19 @@ describe('DXFLoader SVG sanitization boundary', () => {
     const importedName = importedInstance.getAttribute('data-block-name')
 
     expect(appOwned.isConnected).toBe(true)
-    expect(importedDefinition.id).toMatch(/^block-Door-imported-\d+$/)
+    expect(importedDefinition.id).toMatch(/^block-def-imported-\d+-\d+$/)
     expect(importedInstance.getAttribute('href')).toBe(`#${importedDefinition.id}`)
-    expect(importedDefinition.id).toBe(`block-${importedName}`)
+    expect(importedDefinition.getAttribute('data-block-name')).toBe(importedName)
     expect(editor.blockDefinitions.get(importedName)).toEqual(expect.objectContaining({
       defId: importedDefinition.id,
     }))
-    expect(editor.drawing.node.querySelector('[data-collection="true"]').id).toMatch(/^\d+$/)
+    expect(editor.drawing.node.querySelector('[data-collection="true"]').id).toBe('collection-native')
   })
 
   test('reopens a native scoped stylesheet without accumulating drawing-root prefixes', async () => {
     const firstEditor = createLoaderEditor()
     await openSvg(firstEditor, `
-      <svg xmlns="${SVG_NS}">
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3">
         <g id="native-collection" data-collection="true">
           <style data-native-roundtrip-style="true">
             [data-nanquim-style-scope="saved"] .painted { fill: #123456 }
@@ -688,7 +789,7 @@ describe('DXFLoader SVG sanitization boundary', () => {
 
     const secondEditor = createLoaderEditor()
     await openSvg(secondEditor, `
-      <svg xmlns="${SVG_NS}">${firstEditor.drawing.node.innerHTML}</svg>
+      <svg xmlns="${SVG_NS}" data-nanquim-version="3">${firstEditor.drawing.node.innerHTML}</svg>
     `, 'native-style-second-open.svg')
 
     const secondCss = secondEditor.drawing.node

@@ -6,7 +6,29 @@
  */
 
 // CSS properties managed by the collection style system
+import { validateBlockDisplayName } from './document/DocumentMetadata'
+
 const COLLECTION_STYLE_PROPS = ['stroke', 'fill', 'stroke-width', 'stroke-linecap', 'opacity']
+
+function allocateBlockDefinitionId(editor) {
+  const defs = editor.svg.defs()
+  let index = Number.isSafeInteger(editor.elementIndex) && editor.elementIndex >= 0
+    ? editor.elementIndex
+    : 0
+  let defId = `block-def-${index}`
+  while (defs.findOne('#' + CSS.escape(defId))) {
+    index += 1
+    defId = `block-def-${index}`
+  }
+  editor.elementIndex = index + 1
+  return defId
+}
+
+function getBlockDefinition(editor, name) {
+  const metadata = editor.blockDefinitions.get(name)
+  const defId = metadata?.defId || `block-${name}`
+  return editor.svg.defs().findOne('#' + CSS.escape(defId))
+}
 
 /**
  * Strip non-overridden collection style properties from an element so it
@@ -44,12 +66,16 @@ function stripCollectionStyles(el) {
  * @returns {SVG.G} the definition group in <defs>
  */
 function createBlockDefinition(editor, name, elements, basePoint) {
+  if (!validateBlockDisplayName(name)) {
+    throw new TypeError('Block names must be 1-256 characters without control characters or outer whitespace.')
+  }
   const defs = editor.svg.defs()
-  const defId = 'block-' + name
+  const defId = allocateBlockDefinitionId(editor)
 
   const defGroup = defs.group()
     .attr('id', defId)
     .attr('data-block-def', 'true')
+    .attr('data-block-name', name)
     .attr('data-base-point', JSON.stringify({ x: basePoint.x, y: basePoint.y }))
 
   elements.forEach(el => {
@@ -97,8 +123,9 @@ function createBlockDefinition(editor, name, elements, basePoint) {
  * @returns {SVG.Use} the <use> element
  */
 function insertBlockInstance(editor, name, position, parent) {
-  const defId = 'block-' + name
-  const defEl = editor.svg.defs().findOne('#' + CSS.escape(defId))
+  const metadata = editor.blockDefinitions.get(name)
+  const defId = metadata?.defId || `block-${name}`
+  const defEl = getBlockDefinition(editor, name)
   if (!defEl) return null
 
   const id = editor.elementIndex++
@@ -136,7 +163,7 @@ function rebuildBlockDefinitionsFromDOM(editor) {
 
   defGroups.forEach(defGroup => {
     const defId = defGroup.attr('id')
-    const name = defId.replace(/^block-/, '')
+    const name = defGroup.attr('data-block-name') || defId.replace(/^block-/, '')
     let basePoint = { x: 0, y: 0 }
     try {
       const bp = defGroup.attr('data-base-point')
@@ -160,8 +187,7 @@ function rebuildBlockDefinitionsFromDOM(editor) {
  */
 function explodeBlockInstance(editor, useElement) {
   const blockName = useElement.attr('data-block-name')
-  const defId = 'block-' + blockName
-  const defEl = editor.svg.defs().findOne('#' + CSS.escape(defId))
+  const defEl = getBlockDefinition(editor, blockName)
   if (!defEl) return []
 
   const parent = useElement.parent()
@@ -250,8 +276,7 @@ function translateElement(el, dx, dy) {
  */
 function enterBlockEdit(editor, useElement) {
   const name = useElement.attr('data-block-name')
-  const defId = 'block-' + name
-  const defGroup = editor.svg.defs().findOne('#' + CSS.escape(defId))
+  const defGroup = getBlockDefinition(editor, name)
   if (!defGroup) return null
 
   const posX = useElement.x()
@@ -391,6 +416,7 @@ function discardBlockEdit(editor) {
 
 export {
   createBlockDefinition,
+  getBlockDefinition,
   insertBlockInstance,
   getBlockNames,
   rebuildBlockDefinitionsFromDOM,
@@ -399,4 +425,5 @@ export {
   enterBlockEdit,
   saveBlockEdit,
   discardBlockEdit,
+  validateBlockDisplayName,
 }

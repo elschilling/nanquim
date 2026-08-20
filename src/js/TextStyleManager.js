@@ -1,3 +1,13 @@
+function markDocumentChanged(editor, reason) {
+  if (editor.documentState) editor.documentState.markChanged(reason)
+}
+
+function withoutDocumentTracking(editor, callback) {
+  return editor.documentState
+    ? editor.documentState.runWithoutTracking(callback)
+    : callback()
+}
+
 export class TextStyle {
   constructor(id, name, config = {}) {
     this.id = id
@@ -36,6 +46,7 @@ export class TextStyleManager {
   createStyle(id, name, config) {
     const style = new TextStyle(id, name, config)
     this.styles.set(id, style)
+    markDocumentChanged(this.editor, 'text-style-created')
     return style
   }
 
@@ -48,28 +59,40 @@ export class TextStyleManager {
   }
 
   setActiveStyle(id) {
-    if (this.styles.has(id)) this.activeStyleId = id
+    if (this.styles.has(id) && this.activeStyleId !== id) {
+      this.activeStyleId = id
+      markDocumentChanged(this.editor, 'text-style-activated')
+    }
   }
 
   deleteStyle(id) {
     if (id === 'Standard' || !this.styles.has(id)) return
     this.styles.delete(id)
     if (this.activeStyleId === id) this.activeStyleId = 'Standard'
+    markDocumentChanged(this.editor, 'text-style-deleted')
     this.editor.signals.updatedProperties.dispatch()
   }
 
   renameStyle(id, newName) {
     const style = this.styles.get(id)
-    if (style) {
+    if (style && style.name !== newName) {
       style.name = newName
+      markDocumentChanged(this.editor, 'text-style-renamed')
       this.editor.signals.updatedProperties.dispatch()
     }
   }
 
   updateStyle(id, newProperties) {
     const style = this.styles.get(id)
-    if (style) {
-      Object.assign(style.properties, newProperties)
+    if (!style) return
+    const changed = Object.entries(newProperties).some(
+      ([property, value]) => !Object.is(style.properties[property], value),
+    )
+    if (!changed) return
+
+    Object.assign(style.properties, newProperties)
+    markDocumentChanged(this.editor, 'text-style-updated')
+    withoutDocumentTracking(this.editor, () => {
       this.editor.signals.updatedProperties.dispatch()
       this.refreshAllTextUsingStyle(id)
       // Redraw all dimension styles that reference this text style
@@ -79,7 +102,7 @@ export class TextStyleManager {
           dm.redrawAllDimensionsUsingStyle(dimStyleId)
         }
       })
-    }
+    })
   }
 
   refreshAllTextUsingStyle(styleId) {
@@ -112,19 +135,26 @@ export class TextStyleManager {
   }
 
   fromJSON(data) {
+    if (!data || !data.styles) return
     try {
-      if (!data || !data.styles) return
-      this.styles.clear()
-      data.styles.forEach(sData => {
-        this.styles.set(sData.id, TextStyle.fromJSON(sData))
+      withoutDocumentTracking(this.editor, () => {
+        this.styles.clear()
+        data.styles.forEach(sData => {
+          this.styles.set(sData.id, TextStyle.fromJSON(sData))
+        })
+        this.activeStyleId = data.activeStyleId || 'Standard'
+        if (!this.styles.has('Standard')) {
+          this.styles.set('Standard', new TextStyle('Standard', 'Standard', {}))
+        }
       })
-      this.activeStyleId = data.activeStyleId || 'Standard'
-      if (!this.styles.has('Standard')) this.createStyle('Standard', 'Standard', {})
     } catch (e) {
       console.warn('Error parsing TextStyleManager data:', e)
-      this.styles.clear()
-      this.createStyle('Standard', 'Standard', {})
-      this.activeStyleId = 'Standard'
+      withoutDocumentTracking(this.editor, () => {
+        this.styles.clear()
+        this.styles.set('Standard', new TextStyle('Standard', 'Standard', {}))
+        this.activeStyleId = 'Standard'
+      })
     }
+    markDocumentChanged(this.editor, 'text-styles-loaded')
   }
 }

@@ -50,6 +50,7 @@ function Viewport(editor) {
   let offsetDistance = null
   let centerPoint = null
   let referencePoint = null
+  const canvasNavigationResetters = new Set()
 
   signals.preferencesChanged.add((preferences) => {
     if (Number.isFinite(preferences.gridSize) && preferences.gridSize > 0) {
@@ -119,6 +120,23 @@ function Viewport(editor) {
     editor.isSelecting = false
   })
 
+  // A document replacement needs to clear closure-owned interaction state as
+  // well as the public Editor flags. Command cancellation handles ordinary
+  // command listeners; this final reset also covers menus and ghost modes that
+  // otherwise could retain references to nodes from the previous document.
+  signals.documentSessionReset.add(() => {
+    canvasNavigationResetters.forEach(reset => reset())
+    closeDisambiguationMenu()
+    if (isGhostingMove) onMoveGhostingStopped()
+    if (isGhostingScale) onScaleGhostingStopped()
+    if (isGhostingRotate) onRotateGhostingStopped()
+    if (isGhostingOffset) onOffsetGhostingStopped()
+    if (editor.isEditingVertex) onVertexEditStopped()
+    clearHover()
+    clearSelectionRectangle()
+    editor.ghostNodes = null
+  })
+
   function clearSelectionRectangle() {
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (activeSvg) activeSvg.find('.selectionRectangle').each(el => el.remove())
@@ -135,17 +153,53 @@ function Viewport(editor) {
   const axisGroup = editor.overlays.group().addClass('axis-group')
   const polarGroup = editor.overlays.group().addClass('polar-guides')
 
+  function markModelViewBoxChanged(svgInstance) {
+    if (svgInstance?.node !== svg.node) return false
+    return editor.documentState?.markChanged?.('model-viewbox') || false
+  }
+
   function attachCanvasListeners(svgInstance) {
     if (svgInstance.node.dataset.viewportListenersAttached) return
     svgInstance.node.dataset.viewportListenersAttached = 'true'
+
+    let panChanged = false
+    let panActive = false
+
+    canvasNavigationResetters.add(() => {
+      panChanged = false
+      if (panActive) {
+        document.dispatchEvent(new MouseEvent('mouseup', {
+          button: 1,
+          bubbles: true,
+          cancelable: true,
+        }))
+        panActive = false
+      }
+    })
 
     svgInstance
       .mousemove(handleMove)
       .mousedown(handleMousedown)
       .panZoom({ zoomFactor, panButton: 1 })
       .on('zoom', updateGrid)
-      .on('zoom', () => editor.signals.refreshHandlers.dispatch())
-      .on('pan', updateGrid)
+      .on('zoom', () => {
+        editor.signals.refreshHandlers.dispatch()
+        markModelViewBoxChanged(svgInstance)
+      })
+      .on('panStart', () => {
+        panActive = true
+        panChanged = false
+      })
+      .on('panning', () => {
+        updateGrid()
+        panChanged = true
+        markModelViewBoxChanged(svgInstance)
+      })
+      .on('panEnd', () => {
+        panActive = false
+        panChanged = false
+        updateGrid()
+      })
 
     svgInstance.on('pointerdown', () => {
       if (editor.activeEditor !== 'canvas') {
@@ -186,9 +240,22 @@ function Viewport(editor) {
 
         if (box.width > 0 || box.height > 0) {
           const padding = Math.max(box.width, box.height) * 0.1 || 2
-          svgInstance.animate(300, '>').viewbox(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2).after(() => {
-            updateGrid()
-          })
+          const target = {
+            x: box.x - padding,
+            y: box.y - padding,
+            width: box.width + padding * 2,
+            height: box.height + padding * 2,
+          }
+          const current = svgInstance.viewbox()
+          if (
+            current.x === target.x
+            && current.y === target.y
+            && current.width === target.width
+            && current.height === target.height
+          ) return
+          svgInstance.viewbox(target.x, target.y, target.width, target.height)
+          markModelViewBoxChanged(svgInstance)
+          updateGrid()
         }
       }
     })

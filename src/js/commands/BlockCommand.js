@@ -1,5 +1,9 @@
 import { Command } from '../Command'
-import { createBlockDefinition, insertBlockInstance } from '../BlockManager'
+import {
+  createBlockDefinition,
+  insertBlockInstance,
+  validateBlockDisplayName,
+} from '../BlockManager'
 
 class BlockCommand extends Command {
   constructor(editor) {
@@ -126,6 +130,7 @@ class BlockCommand extends Command {
     nameInput.type = 'text'
     nameInput.className = 'prefs-input block-modal-name-input'
     nameInput.placeholder = 'Enter name…'
+    nameInput.maxLength = 256
     nameInput.spellcheck = false
     nameRow.appendChild(nameLabel)
     nameRow.appendChild(nameInput)
@@ -180,6 +185,7 @@ class BlockCommand extends Command {
       const name = nameInput.value.trim()
       let err = ''
       if (!name) err = ''
+      else if (!validateBlockDisplayName(name)) err = 'Use 1-256 printable characters.'
       else if (this.editor.blockDefinitions.has(name)) err = `Block "${name}" already exists.`
       errorMsg.textContent = err
       createBtn.disabled = !name || !!err || !basePoint
@@ -335,7 +341,7 @@ class BlockCommand extends Command {
 
     // Re-add to block definitions map
     this.editor.blockDefinitions.set(this.blockName, {
-      defId: 'block-' + this.blockName,
+      defId: this.defGroup.attr('id'),
       basePoint: JSON.parse(this.defGroup.attr('data-base-point')),
       elementCount: this.originalElements.length,
     })

@@ -75,7 +75,7 @@ describe('Phase 0 format fixtures', () => {
     })
   })
 
-  test('parses current schema-v2 definitions, styles, Paper data, and graph metadata', async () => {
+  test('parses historical schema-v2 definitions, styles, Paper data, and graph metadata', async () => {
     const root = parseSvg(await readFixture('native-v2.svg'))
     expectValidNativeRoot(root, 2)
 

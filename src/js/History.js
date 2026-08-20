@@ -53,7 +53,11 @@ class History {
     // }
 
     // cmd.name = optionalName !== undefined ? optionalName : cmd.name
-    cmd.execute()
+    if (this.editor.documentState) {
+      this.editor.documentState.runWithoutTracking(() => cmd.execute())
+    } else {
+      cmd.execute()
+    }
     // cmd.inMemory = true
 
     // if (this.config.getKey('settings/history')) {
@@ -65,6 +69,7 @@ class History {
     // clearing all the redo-commands
 
     this.redos = []
+    if (this.editor.documentState) this.editor.documentState.markChanged('history-execute')
     // this.editor.signals.historyChanged.dispatch(cmd)
   }
 
@@ -85,8 +90,13 @@ class History {
     }
 
     if (cmd !== undefined) {
-      cmd.undo()
+      if (this.editor.documentState) {
+        this.editor.documentState.runWithoutTracking(() => cmd.undo())
+      } else {
+        cmd.undo()
+      }
       this.redos.push(cmd)
+      if (this.editor.documentState) this.editor.documentState.markChanged('history-undo')
   //       this.editor.signals.historyChanged.dispatch(cmd)
     }
 
@@ -110,16 +120,24 @@ class History {
     }
 
     if (cmd !== undefined) {
-      if (typeof cmd.redo === 'function') {
-        cmd.redo()
-      } else {
-        cmd.execute()
+      const redo = () => {
+        if (typeof cmd.redo === 'function') cmd.redo()
+        else cmd.execute()
       }
+      if (this.editor.documentState) this.editor.documentState.runWithoutTracking(redo)
+      else redo()
       this.undos.push(cmd)
+      if (this.editor.documentState) this.editor.documentState.markChanged('history-redo')
   //       this.editor.signals.historyChanged.dispatch(cmd)
     }
 
     return cmd
+  }
+
+  clear() {
+    this.undos = []
+    this.redos = []
+    this.idCounter = 0
   }
 
   //   toJSON() {

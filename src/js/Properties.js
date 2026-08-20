@@ -1163,10 +1163,7 @@ function Properties(editor) {
     // Units per cm (coordinate scale)
     createPropertyField(container, 'Scale (units/cm)', cfg.unitsPerCm, (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) {
-        cfg.unitsPerCm = n
-        if (pe) pe.activate()
-      }
+      if (!isNaN(n) && n > 0) pe?.setUnitsPerCm(n)
     })
 
     // Divider
@@ -1205,31 +1202,19 @@ function Properties(editor) {
 
     createPropertyField(container, 'X (cm)', vp.x.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) {
-        vp.x = n
-        vp.refreshGeometry()
-      }
+      if (!isNaN(n)) vp.setGeometry({ x: n })
     })
     createPropertyField(container, 'Y (cm)', vp.y.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) {
-        vp.y = n
-        vp.refreshGeometry()
-      }
+      if (!isNaN(n)) vp.setGeometry({ y: n })
     })
     createPropertyField(container, 'Width (cm)', vp.w.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) {
-        vp.w = n
-        vp.refreshGeometry()
-      }
+      if (!isNaN(n) && n > 0) vp.setGeometry({ w: n })
     })
     createPropertyField(container, 'Height (cm)', vp.h.toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) {
-        vp.h = n
-        vp.refreshGeometry()
-      }
+      if (!isNaN(n) && n > 0) vp.setGeometry({ h: n })
     })
     createPropertyField(container, 'Scale (1:N)', vp.scale, (val) => {
       const n = parseFloat(val)
@@ -1261,6 +1246,13 @@ function Properties(editor) {
   function renderColorTranslationTab(container) {
     const pe = editor.paperEditor
     const cfg = editor.paperConfig
+    const materializeMapping = (sourceColor, fallback) => {
+      const created = !cfg.colorMap[sourceColor]
+      if (!cfg.colorMap[sourceColor]) {
+        cfg.colorMap[sourceColor] = { ...fallback }
+      }
+      return { mapping: cfg.colorMap[sourceColor], created }
+    }
 
     const header = document.createElement('div')
     header.className = 'prop-section-header'
@@ -1280,17 +1272,22 @@ function Properties(editor) {
       btn.className = 'prop-preset-btn'
       btn.addEventListener('click', () => {
         const colors = pe ? pe.getUsedColors() : []
+        let changed = false
         colors.forEach((c) => {
-          if (!cfg.colorMap[c]) cfg.colorMap[c] = { printColor: c, enabled: true }
-          if (preset === null) {
-            cfg.colorMap[c].printColor = c // pass-through
-          } else if (preset === 'grayscale') {
-            cfg.colorMap[c].printColor = _toGrayscale(c)
-          } else {
-            cfg.colorMap[c].printColor = preset
+          if (!cfg.colorMap[c]) {
+            cfg.colorMap[c] = { printColor: c, enabled: true }
+            changed = true
           }
+          const printColor = preset === null
+            ? c
+            : preset === 'grayscale'
+              ? _toGrayscale(c)
+              : preset
+          if (cfg.colorMap[c].printColor === printColor) return
+          cfg.colorMap[c].printColor = printColor
+          changed = true
         })
-        editor.signals.colorMapUpdated.dispatch()
+        if (changed) editor.signals.colorMapUpdated.dispatch()
         render()
       })
       presetsRow.appendChild(btn)
@@ -1308,10 +1305,10 @@ function Properties(editor) {
     }
 
     colors.forEach((sourceColor) => {
-      if (!cfg.colorMap[sourceColor]) {
-        cfg.colorMap[sourceColor] = { printColor: sourceColor, enabled: true }
-      }
-      const mapping = cfg.colorMap[sourceColor]
+      // Missing mappings are a pass-through display default. Rendering the
+      // panel must not mutate the document; a mapping becomes persistent only
+      // when the user actually changes this row.
+      const mapping = cfg.colorMap[sourceColor] || { printColor: sourceColor, enabled: true }
 
       const row = document.createElement('div')
       row.className = 'property-row'
@@ -1323,7 +1320,9 @@ function Properties(editor) {
       cb.checked = mapping.enabled
       cb.style.flexShrink = '0'
       cb.addEventListener('change', () => {
-        mapping.enabled = cb.checked
+        const persisted = materializeMapping(sourceColor, mapping)
+        if (!persisted.created && persisted.mapping.enabled === cb.checked) return
+        persisted.mapping.enabled = cb.checked
         editor.signals.colorMapUpdated.dispatch()
       })
 
@@ -1345,7 +1344,9 @@ function Properties(editor) {
       printSwatch.title = `Print: ${mapping.printColor}`
       printSwatch.addEventListener('click', () => {
         openColorPicker(mapping.printColor, (newColor) => {
-          mapping.printColor = newColor
+          const persisted = materializeMapping(sourceColor, mapping)
+          if (!persisted.created && persisted.mapping.printColor === newColor) return
+          persisted.mapping.printColor = newColor
           printSwatch.style.background = newColor
           printSwatch.title = `Print: ${newColor}`
           editor.signals.colorMapUpdated.dispatch()

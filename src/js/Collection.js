@@ -6,8 +6,6 @@
 
 import { getPreferences } from './Preferences'
 
-let collectionCounter = 0
-
 /**
  * Initialize the collection system on the editor.
  * Creates `editor.collections` Map and a default collection.
@@ -15,6 +13,7 @@ let collectionCounter = 0
 function initCollections(editor) {
     editor.collections = new Map()
     editor.activeCollection = null
+    editor.collectionIndex = 0
 
     const defaultCollection = createCollection(editor, 'Collection 1')
     editor.activeCollection = defaultCollection
@@ -27,9 +26,14 @@ function initCollections(editor) {
  * @returns {SVG.G} the svg.js group element
  */
 function createCollection(editor, name) {
-    collectionCounter++
+    if (!Number.isSafeInteger(editor.collectionIndex) || editor.collectionIndex < 0) {
+        editor.collectionIndex = 0
+    }
+    do {
+        editor.collectionIndex++
+    } while (editor.collections.has('collection-' + editor.collectionIndex))
     const group = editor.drawing.group()
-    const id = 'collection-' + collectionCounter
+    const id = 'collection-' + editor.collectionIndex
     group.attr('id', id)
     group.attr('name', name)
     group.attr('data-collection', 'true')
@@ -93,7 +97,11 @@ function deleteCollection(editor, id) {
 function setActiveCollection(editor, id) {
     const data = editor.collections.get(id)
     if (!data) return
+    const changed = editor.activeCollection !== data.group
     editor.activeCollection = data.group
+    if (changed && editor.documentState) {
+        editor.documentState.markChanged('active-collection-changed')
+    }
     editor.signals.updatedCollections.dispatch()
     editor.signals.updatedOutliner.dispatch()
 }
@@ -124,6 +132,7 @@ function toggleLock(editor, id) {
     if (!data) return
 
     data.locked = !data.locked
+    if (editor.documentState) editor.documentState.markChanged('collection-lock-changed')
     editor.signals.updatedCollections.dispatch()
     editor.signals.updatedOutliner.dispatch()
 }
@@ -452,22 +461,29 @@ function migrateOrphanElements(editor) {
  */
 function rebuildCollectionsFromDOM(editor) {
     editor.collections.clear()
-    collectionCounter = 0
+    editor.collectionIndex = 0
 
     editor.drawing.children().each((child) => {
         if (child.attr('data-collection') === 'true') {
-            collectionCounter++
             const id = child.attr('id')
+            const numericId = String(id).match(/^collection-(\d+)$/)
+            const numericIndex = numericId ? Number(numericId[1]) : 0
+            const strokeWidth = parseFloat(child.css('stroke-width'))
+            const opacity = parseFloat(child.css('opacity'))
+            editor.collectionIndex = Math.max(
+                editor.collectionIndex + 1,
+                Number.isSafeInteger(numericIndex) ? numericIndex : 0,
+            )
             const data = {
                 group: child,
                 visible: child.css('display') !== 'none',
                 locked: child.attr('data-locked') === 'true',
                 style: {
                     stroke: child.css('stroke') || 'white',
-                    'stroke-width': parseFloat(child.css('stroke-width')) || 0.1,
+                    'stroke-width': Number.isFinite(strokeWidth) ? strokeWidth : 0.1,
                     'stroke-linecap': child.css('stroke-linecap') || 'round',
                     fill: child.css('fill') || 'transparent',
-                    opacity: child.node.hasAttribute('opacity') ? parseFloat(child.css('opacity')) : 1,
+                    opacity: Number.isFinite(opacity) ? opacity : 1,
                 },
             }
             editor.collections.set(id, data)

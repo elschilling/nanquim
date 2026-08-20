@@ -5,12 +5,16 @@ section.web-section
       a.navbar-menus(onclick='menuFile()') File
       .dropdown-menu
         ul
-          li(onclick='openSVG()') 
-            | Open SVG
+          li(onclick='newDocument()')
+            | New
+          li(onclick='openSVG()')
+            | Open…
           li(onclick='saveSVG()')
-            | Save SVG
-          li(onclick='fileInput.click()')
-            | Import DXF
+            | Save
+          li(onclick='saveAsSVG()')
+            | Save As…
+          li(onclick='exportSVG()')
+            | Export SVG
           li(onclick='saveDXF()')
             | Export DXF
     li

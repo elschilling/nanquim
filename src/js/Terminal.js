@@ -185,6 +185,15 @@ function Terminal(editor) {
     acIndex = -1
   }
 
+  signals.documentSessionReset.add(() => {
+    terminalText.value = ''
+    pendingInputLogNode = null
+    hideAutocomplete()
+    isResizingTerminal = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  })
+
   terminalText.addEventListener('input', updateAutocomplete)
 
   document.addEventListener('keydown', handleInput)
@@ -213,7 +222,9 @@ function Terminal(editor) {
     // Geometry Nodes owns its own shortcuts, clipboard, and text controls. Keep
     // file-level shortcuts global but otherwise do not feed keys to the CAD
     // terminal while that editor has focus.
-    const isFileShortcut = (e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'o')
+    const shortcutKey = String(e.key || '').toLowerCase()
+    const isFileShortcut = (e.ctrlKey || e.metaKey)
+      && (shortcutKey === 'n' || shortcutKey === 's' || shortcutKey === 'o')
     if ((editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) && !isFileShortcut) return
 
     // The terminal input is where CAD commands and interactive values are
@@ -262,16 +273,28 @@ function Terminal(editor) {
       e.preventDefault()
     }
 
-    // Ctrl+S — Save SVG
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    // Ctrl+Shift+S — Save As
+    if ((e.ctrlKey || e.metaKey) && shortcutKey === 's' && e.shiftKey) {
       e.preventDefault()
-      if (window.saveSVG) window.saveSVG({ direct: true })
+      if (window.saveAsSVG) window.saveAsSVG()
       return
     }
-    // Ctrl+O — Open SVG
-    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+    // Ctrl+S — Save
+    if ((e.ctrlKey || e.metaKey) && shortcutKey === 's') {
+      e.preventDefault()
+      if (window.saveSVG) window.saveSVG()
+      return
+    }
+    // Ctrl+O — Open
+    if ((e.ctrlKey || e.metaKey) && shortcutKey === 'o') {
       e.preventDefault()
       if (window.openSVG) window.openSVG()
+      return
+    }
+    // Ctrl+N — New
+    if ((e.ctrlKey || e.metaKey) && shortcutKey === 'n') {
+      e.preventDefault()
+      if (window.newDocument) window.newDocument()
       return
     }
     // Ctrl+C — Copy selected elements to clipboard

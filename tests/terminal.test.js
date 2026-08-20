@@ -41,6 +41,19 @@ function pressSpace(target) {
   return event
 }
 
+function pressShortcut(key, options = {}) {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    code: `Key${key.toUpperCase()}`,
+    ctrlKey: true,
+    shiftKey: options.shiftKey === true,
+    bubbles: true,
+    cancelable: true,
+  })
+  document.dispatchEvent(event)
+  return event
+}
+
 describe('Terminal Space confirmation', () => {
   let editor
   let terminalInput
@@ -78,6 +91,10 @@ describe('Terminal Space confirmation', () => {
     documentListeners.forEach(({ type, listener, options }) => {
       document.removeEventListener(type, listener, options)
     })
+    delete window.newDocument
+    delete window.openSVG
+    delete window.saveSVG
+    delete window.saveAsSVG
   })
 
   beforeEach(() => {
@@ -87,11 +104,47 @@ describe('Terminal Space confirmation', () => {
     editor.isTypingText = false
     editor.lastCommand = null
     editor.signals.inputValue.dispatch.mockClear()
+    window.newDocument = vi.fn()
+    window.openSVG = vi.fn()
+    window.saveSVG = vi.fn()
+    window.saveAsSVG = vi.fn()
 
     terminalLog.replaceChildren()
     terminalInput.value = ''
     terminalInput.dispatchEvent(new Event('input', { bubbles: true }))
     terminalInput.focus()
+  })
+
+  test('routes New, Open, Save, and Save As through their distinct file actions', () => {
+    expect(pressShortcut('n').defaultPrevented).toBe(true)
+    expect(pressShortcut('o').defaultPrevented).toBe(true)
+    expect(pressShortcut('s').defaultPrevented).toBe(true)
+    expect(pressShortcut('s', { shiftKey: true }).defaultPrevented).toBe(true)
+
+    expect(window.newDocument).toHaveBeenCalledOnce()
+    expect(window.openSVG).toHaveBeenCalledOnce()
+    expect(window.saveSVG).toHaveBeenCalledOnce()
+    expect(window.saveAsSVG).toHaveBeenCalledOnce()
+  })
+
+  test('clears pending input and autocomplete when the document session changes', () => {
+    const logEntry = editor.signals.terminalLogged.add.mock.calls[0][0]
+    const resetSession = editor.signals.documentSessionReset.add.mock.calls[0][0]
+    logEntry({ type: 'span', msg: 'Width: ', recordInput: true })
+    const prompt = terminalLog.lastElementChild
+
+    terminalInput.value = 'rec'
+    terminalInput.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(document.getElementById('terminalAutocomplete').classList.contains('visible')).toBe(true)
+
+    resetSession()
+    expect(terminalInput.value).toBe('')
+    expect(document.getElementById('terminalAutocomplete').classList.contains('visible')).toBe(false)
+
+    editor.isInteracting = true
+    terminalInput.value = '42'
+    pressSpace(terminalInput)
+    expect(prompt.textContent).toBe('Width: ')
   })
 
   test('blank Space repeats the last CAD command from the focused terminal input', () => {

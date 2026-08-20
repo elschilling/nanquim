@@ -32,6 +32,7 @@ export function ensurePattern(svgRoot, type, colorHex, scale) {
   const ns = 'http://www.w3.org/2000/svg'
   const pat = document.createElementNS(ns, 'pattern')
   pat.setAttribute('id', id)
+  pat.setAttribute('data-nanquim-document-def', 'true')
   pat.setAttribute('patternUnits', 'userSpaceOnUse')
 
   switch (type) {

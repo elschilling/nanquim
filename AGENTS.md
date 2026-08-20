@@ -72,8 +72,15 @@ CI also uses `pnpm install --frozen-lockfile` and
 - `src/js/History.js`: Undo/Redo execution.
 - `src/js/Collection.js`: collection state and inherited element styles.
 - `src/js/SpatialIndex.js`: selectable/full drawing indexes.
-- `src/js/Navbar.js`: current native SVG save and file actions.
-- `src/js/utils/DXFloader.js`: current SVG/DXF load path and hydration.
+- `src/js/DocumentController.js`: New/Open/Save/Save As, dirty-state guards,
+  browser file capabilities, and download fallbacks.
+- `src/js/document/DocumentSerializer.js`: canonical native schema writer.
+- `src/js/document/DocumentParser.js`: bounded parsing, schema policy, and
+  detached candidates.
+- `src/js/document/DocumentState.js`: session identity and dirty/save tokens.
+- `src/js/Navbar.js`: thin UI bindings for document and export actions.
+- `src/js/utils/DXFloader.js`: staged SVG/DXF hydration and transactional
+  session replacement.
 - `src/js/PaperEditor.js`, `src/js/PaperViewport.js`, and
   `src/js/utils/ExportPaper.js`: Paper Space and output.
 - `src/js/geometry-nodes/`: Geometry Nodes model, evaluation, persistence, and
@@ -204,9 +211,11 @@ rules.
 Treat SVG, DXF, clipboard content, document metadata, CSS, and Geometry Nodes
 payloads as untrusted.
 
-Until persistence is centralized, `Navbar.js` and `DXFloader.js` are paired save
-and load boundaries. A persisted field is incomplete unless serialization,
-loading, validation, and round-trip tests are updated together.
+Persistence is centralized through `DocumentController`,
+`DocumentSerializer`, `DocumentParser`, and the staged `DXFloader` commit. A
+persisted field is incomplete unless serialization, parsing, migration,
+loading, validation, and round-trip tests are updated together. Do not add a
+second save path to Navbar or another UI module.
 
 - Reuse `sanitizeSvgDocument`, `parseSafeJson`, ID/reference remapping, CSS
   scoping, and existing length/depth/node-count limits.
@@ -230,6 +239,9 @@ loading, validation, and round-trip tests are updated together.
   Access and Clipboard APIs. Secure context, permission, and persistent handles
   cannot be assumed; `AbortError` cancellation is normal, and a fallback must
   never overwrite the wrong file.
+- Mark a native session clean only after a writable handle closes successfully.
+  An anchor-triggered download has no completion signal, so it remains
+  unverified, keeps the session dirty, and must not adopt a file association.
 
 Any document-format change requires tests for:
 

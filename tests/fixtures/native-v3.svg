@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nanquim contributors
+SPDX-License-Identifier: GPL-3.0-only
+Purpose-built Nanquim schema-v3 semantic round-trip fixture.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  xmlns:svgjs="http://svgjs.com/svgjs"
+  viewBox="-25 -15 240 160"
+  data-nanquim-version="3"
+  data-element-index="80"
+  data-active-collection-id="collection-special"
+  data-paper-config="{&quot;size&quot;:&quot;custom&quot;,&quot;width&quot;:500.5,&quot;height&quot;:321.25,&quot;orientation&quot;:&quot;landscape&quot;,&quot;unitsPerCm&quot;:2.5,&quot;colorMap&quot;:{&quot;#112233&quot;:{&quot;printColor&quot;:&quot;#abcdef&quot;,&quot;enabled&quot;:true}}}"
+  data-paper-viewports="[{&quot;id&quot;:&quot;vp-4&quot;,&quot;x&quot;:1.25,&quot;y&quot;:2.5,&quot;w&quot;:12.5,&quot;h&quot;:8.75,&quot;scale&quot;:25,&quot;modelOriginX&quot;:-30.5,&quot;modelOriginY&quot;:12.75,&quot;visible&quot;:true,&quot;locked&quot;:false},{&quot;id&quot;:&quot;vp-9&quot;,&quot;x&quot;:15,&quot;y&quot;:3,&quot;w&quot;:10,&quot;h&quot;:7,&quot;scale&quot;:100,&quot;modelOriginX&quot;:250,&quot;modelOriginY&quot;:-125,&quot;visible&quot;:false,&quot;locked&quot;:true}]"
+  data-dim-styles="{&quot;activeStyleId&quot;:&quot;detail-v3&quot;,&quot;styles&quot;:[{&quot;id&quot;:&quot;Standard&quot;,&quot;name&quot;:&quot;Standard&quot;,&quot;properties&quot;:{&quot;textStyleId&quot;:&quot;Standard&quot;,&quot;markerType&quot;:&quot;arrow&quot;,&quot;markerSize&quot;:0.15,&quot;extensionLineOffset&quot;:0.1,&quot;extensionLineExtend&quot;:0.1,&quot;textOffset&quot;:0.1,&quot;textColor&quot;:&quot;#ffffff&quot;,&quot;lineColor&quot;:&quot;#ffffff&quot;,&quot;lineWidth&quot;:0.01}},{&quot;id&quot;:&quot;detail-v3&quot;,&quot;name&quot;:&quot;Dimensions &amp; &lt;detail&gt; \&quot;quoted\&quot; 'single'&quot;,&quot;properties&quot;:{&quot;textStyleId&quot;:&quot;text-v3&quot;,&quot;markerType&quot;:&quot;tick&quot;,&quot;markerSize&quot;:0.35,&quot;extensionLineOffset&quot;:0.2,&quot;extensionLineExtend&quot;:0.3,&quot;textOffset&quot;:0.25,&quot;textColor&quot;:&quot;#123456&quot;,&quot;lineColor&quot;:&quot;#654321&quot;,&quot;lineWidth&quot;:0.04}}]}"
+  data-text-styles="{&quot;activeStyleId&quot;:&quot;text-v3&quot;,&quot;styles&quot;:[{&quot;id&quot;:&quot;Standard&quot;,&quot;name&quot;:&quot;Standard&quot;,&quot;properties&quot;:{&quot;fontFamily&quot;:&quot;Inter&quot;,&quot;fontSize&quot;:0.15,&quot;fontWeight&quot;:&quot;normal&quot;,&quot;fontStyle&quot;:&quot;normal&quot;,&quot;textAnchor&quot;:&quot;start&quot;,&quot;dominantBaseline&quot;:&quot;auto&quot;,&quot;letterSpacing&quot;:0,&quot;textDecoration&quot;:&quot;none&quot;,&quot;fill&quot;:&quot;#ffffff&quot;}},{&quot;id&quot;:&quot;text-v3&quot;,&quot;name&quot;:&quot;Text &amp; &lt;notes&gt; \&quot;quoted\&quot; 'single'&quot;,&quot;properties&quot;:{&quot;fontFamily&quot;:&quot;Inter&quot;,&quot;fontSize&quot;:0.42,&quot;fontWeight&quot;:&quot;700&quot;,&quot;fontStyle&quot;:&quot;italic&quot;,&quot;textAnchor&quot;:&quot;middle&quot;,&quot;dominantBaseline&quot;:&quot;central&quot;,&quot;letterSpacing&quot;:0.05,&quot;textDecoration&quot;:&quot;underline&quot;,&quot;fill&quot;:&quot;#fedcba&quot;}}]}"
+  data-block-definitions="[[&quot;Block &amp; &lt;panel&gt; \&quot;quoted\&quot; 'single'&quot;,{&quot;defId&quot;:&quot;block-opaque-v3&quot;,&quot;basePoint&quot;:{&quot;x&quot;:2.5,&quot;y&quot;:-1.5},&quot;elementCount&quot;:2}]]"
+  data-nanquim-converted-strokes="false">
+  <title id="document-title-v3">Nanquim &amp; &lt;drawing&gt; "quoted" 'single'</title>
+  <desc id="document-description-v3">Round-trip &amp; &lt;description&gt; "quoted" 'single'</desc>
+  <metadata id="custom-metadata-v3" data-vendor="FOSS &amp; CAD">{"vendor":"Acme &amp; &lt;CAD&gt; \"quoted\" 'single'","revision":3,"reference":"url(#gradient-v3)"}</metadata>
+  <metadata id="nanquim-geometry-nodes">{"version":1,"activeObjectId":"object-valid-v3","graphs":[{"schemaVersion":1,"id":"graph-v3","name":"Graph &amp; &lt;nodes&gt; \"quoted\" 'single'","revision":0,"nodes":[{"id":"gn-input-v3","type":"groupInput","x":-240,"y":0,"values":{}},{"id":"gn-output-v3","type":"groupOutput","x":240,"y":0,"values":{}}],"links":[{"id":"gn-link-v3","fromNode":"gn-input-v3","fromSocket":"geometry","toNode":"gn-output-v3","toSocket":"geometry"}],"interface":{"inputs":[{"id":"geometry","name":"Geometry","type":"geometry","defaultValue":null}],"outputs":[{"id":"geometry","name":"Geometry","type":"geometry","defaultValue":null}]},"view":{"x":0,"y":0,"zoom":1}}],"instances":[{"id":"modifier-v3","objectId":"object-v3","graphId":"missing-cached-graph-v3","enabled":true,"inputs":{"label":"Input &amp; &lt;value&gt; \"quoted\" 'single'"}},{"id":"modifier-valid-v3","objectId":"object-valid-v3","graphId":"graph-v3","enabled":true,"inputs":{}}]}</metadata>
+  <defs>
+    <linearGradient id="gradient-v3" x1="0" y1="0" x2="1" y2="1">
+      <stop id="gradient-stop-a-v3" offset="0" stop-color="#112233" />
+      <stop id="gradient-stop-b-v3" offset="1" stop-color="#abcdef" />
+    </linearGradient>
+    <pattern id="pattern-v3" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect id="pattern-background-v3" width="4" height="4" fill="url(#gradient-v3)" />
+      <path id="pattern-line-v3" d="M 0 0 L 4 4" stroke="#445566" />
+    </pattern>
+    <clipPath id="clip-v3">
+      <rect id="clip-rect-v3" x="0" y="0" width="90" height="70" />
+    </clipPath>
+    <mask id="mask-v3">
+      <rect id="mask-background-v3" width="100" height="80" fill="white" />
+      <circle id="mask-hole-v3" cx="50" cy="40" r="10" fill="black" />
+    </mask>
+    <marker id="marker-v3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path id="marker-path-v3" d="M 0 0 L 8 4 L 0 8 Z" fill="#abcdef" />
+    </marker>
+    <symbol id="symbol-v3" viewBox="0 0 10 10">
+      <circle id="symbol-circle-v3" cx="5" cy="5" r="4" fill="url(#gradient-v3)" />
+    </symbol>
+    <style id="style-v3">.styled-v3 { fill: url(#pattern-v3); stroke: #135790; clip-path: url(#clip-v3); }</style>
+    <g id="block-opaque-v3"
+      data-block-def="true"
+      data-block-name="Block &amp; &lt;panel&gt; &quot;quoted&quot; 'single'"
+      data-base-point="{&quot;x&quot;:2.5,&quot;y&quot;:-1.5}">
+      <rect id="block-rect-v3" x="0" y="0" width="12" height="7" />
+      <circle id="block-circle-v3" cx="6" cy="3.5" r="2" />
+    </g>
+  </defs>
+  <g id="paper-annotations"
+    name="Annotations &amp; &lt;paper&gt; &quot;quoted&quot; 'single'"
+    data-nanquim-paper-annotations="true"
+    data-collection="true"
+    data-locked="true"
+    style="stroke:#102030;stroke-width:0.18;stroke-linecap:round;fill:transparent">
+    <text id="paper-note-v3" x="2" y="3">Paper &amp; &lt;note&gt; "quoted" 'single'</text>
+    <line id="paper-line-v3" x1="1" y1="5" x2="9" y2="5" marker-end="url(#marker-v3)" />
+  </g>
+  <g id="collection-special"
+    name="Collection &amp; &lt;primary&gt; &quot;quoted&quot; 'single'"
+    data-collection="true"
+    data-locked="false"
+    style="stroke:#ffffff;stroke-width:0.2;stroke-linecap:round;fill:transparent;opacity:0.9">
+    <g id="10" name="Nested &amp; &lt;group&gt; &quot;quoted&quot; 'single'" data-group="true">
+      <path id="11" name="Arc" d="M 10 20 A 15 15 0 0 1 35 30"
+        data-arc-data="{&quot;p1&quot;:{&quot;x&quot;:10,&quot;y&quot;:20},&quot;p2&quot;:{&quot;x&quot;:22,&quot;y&quot;:10},&quot;p3&quot;:{&quot;x&quot;:35,&quot;y&quot;:30}}"
+        marker-end="url(#marker-v3)" />
+      <path id="12" name="Circle trim" d="M 48 20 A 10 10 0 1 1 52 20"
+        data-circle-trim-data="{&quot;cx&quot;:50,&quot;cy&quot;:20,&quot;r&quot;:10,&quot;startAngle&quot;:0.2,&quot;endAngle&quot;:5.8,&quot;startPt&quot;:{&quot;x&quot;:59.8,&quot;y&quot;:22},&quot;endPt&quot;:{&quot;x&quot;:58.9,&quot;y&quot;:15.4}}" />
+      <path id="13" name="Ellipse arc" d="M 70 30 A 18 9 20 0 1 95 35"
+        data-ellipse-arc-data="{&quot;cx&quot;:80,&quot;cy&quot;:30,&quot;rx&quot;:18,&quot;ry&quot;:9,&quot;rotation&quot;:20,&quot;startAngle&quot;:0,&quot;endAngle&quot;:2.4}" />
+      <path id="14" name="Spline" d="M 10 55 C 25 40 40 70 55 55"
+        data-spline-data="{&quot;points&quot;:[{&quot;x&quot;:10,&quot;y&quot;:55},{&quot;x&quot;:25,&quot;y&quot;:40},{&quot;x&quot;:40,&quot;y&quot;:70},{&quot;x&quot;:55,&quot;y&quot;:55}],&quot;degree&quot;:3,&quot;closed&quot;:false}" />
+      <path id="15" name="Hatch" class="styled-v3" d="M 65 48 H 105 V 68 H 65 Z"
+        data-hatch-data="{&quot;pattern&quot;:&quot;cross &amp; &lt;fine&gt; \&quot;quoted\&quot; 'single'&quot;,&quot;angle&quot;:45,&quot;spacing&quot;:2.5}"
+        fill="url(#pattern-v3)" clip-path="url(#clip-v3)" mask="url(#mask-v3)" />
+      <g id="16" name="Dimension" data-element-type="dimension"
+        data-dim-data="{&quot;styleId&quot;:&quot;detail-v3&quot;,&quot;start&quot;:{&quot;x&quot;:10,&quot;y&quot;:80},&quot;end&quot;:{&quot;x&quot;:80,&quot;y&quot;:80},&quot;label&quot;:&quot;Dimension &amp; &lt;70&gt; \&quot;quoted\&quot; 'single'&quot;}">
+        <line id="17" x1="10" y1="80" x2="80" y2="80" />
+        <text id="18" x="45" y="78" data-text-style-id="text-v3">70 &amp; &lt;units&gt; "quoted" 'single'</text>
+      </g>
+      <text id="19" name="Styled text" x="20" y="100"
+        data-text-style-id="text-v3"
+        data-fill-source="textstyle">Model &amp; &lt;text&gt; "quoted" 'single'</text>
+      <rect id="25" name="Referenced panel" class="styled-v3"
+        x="110" y="15" width="35" height="25"
+        fill="url(#gradient-v3)" clip-path="url(#clip-v3)" mask="url(#mask-v3)" />
+      <use id="26" name="Symbol instance" href="#symbol-v3" x="120" y="50" />
+      <use id="27"
+        name="Block &amp; &lt;panel&gt; &quot;quoted&quot; 'single'"
+        href="#block-opaque-v3"
+        x="145" y="55"
+        data-block-instance="true"
+        data-block-name="Block &amp; &lt;panel&gt; &quot;quoted&quot; 'single'" />
+      <g id="20"
+        name="Cached Geometry Nodes"
+        data-group="true"
+        data-geometry-nodes="true"
+        data-gn-object-id="object-v3"
+        data-gn-instance-id="modifier-v3"
+        data-gn-graph-id="missing-cached-graph-v3"
+        data-gn-enabled="true">
+        <g id="21" data-gn-source="true" data-hidden="true" display="none" aria-hidden="true" pointer-events="none">
+          <rect id="22" x="160" y="15" width="12" height="8" />
+        </g>
+        <g id="23" data-gn-output="true">
+          <circle id="24" name="Cached output" data-gn-derived="true" cx="166" cy="19" r="5" />
+        </g>
+      </g>
+      <g id="31"
+        name="Valid Geometry Nodes"
+        data-group="true"
+        data-geometry-nodes="true"
+        data-gn-object-id="object-valid-v3"
+        data-gn-instance-id="modifier-valid-v3"
+        data-gn-graph-id="graph-v3"
+        data-gn-enabled="true">
+        <g id="32" data-gn-source="true" data-hidden="true" display="none" aria-hidden="true" pointer-events="none">
+          <rect id="33" name="Valid source" x="180" y="15" width="10" height="6" />
+        </g>
+        <g id="34" data-gn-output="true">
+          <rect id="35" name="Valid cached output" data-gn-derived="true" x="180" y="15" width="10" height="6" />
+        </g>
+      </g>
+    </g>
+  </g>
+  <g id="collection-hidden"
+    name="Hidden &amp; locked"
+    data-collection="true"
+    data-locked="true"
+    style="display:none;stroke:#00ffff;stroke-width:0;stroke-linecap:square;fill:none;opacity:0.5">
+    <line id="30" name="Hidden guide" x1="0" y1="0" x2="200" y2="120" />
+  </g>
+</svg>

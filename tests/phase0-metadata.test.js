@@ -32,16 +32,16 @@ describe('Phase 0 release metadata', () => {
   })
 
   test('keeps application and persisted-data version domains independent', async () => {
-    const [navbar, geometryNodeManager, nodeGraph] = await Promise.all([
-      readProjectFile('src', 'js', 'Navbar.js'),
+    const [documentSerializer, geometryNodeManager, nodeGraph] = await Promise.all([
+      readProjectFile('src', 'js', 'document', 'DocumentSerializer.js'),
       readProjectFile('src', 'js', 'geometry-nodes', 'GeometryNodeManager.js'),
       readProjectFile('src', 'js', 'geometry-nodes', 'core', 'NodeGraph.js'),
     ])
 
-    expect(navbar).toContain('data-nanquim-version="2"')
+    expect(documentSerializer).toContain('const DOCUMENT_SCHEMA_VERSION = 3')
     expect(geometryNodeManager).toContain('const SCHEMA_VERSION = 1')
     expect(nodeGraph).toContain('const GRAPH_SCHEMA_VERSION = 1')
-    expect(`${navbar}\n${geometryNodeManager}\n${nodeGraph}`).not.toContain(packageMetadata.version)
+    expect(`${documentSerializer}\n${geometryNodeManager}\n${nodeGraph}`).not.toContain(packageMetadata.version)
   })
 })
 
