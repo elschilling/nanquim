@@ -1,17 +1,8 @@
 // Each widget lives in its own file.
-@import editor
-@import components/modifier
-@import components/node
-@import components/wgt-collapse
-@import components/wgt-data-block
-@import components/wgt-label
-@import components/wgt-menu
-@import components/wgt-number_slider
-@import components/wgt-pulldown
-@import components/wgt-regular
-@import components/wgt-separator
-@import components/wgt-text
-@import components/wgt-tool
+@use 'utils'
+@use 'editor'
+@use 'components/wgt-menu'
+@use 'components/wgt-tool'
 
 
 .wgt
@@ -44,7 +35,7 @@
     pointer-events: none
 
   &.no-emboss
-    +no-emboss
+    +utils.no-emboss
 
   &.expand
     flex: 1

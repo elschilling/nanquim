@@ -1,3 +1,6 @@
+@use 'sass:list'
+@use '../utils'
+
 .icon
   --icon-bg-margin-left: 3px
   --icon-bg-margin-top: 8px
@@ -23,7 +26,7 @@
   $rows: 'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z','aa','ba','ca','da'
 
   @each $row in $rows
-    $i: index($rows, $row)
+    $i: list.index($rows, $row)
     --icon-svg-column-#{$row}: #{$i}
 
   align-items: center
@@ -65,17 +68,17 @@
   &.icon-plus-collection
     --icon-bg-column-x: 23
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-down
     --icon-bg-column-x: 6
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-right
     --icon-bg-column-x: 5
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-collection
     --icon-bg-column-x: 17
@@ -144,7 +147,7 @@
   &.icon-drag
     --icon-bg-column-x: 17
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-angle-left,
   &.icon-angle-right
@@ -157,7 +160,7 @@
   &.icon-collapse
     --icon-bg-column-x: 12
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
     &.on
       --icon-bg-column-x: 11
 
@@ -174,12 +177,12 @@
   &.icon-duplicate
     --icon-bg-column-x: 21
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-trash
     --icon-bg-column-x: 22
     --icon-bg-column-y: var(--icon-svg-column-da)
-    +is_last_row_icon
+    +utils.is_last_row_icon
 
   &.icon-info
     --icon-bg-column-x: 7

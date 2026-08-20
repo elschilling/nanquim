@@ -1,5 +1,5 @@
 import { getArcGeometry } from '../utils/arcUtils.js'
-import { Command } from './Command.js'
+import { Command } from '../Command.js'
 
 class EditArcCommand extends Command {
     constructor(editor, element, oldValues, newValues) {
