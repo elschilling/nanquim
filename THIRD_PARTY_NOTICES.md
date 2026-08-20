@@ -22,19 +22,6 @@ in the font binaries. See
 [`third_party/licenses/fonts/NOTICE.md`](third_party/licenses/fonts/NOTICE.md)
 and the [SIL OFL 1.1 text](third_party/licenses/fonts/OFL-1.1.txt).
 
-## Blender-derived UI icons
-
-`public/assets/img/blender_icons.svg` is a Blender 2.81-era icon sheet credited
-primarily to Andrzej Ambroż (`jendrzych`) and later Blender contributors.
-`nanquim-logo.svg` and `properties-element.svg` contain locally extracted paths
-from that sheet. Blender's individual UI icons are GPL material. Nanquim
-distributes these derivatives under GPLv3; the repository's [`LICENSE`](LICENSE)
-contains the applicable license text.
-
-The retained sheet does not identify its exact upstream source commit. See the
-[Blender icon notice](third_party/licenses/blender-icons/NOTICE.md) and the
-[asset provenance inventory](docs/asset-provenance.md) before updating it.
-
 ## Vendored browser libraries
 
 - JS Signals 1.0.0 build 268, Miller Medeiros — MIT.

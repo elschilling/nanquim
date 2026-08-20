@@ -4,7 +4,7 @@
 
 [Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
-[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Native document format](docs/native-document-format.md) · [Browser support](docs/browser-support.md)
+[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Visual identity](docs/visual-identity.md) · [Native document format](docs/native-document-format.md) · [Browser support](docs/browser-support.md)
 
 > [!WARNING]
 > Nanquim is in active, pre-1.0 development. Features and saved metadata may still change, and some CAD and file-format edge cases are not covered by automated tests. Use copies of important drawings and please report anything that breaks.
@@ -14,6 +14,20 @@
 Nanquim is an open-source 2D CAD editor for creating technical drawings directly in the browser. Its document model is SVG, so drawings remain inspectable, portable vector files rather than being locked into an opaque project format. Nanquim adds CAD-oriented precision tools, organization, Paper Space, reusable content, and procedural geometry on top of that SVG foundation.
 
 The name is a reference to the technical ink pens (*canetas nanquim*) traditionally used by architects and engineers. The long-term vision is to explore a lightweight technical drawing workflow that can interoperate well with open design tools such as Blender and Bonsai. Direct Blender/Bonsai integration is not implemented yet.
+
+### Appearance and identity
+
+Nanquim keeps its editor-oriented CAD workspace while using an original visual
+language based on technical ink, drafting marks, and restrained paper-like
+surfaces. Its project-authored SVG icons replace the prototype's inherited
+icon artwork and remain crisp and theme-aware at compact UI sizes.
+
+Open **Preferences → Appearance** to choose **Oxide Red**, **Verdigris Green**,
+or **Blueprint Blue**. Selecting either color field creates a custom theme with
+independent accent and background colors; the interface automatically chooses
+a readable light or dark foreground. Appearance is stored only in the browser
+and never changes or dirties the drawing document. See the
+[visual-identity guide](docs/visual-identity.md) for the design and icon rules.
 
 ## Current capabilities
 

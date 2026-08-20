@@ -1,68 +1,134 @@
 \:root
-  /* Variables for the website. */
-  --web-body-bg-color: #222
-  --web-body-color: #ddd
-  --web-body-color-hint: #444
+  // Nanquim's visual system is intentionally expressed as CSS custom
+  // properties. Preferences only changes the base paper/ink colors; every
+  // surface below follows without rebuilding the interface.
+  color-scheme: dark
 
-  /* Blender UI variables. */
-
-  --transition-speed: 150ms
+  --transition-speed: 140ms
 
   --spacer: 1rem
   --spacer-sm: calc(var(--spacer) * .75)
   --spacer-xs: calc(var(--spacer) * .5)
   --spacer-xxs: calc(var(--spacer) * .25)
 
-  --border-width: .1rem
-  --border-width-lg: .15rem
+  --border-width: 1px
+  --border-width-lg: 2px
+  --border-radius: 5px
+  --border-radius-lg: 10px
 
-  /* Split in 3 because it's usually used inside rgba(var(--shadow-color), .5). */
-  --shadow-color: 0,0,0
-
-  --font-size: .85rem
+  --font-size: .82rem
   --font-size-lg: calc(var(--font-size) * 1.25)
-  --font-size-sm: calc(var(--font-size) * .95)
-  --border-width: .15rem
-  --border-radius: .25rem
-  --border-radius-lg: calc(var(--border-radius) * 3)
+  --font-size-sm: calc(var(--font-size) * .92)
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif
+  --font-display: 'DM Sans', 'Inter', system-ui, sans-serif
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace
 
-  --accent-color: hsl(217deg 47% 55%)
+  // Red ink is the default identity. The Preferences controller owns these
+  // base and contrast values and keeps them readable for arbitrary colors.
+  --accent-color: #9b6267
+  --accent-foreground-color: #fff
+  --app-background-color: #211d1e
+  --app-foreground-color: #f1eeec
+  --app-muted-foreground-color: #aaa3a1
 
-  --editor-header-bg: #333
-  --editor-border-color: #111
-  --editor-border-width: var(--spacer-xxs)
-  --node-editor-bg: #1A1A1A
+  // Fallbacks precede color-mix values so the UI remains usable in older
+  // engines. Surfaces are mixed toward the computed foreground, which makes
+  // the same system work with both dark and light custom backgrounds.
+  --surface-0: #211d1e
+  --surface-0: var(--app-background-color)
+  --surface-1: #282426
+  --surface-1: color-mix(in srgb, var(--app-background-color) 96%, var(--app-foreground-color))
+  --surface-2: #302b2d
+  --surface-2: color-mix(in srgb, var(--app-background-color) 92%, var(--app-foreground-color))
+  --surface-3: #393335
+  --surface-3: color-mix(in srgb, var(--app-background-color) 87%, var(--app-foreground-color))
+  --surface-4: #443c3f
+  --surface-4: color-mix(in srgb, var(--app-background-color) 81%, var(--app-foreground-color))
+  --top-rail-bg-color: #111011
+  --top-rail-bg-color: color-mix(in srgb, var(--app-background-color) 52%, #000)
+  --canvas-bg-color: #171516
+  --canvas-bg-color: color-mix(in srgb, var(--app-background-color) 72%, #000)
+  --canvas-grid-color: #302c2d
+  --canvas-grid-color: color-mix(in srgb, var(--canvas-bg-color) 90%, var(--app-foreground-color))
+  --panel-border-color: #4a4244
+  --panel-border-color: color-mix(in srgb, var(--app-background-color) 76%, var(--app-foreground-color))
+  --separator-color: #151314
+  --separator-color: color-mix(in srgb, var(--app-background-color) 80%, #000)
+  --hover-surface: #45383b
+  --hover-surface: color-mix(in srgb, var(--surface-2) 82%, var(--accent-color))
+  --selected-surface: #493337
+  --selected-surface: color-mix(in srgb, var(--surface-2) 68%, var(--accent-color))
+  --accent-soft: rgba(155, 98, 103, .2)
+  --accent-soft: color-mix(in srgb, var(--accent-color) 22%, transparent)
+  --accent-border: #795357
+  --accent-border: color-mix(in srgb, var(--accent-color) 66%, var(--panel-border-color))
+  --danger-color: #cf7772
+  --warning-color: #c99a64
+  --success-color: #7e9b79
+  --shadow-color: 0, 0, 0
+  --elevation-panel: 0 12px 34px rgba(var(--shadow-color), .34), 0 1px 0 rgba(var(--shadow-color), .4)
+  --elevation-dialog: 0 28px 90px rgba(var(--shadow-color), .62), 0 0 0 1px rgba(var(--shadow-color), .35)
+  --focus-ring: 0 0 0 3px var(--accent-soft)
 
-  /* Widget General. */
+  // Compatibility aliases retained for existing components.
+  --web-body-bg-color: var(--app-background-color)
+  --web-body-color: var(--app-foreground-color)
+  --web-body-color-hint: var(--app-muted-foreground-color)
+  --editor-header-bg: var(--surface-2)
+  --editor-border-color: var(--separator-color)
+  --editor-border-width: 3px
+  --node-editor-bg: var(--canvas-bg-color)
+
+  // Widget general.
   --wgt-active: var(--accent-color)
-  --wgt-border-color: #373737
+  --wgt-border-color: var(--panel-border-color)
   --wgt-border-radius: var(--border-radius)
   --wgt-border-width: var(--border-width)
-  --wgt-box-shadow: .05rem .05rem 0 rgba(var(--shadow-color), .2)
-  --wgt-color: #fff
-  --wgt-color-inactive: #aaa
-  --wgt-color-disabled: #777
-  --wgt-height: 22px
+  --wgt-box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-foreground-color) 6%, transparent)
+  --wgt-color: var(--app-foreground-color)
+  --wgt-color-inactive: var(--app-muted-foreground-color)
+  --wgt-color-disabled: color-mix(in srgb, var(--app-muted-foreground-color) 55%, transparent)
+  --wgt-height: 24px
   --wgt-padding: .15rem
 
-  /* Widget specifics. */
-  --wgt-menu-bg: #2C2C2C
-  --wgt-menu-border-color: #363636
-
-  --wgt-numslider-bg-hover: #888888
-  --wgt-numslider-bg: #585858
-  --wgt-numslider-border-color: #363636
+  // Widget specifics.
+  --wgt-menu-bg: var(--surface-2)
+  --wgt-menu-border-color: var(--panel-border-color)
+  --wgt-numslider-bg-hover: var(--surface-4)
+  --wgt-numslider-bg: var(--surface-3)
+  --wgt-numslider-border-color: var(--panel-border-color)
   --wgt-numslider-border-radius: calc(var(--border-radius) * 2)
-  --wgt-numslider-color: #ddd
-
+  --wgt-numslider-color: var(--app-foreground-color)
   --wgt-pulldown-color: var(--wgt-color-inactive)
-
-  --wgt-regular-bg: #585858
-
+  --wgt-regular-bg: var(--surface-3)
   --wgt-separator-height: var(--spacer-xs)
-
-  --wgt-text-bg: #1F1F1F
-  --wgt-text-border-color: #363636
-
-  --wgt-tool-bg: #585858
+  --wgt-text-bg: var(--surface-0)
+  --wgt-text-border-color: var(--panel-border-color)
+  --wgt-tool-bg: var(--surface-3)
   --icon-size: 20px
+
+\:root[data-nanquim-theme='red']
+  --accent-color: #9b6267
+  --accent-foreground-color: #fff
+  --app-background-color: #211d1e
+
+\:root[data-nanquim-theme='green']
+  --accent-color: #5f806a
+  --accent-foreground-color: #fff
+  --app-background-color: #1c211e
+
+\:root[data-nanquim-theme='blue']
+  --accent-color: #607d9e
+  --accent-foreground-color: #fff
+  --app-background-color: #1d2024
+
+\:root[data-nanquim-theme='custom']
+  // Custom base values are set as inline properties by Preferences.
+  --surface-0: var(--app-background-color)
+
+\:root[data-nanquim-tone='light']
+  color-scheme: light
+  --top-rail-bg-color: color-mix(in srgb, var(--app-background-color) 89%, var(--app-foreground-color))
+  --canvas-bg-color: color-mix(in srgb, var(--app-background-color) 92%, var(--app-foreground-color))
+  --separator-color: color-mix(in srgb, var(--app-background-color) 77%, var(--app-foreground-color))
+  --shadow-color: 25, 22, 23

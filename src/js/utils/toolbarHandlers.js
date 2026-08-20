@@ -4,6 +4,21 @@
  */
 
 export function initToolbarHandlers(editor) {
+  let snapMenuOutsideListenerTimer = null
+
+  function preserveToolbarButtonActivation(event) {
+    if (event.code === 'Enter' || event.code === 'NumpadEnter' || event.code === 'Space') {
+      // The CAD terminal listens on document and normally reclaims focus for
+      // these keys. Keep native button activation with the focused control.
+      event.stopPropagation()
+    }
+  }
+
+  function setToggleButtonState(button, enabled) {
+    if (!button) return
+    button.classList.toggle('is-active', enabled)
+    button.setAttribute('aria-pressed', String(enabled))
+  }
 
   function toggleOverlayMenu(event) {
     event.stopPropagation()
@@ -43,44 +58,32 @@ export function initToolbarHandlers(editor) {
   }
 
   function handleToogleOrtho() {
-    let orthoButton = document.getElementsByClassName('icon-orthomode')[0]
-    if (orthoButton.classList.contains('is-active')) {
-      orthoButton.classList.remove('is-active')
-      editor.ortho = false
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Ortho OFF' })
-    } else {
-      orthoButton.classList.add('is-active')
-      editor.ortho = true
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Ortho ON' })
-    }
+    const orthoButton = document.getElementById('ortho-toggle')
+      || document.getElementsByClassName('icon-orthomode')[0]
+    editor.ortho = !Boolean(editor.ortho)
+    setToggleButtonState(orthoButton, editor.ortho)
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: `Ortho ${editor.ortho ? 'ON' : 'OFF'}` })
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
     if (activeSvg) activeSvg.fire('orthoChange')
   }
 
   function handleToogleSnap() {
-    let snapButton = document.getElementsByClassName('icon-snap-off')[0]
-    if (snapButton.classList.contains('is-active')) {
-      snapButton.classList.remove('is-active')
-      editor.isSnapping = false
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap OFF' })
-    } else {
-      snapButton.classList.add('is-active')
-      editor.isSnapping = true
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Snap ON' })
-    }
+    const snapButton = document.getElementById('object-snap-toggle')
+      || document.getElementsByClassName('icon-snap-off')[0]
+    editor.isSnapping = !Boolean(editor.isSnapping)
+    setToggleButtonState(snapButton, editor.isSnapping)
+    editor.signals.terminalLogged.dispatch({ type: 'strong', msg: `Snap ${editor.isSnapping ? 'ON' : 'OFF'}` })
   }
 
   function handleTogglePolarTracking() {
-    const btn = document.getElementsByClassName('icon-polartrack')[0]
-    if (btn.classList.contains('is-active')) {
-      btn.classList.remove('is-active')
-      editor.polarTracking = false
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Polar Tracking OFF' })
-    } else {
-      btn.classList.add('is-active')
-      editor.polarTracking = true
-      editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'Polar Tracking ON' })
-    }
+    const polarButton = document.getElementById('polar-tracking-toggle')
+      || document.getElementsByClassName('icon-polartrack')[0]
+    editor.polarTracking = !Boolean(editor.polarTracking)
+    setToggleButtonState(polarButton, editor.polarTracking)
+    editor.signals.terminalLogged.dispatch({
+      type: 'strong',
+      msg: `Polar Tracking ${editor.polarTracking ? 'ON' : 'OFF'}`,
+    })
   }
 
   function handleToggleGrid(enabled) {
@@ -115,27 +118,59 @@ export function initToolbarHandlers(editor) {
   }
 
   function toggleSnapMenu(event) {
-    event.stopPropagation()
+    event?.stopPropagation()
     const menu = document.getElementById('snap-options-menu')
     if (!menu) return
-    const isOpen = menu.classList.contains('show-menu')
+    setSnapMenuOpen(!menu.classList.contains('show-menu'))
+  }
+
+  function setSnapMenuOpen(isOpen, { restoreFocus = false } = {}) {
+    const menu = document.getElementById('snap-options-menu')
+    const button = document.getElementById('snap-options-button')
+    if (!menu) return
+
+    if (snapMenuOutsideListenerTimer !== null) {
+      window.clearTimeout(snapMenuOutsideListenerTimer)
+      snapMenuOutsideListenerTimer = null
+    }
+
+    menu.classList.toggle('show-menu', isOpen)
+    menu.setAttribute('aria-hidden', String(!isOpen))
+    button?.setAttribute('aria-expanded', String(isOpen))
+
+    window.removeEventListener('mousedown', snapMenuOutsideClick)
+    document.removeEventListener('keydown', snapMenuKeydown)
+
     if (isOpen) {
-      menu.classList.remove('show-menu')
-      window.removeEventListener('mousedown', snapMenuOutsideClick)
-    } else {
-      menu.classList.add('show-menu')
-      setTimeout(() => {
+      document.addEventListener('keydown', snapMenuKeydown)
+      menu.querySelector('input, button, [href], [tabindex]:not([tabindex="-1"])')?.focus()
+      snapMenuOutsideListenerTimer = window.setTimeout(() => {
+        snapMenuOutsideListenerTimer = null
         window.addEventListener('mousedown', snapMenuOutsideClick)
       }, 0)
+    } else if (restoreFocus) {
+      button?.focus()
     }
   }
 
   function snapMenuOutsideClick(event) {
     const menu = document.getElementById('snap-options-menu')
-    if (menu && !menu.contains(event.target)) {
-      menu.classList.remove('show-menu')
-      window.removeEventListener('mousedown', snapMenuOutsideClick)
-    }
+    const button = document.getElementById('snap-options-button')
+    if (menu && !menu.contains(event.target) && !button?.contains(event.target)) setSnapMenuOpen(false)
+  }
+
+  function snapMenuKeydown(event) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    document.addEventListener('keyup', consumeSnapMenuEscapeKeyup, { capture: true, once: true })
+    setSnapMenuOpen(false, { restoreFocus: true })
+  }
+
+  function consumeSnapMenuEscapeKeyup(event) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopImmediatePropagation()
   }
 
   function handleSnapTypeChange(checkbox) {
@@ -201,6 +236,20 @@ export function initToolbarHandlers(editor) {
   window.handleSnapExcludeNonSelectableChange = handleSnapExcludeNonSelectableChange
   window.handleToggleGrid = handleToggleGrid
   window.handleToggleAxis = handleToggleAxis
+
+  for (const id of [
+    'ortho-toggle',
+    'object-snap-toggle',
+    'snap-options-button',
+    'polar-tracking-toggle',
+  ]) {
+    document.getElementById(id)?.addEventListener('keydown', preserveToolbarButtonActivation)
+  }
+
+  setToggleButtonState(document.getElementById('ortho-toggle'), Boolean(editor.ortho))
+  setToggleButtonState(document.getElementById('object-snap-toggle'), Boolean(editor.isSnapping))
+  setToggleButtonState(document.getElementById('polar-tracking-toggle'), Boolean(editor.polarTracking))
+  setSnapMenuOpen(false)
 
   return {
     handleRightClick,
