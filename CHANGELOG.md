@@ -6,7 +6,7 @@ versions may still contain compatibility changes.
 
 ## [Unreleased]
 
-## [0.1.0-alpha.1] - Unreleased
+## [0.1.0-alpha.1] - 2026-08-20
 
 ### Added
 
@@ -29,6 +29,8 @@ versions may still contain compatibility changes.
 
 - Paper viewports and their SVG/PDF exports now scale model geometry around the
   SVG origin instead of shifting it outside the viewport clip.
+- Paper PDF export now preserves stroke-only line geometry referenced by a
+  viewport instead of clipping it to an incomplete PDF Form bound.
 - Repeated welcome-screen dismissal around Firefox's file chooser no longer
   raises an uncaught error.
 
@@ -39,5 +41,5 @@ versions may still contain compatibility changes.
 - Dependency overrides address known high-severity issues in transitive
   packages.
 
-[Unreleased]: https://github.com/elschilling/nanquim/commits/master
-[0.1.0-alpha.1]: docs/releases/v0.1.0-alpha.1.md
+[Unreleased]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.1...master
+[0.1.0-alpha.1]: https://github.com/elschilling/nanquim/releases/tag/v0.1.0-alpha.1
