@@ -3,12 +3,12 @@
   width: 10px
 
 ::-webkit-scrollbar-track
-  background-color: rgba(var(--web-body-bg-color), .5)
+  background-color: var(--surface-0)
   border-radius: 999em
   margin: 3px
 
 ::-webkit-scrollbar-thumb
-  background-color: rgba(var(--web-body-color), .5)
+  background-color: var(--surface-4)
   border-radius: 999em
 
 *
@@ -21,7 +21,7 @@ html
   background-color: var(--web-body-bg-color)
   color: var(--web-body-color)
   font:
-    family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif
+    family: var(--font-ui)
     size: var(--font-size)
   text-rendering: optimizeLegibility
 
@@ -48,7 +48,7 @@ h2
     margin-top: 0
 
 hr
-  background-color: rgba(var(--web-body-color), .2)
+  background-color: var(--panel-border-color)
   border: 0
   height: 1px
 
@@ -62,12 +62,6 @@ a
 .icon
   display: inline-block
   height: 16px
-  width: 16px
-
-.blender-logo
-  display: block
-  height: 16px
-  margin-left: 10px
   width: 16px
 
 .web-section

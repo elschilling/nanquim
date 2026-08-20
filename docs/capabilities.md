@@ -22,6 +22,7 @@ web standards or third-party libraries.
 | Area | Status | Available now | Qualification boundary |
 | --- | --- | --- | --- |
 | Command discovery and Help | **Stable** | The terminal exposes 30 registered commands. F1 Help is searchable and gives every registered command an illustration, aliases, category, and description. | The registry is the command source of truth. Adding or changing a command requires the registry-completeness tests to remain green. |
+| Appearance and visual identity | **Stable** | Project-authored SVG icons and semantic interface tokens provide Oxide Red, Verdigris Green, Blueprint Blue, and custom accent/background themes. Preferences preview safely, persist locally, adapt foreground contrast, and remain independent from drawing dirty state. | The existing editor layout is retained. Theme and icon inventory tests protect the token contract and prevent accidental return of the retired borrowed artwork; real-browser checks cover normal, narrow, and light-custom rendering. |
 | Drawing and annotation | **Partial** | Line, circle, ellipse, rectangle, arc, polyline, spline, text, hatch, linear dimension, and aligned dimension workflows are present. | Most command lifecycles still need complete pointer/typed-input, cancellation, helper-cleanup, and Undo/Redo coverage. |
 | Modification tools | **Partial** | Move, Copy, Rotate, Scale, Offset, Fillet, Mirror, Trim, Extend, Erase, and Match Properties are present. | Intersections, transformed geometry, specialized elements, redo invalidation, and repeated cancellation are not yet qualified across the full command set. |
 | Measurement | **Partial** | Distance and enclosed-area commands are present. | Unit presentation, transformed/specialized geometry, and browser-visible reporting need broader workflow coverage. |
@@ -46,6 +47,9 @@ web standards or third-party libraries.
 - `src/js/HelpSession.js` and `src/js/CommandIllustrations.js` render the Help
   catalog.
 - `tests/help-session.test.js` checks registry/Help completeness.
+- `docs/visual-identity.md`, `tests/theme-preferences.test.js`,
+  `tests/theme-styles.test.js`, and `tests/icon-system.test.js` define and
+  protect the appearance system.
 - `tests/document-parser.test.js`, `tests/document-lifecycle.test.js`, and
   `tests/document-roundtrip.test.js` protect native schema parsing, atomic
   replacement, migrations, and semantic round trips.

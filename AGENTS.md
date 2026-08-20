@@ -87,7 +87,12 @@ CI also uses `pnpm install --frozen-lockfile` and
   SVG adaptation.
 - `src/js/CommandIllustrations.js` and `src/js/HelpSession.js`: Help content and
   decorative command diagrams.
+- `src/js/ThemeController.js`, `src/js/Preferences.js`, and
+  `src/js/PreferencesUI.js`: local appearance/interaction preferences and
+  theme application.
 - `src/styles/main.sass`: active style entry point.
+- `src/styles/_identity.sass` and `src/styles/components/_icon.sass`: Nanquim's
+  semantic visual layer and original icon mappings.
 - `tests/`: all automated tests.
 - `public/`: files copied verbatim into production.
 - `dist/`: generated and ignored; never hand-edit or commit it.
@@ -287,8 +292,19 @@ with npm `@svgdotjs/svg.js` 3.2.5 imports.
   and call their functions through the module namespace.
 - Avoid inline `//` comments after CSS declarations because they can leak into
   invalid generated CSS.
-- Use existing variables for colors, strokes, spacing, and zoom-independent UI
-  geometry when they express the intended semantics.
+- Appearance is local UI state managed by `ThemeController`, `Preferences`, and
+  `PreferencesUI`; it must not enter native documents or dirty `DocumentState`.
+- Use the semantic tokens in `_variables.sass` and the final identity layer in
+  `_identity.sass` for surfaces, text, borders, canvas, focus, and state colors.
+  Test both dark and light custom backgrounds; do not reintroduce component-wide
+  hardcoded gray palettes.
+- Runtime icons come from the project-authored
+  `public/assets/img/nanquim-icons.svg` mask sheet and class mappings in
+  `components/_icon.sass`. Preserve `currentColor`, the 24-pixel construction
+  grid, existing accessible labels, and `tests/icon-system.test.js` coverage.
+  Do not copy or extract glyphs from another application's icon artwork.
+- Use existing variables for strokes, spacing, and zoom-independent UI geometry
+  when they express the intended semantics.
 - Test browser-visible helpers by computed appearance, not only DOM existence.
 - Prefer semantic controls (`button`, inputs, labels) over clickable `div`
   elements. Preserve keyboard access, visible focus, focus restoration, and

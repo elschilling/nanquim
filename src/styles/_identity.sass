@@ -1,0 +1,1070 @@
+// Nanquim visual identity
+// -----------------------
+// The layout stays deliberately familiar to technical/CAD users while the
+// materials evoke ink, drafting paper, registration marks, and pen barrels.
+// This file is last in the cascade so legacy components can migrate to the
+// shared token system without changing their DOM or behavior.
+
+\:root
+  accent-color: var(--accent-color)
+
+*::selection
+  color: var(--accent-foreground-color)
+  background: var(--accent-color)
+
+html,
+body
+  background: var(--surface-0)
+  color: var(--app-foreground-color)
+
+html
+  font-family: var(--font-ui)
+
+::-webkit-scrollbar
+  width: 9px
+  height: 9px
+
+::-webkit-scrollbar-track
+  background: var(--surface-0)
+
+::-webkit-scrollbar-thumb
+  border: 2px solid var(--surface-0)
+  border-radius: 999px
+  background: var(--surface-4)
+
+  &:hover
+    background: var(--accent-border)
+
+button,
+input,
+select,
+textarea
+  color: var(--app-foreground-color)
+
+button,
+[role='button'],
+a,
+input,
+select,
+textarea,
+[tabindex='0']
+  &:focus-visible
+    outline: 2px solid var(--accent-color)
+    outline-offset: 2px
+    box-shadow: var(--focus-ring)
+
+a
+  color: var(--app-muted-foreground-color)
+  opacity: 1
+  transition: color var(--transition-speed) ease
+
+  &:hover
+    color: var(--app-foreground-color)
+
+hr
+  background: var(--panel-border-color)
+
+// Application rails: a slim ink line and fine registration pattern give the
+// frame an identity without competing with drawing content.
+.web-section
+  min-height: 31px
+  box-sizing: border-box
+  padding: 0 10px
+  border: 0
+  border-bottom: 1px solid var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background-color: var(--top-rail-bg-color)
+  background-image: repeating-linear-gradient(90deg, transparent 0 31px, color-mix(in srgb, var(--app-foreground-color) 2.5%, transparent) 31px 32px)
+
+  &::after
+    content: ''
+    height: 1px
+    position: absolute
+    right: 0
+    bottom: -1px
+    left: 0
+    pointer-events: none
+    background: linear-gradient(90deg, var(--accent-color), transparent 22%)
+    opacity: .65
+
+  > .icon-nanquim-logo
+    margin-right: 5px
+
+  ul > li
+    padding: 6px 8px
+
+  ul > li:not(:first-child)
+    margin-left: 4px
+
+  .navbar-menus,
+  a,
+  button
+    letter-spacing: .01em
+
+.statusbar
+  min-height: 23px
+  justify-content: flex-end
+  border: 0
+  border-top: 1px solid var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-0)
+  font-family: var(--font-mono)
+  font-size: 10px
+
+  &::after
+    top: -1px
+    bottom: auto
+    background: linear-gradient(270deg, var(--accent-color), transparent 18%)
+
+main
+  background: var(--separator-color)
+
+.screen
+  gap: var(--editor-border-width)
+  background: var(--separator-color)
+
+.viewport,
+.sidepanel,
+.outliner,
+.properties,
+.canvas-editor
+  border-radius: 7px
+
+.viewport
+  overflow: hidden
+  border: 0
+  background: var(--canvas-bg-color)
+
+.sidepanel
+  min-width: 280px
+  overflow: hidden
+  border: 0
+  background: var(--surface-1)
+
+.sidepanel-resize,
+.outliner-resize
+  position: relative
+  flex: 0 0 var(--editor-border-width)
+  background: var(--separator-color)
+
+  &::after
+    content: ''
+    position: absolute
+    border-radius: 999px
+    background: transparent
+    transition: background var(--transition-speed) ease
+
+  &:hover::after
+    background: var(--accent-color)
+
+.sidepanel-resize
+  width: var(--editor-border-width)
+
+  &::after
+    width: 1px
+    inset: 0 auto 0 1px
+
+.outliner-resize
+  height: var(--editor-border-width)
+
+  &::after
+    height: 1px
+    inset: 1px 0 auto
+
+.outliner
+  border: 0
+  background: var(--surface-1)
+
+.properties
+  border: 0
+  background: var(--surface-1)
+
+.canvas-editor
+  overflow: hidden
+  border: 0
+  background: var(--canvas-bg-color)
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-foreground-color) 4%, transparent)
+
+.layout-editor
+  overflow: hidden
+  background: var(--canvas-bg-color)
+
+.canvas
+  color: var(--app-foreground-color)
+  background-color: var(--canvas-bg-color)
+
+.grid
+  stroke: var(--canvas-grid-color)
+
+.x-axis
+  stroke: #925c61
+
+.y-axis
+  stroke: #657f63
+
+// Headers have a crisp pen-barrel profile rather than Blender-like bubbles.
+.editor-header
+  min-height: 33px
+  box-sizing: border-box
+  position: relative
+  padding: 4px 6px
+  border: 0
+  border-bottom: 1px solid var(--panel-border-color)
+  border-radius: 7px 7px 0 0
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-2)
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-foreground-color) 3%, transparent)
+
+  &::before
+    content: ''
+    position: absolute
+    top: 5px
+    bottom: 5px
+    left: 2px
+    width: 2px
+    border-radius: 2px
+    background: var(--accent-color)
+    opacity: .75
+    pointer-events: none
+
+// Keep the drawing tools on the true canvas centerline even though the mode
+// switcher and overlay controls have different widths.
+.canvas-editor > .editor-header
+  display: grid
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)
+
+  > .editor-mode-menu
+    justify-self: start
+
+  > .align-buttons-center
+    justify-self: center
+
+  > .align-buttons-right
+    justify-self: end
+
+.editor-mode-menu
+  .editor-mode-label
+    color: var(--app-foreground-color)
+    font-size: 10px
+    font-weight: 600
+    letter-spacing: .035em
+    opacity: .88
+
+  .editor-mode-dropdown
+    border-color: var(--panel-border-color)
+    border-radius: 6px
+    color: var(--app-foreground-color)
+    background: var(--surface-2)
+    box-shadow: var(--elevation-panel)
+
+  .menu-item
+    min-height: 29px
+    box-sizing: border-box
+    color: var(--app-muted-foreground-color)
+
+    &:hover
+      color: var(--app-foreground-color)
+      background: var(--hover-surface)
+
+    &.active
+      color: var(--app-foreground-color)
+      background: var(--selected-surface)
+      box-shadow: inset 2px 0 0 var(--accent-color)
+
+// Widgets use line, fill, and focus consistently across all three accents.
+.wgt
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-2)
+  box-shadow: none
+  transition: color var(--transition-speed) ease, border-color var(--transition-speed) ease, background var(--transition-speed) ease
+
+  &:hover
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &.active,
+  &[aria-pressed='true']
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--selected-surface)
+
+.wgt.wgt-menu
+  border-color: transparent
+  background: transparent
+
+  &:hover
+    border-color: var(--panel-border-color)
+    background: var(--surface-3)
+
+.wgt.wgt-tool
+  border-color: var(--panel-border-color)
+  background: var(--surface-3)
+
+  &.active
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--selected-surface)
+    box-shadow: inset 0 -2px 0 var(--accent-color)
+
+.is-active
+  color: var(--app-foreground-color)
+  background: var(--selected-surface)
+  box-shadow: inset 0 -2px 0 var(--accent-color)
+
+// Menus resemble a compact ink swatch card.
+.dropdown-menu,
+.overlay-menu,
+.snap-options-menu,
+.collection-context-menu,
+.disambiguation-menu
+  box-sizing: border-box
+  border: 1px solid var(--panel-border-color)
+  border-radius: 7px
+  color: var(--app-foreground-color)
+  background: var(--surface-2)
+  box-shadow: var(--elevation-panel)
+
+.dropdown-menu
+  transition: opacity var(--transition-speed) ease
+
+  ul
+    padding: 4px
+
+  li
+    min-width: 128px
+    padding: 7px 9px !important
+    border-radius: 4px
+    color: var(--app-muted-foreground-color)
+
+    &:hover
+      color: var(--app-foreground-color)
+      background: var(--hover-surface)
+
+.overlay-menu,
+.snap-options-menu
+  padding: 4px
+
+.overlay-menu-item,
+.snap-menu-item,
+.collection-context-menu-item,
+.disambiguation-menu-item
+  min-height: 28px
+  box-sizing: border-box
+  border-radius: 4px
+  color: var(--app-muted-foreground-color)
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+.overlay-checkbox,
+.snap-checkbox,
+.prop-checkbox-sm,
+.gn-modifier-enable
+  accent-color: var(--accent-color)
+
+.snap-menu-divider
+  background: var(--panel-border-color)
+
+.collection-context-menu-item.danger
+  color: var(--danger-color)
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: color-mix(in srgb, var(--surface-2) 55%, var(--danger-color))
+
+// Outliner rows echo alternating ruled drafting paper.
+.outliner-container
+  border-radius: 0 0 7px 7px
+  background: linear-gradient(to bottom, var(--surface-1), var(--surface-1) 50%, var(--surface-2) 50%, var(--surface-2))
+  background-size: 100% 44px
+
+.outliner-list li,
+.collection-row
+  color: var(--app-muted-foreground-color)
+  transition: color var(--transition-speed) ease, background var(--transition-speed) ease
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+.outliner-selected
+  color: var(--app-foreground-color)
+  background: var(--selected-surface) !important
+  box-shadow: inset 2px 0 0 var(--accent-color)
+
+  &:hover
+    background: var(--selected-surface) !important
+
+.collection-active
+  border-left-color: var(--accent-color) !important
+  color: var(--app-foreground-color)
+  background: var(--selected-surface)
+
+.collection-icon
+  border-radius: 4px
+
+  &:hover,
+  &.icon-on
+    background: var(--surface-4)
+
+.collection-rename-input
+  border-color: var(--accent-color)
+  color: var(--app-foreground-color)
+  background: var(--surface-0)
+  box-shadow: var(--focus-ring)
+
+// Properties is a stack of clean specification cards.
+.properties-container
+  border-radius: 0 0 7px 7px
+  background: var(--surface-1)
+
+.properties-side-icons
+  box-sizing: border-box
+  flex: 0 0 36px
+  width: 36px
+  padding-top: 6px
+  gap: 2px
+  border-right: 1px solid var(--panel-border-color)
+  background: var(--surface-0)
+
+.properties-icon-button
+  border: 0
+  border-radius: 4px
+  cursor: pointer
+  box-shadow: inset 2px 0 0 transparent
+  transition: background var(--transition-speed) ease, box-shadow var(--transition-speed) ease, opacity var(--transition-speed) ease
+
+  &:hover
+    background: var(--hover-surface)
+
+  &.active
+    border-color: transparent
+    background: var(--selected-surface)
+    box-shadow: inset 2px 0 0 var(--accent-color)
+
+.properties-panel-container
+  background: var(--surface-1)
+
+.properties-panel
+  margin: 8px
+  padding: 10px
+  border: 1px solid var(--panel-border-color)
+  border-radius: 6px
+  color: var(--app-foreground-color)
+  background: var(--surface-2)
+  box-shadow: 0 2px 7px rgba(var(--shadow-color), .12)
+
+.property-label,
+.prop-color-label,
+.prop-empty-msg
+  color: var(--app-muted-foreground-color)
+
+.property-input,
+.property-select,
+.prefs-input,
+.prefs-select
+  border: 1px solid var(--panel-border-color)
+  border-radius: 4px
+  color: var(--app-foreground-color)
+  background: var(--surface-0)
+
+  &:hover:not(:disabled):not([readonly])
+    border-color: var(--accent-border)
+
+  &:focus
+    border-color: var(--accent-color)
+    background: var(--surface-1)
+    box-shadow: var(--focus-ring)
+
+  &[readonly],
+  &:disabled
+    color: var(--app-muted-foreground-color)
+    background: var(--surface-1)
+    opacity: .65
+
+.prop-accordion
+  border-top-color: var(--panel-border-color)
+
+.prop-accordion-header
+  border-radius: 4px
+
+  &:hover
+    background: var(--hover-surface)
+
+.prop-section-title,
+.prop-section-header,
+.prop-export-header
+  color: var(--app-muted-foreground-color)
+  letter-spacing: .08em
+
+.prop-inherit-toggle,
+.prop-style-toggle,
+.prop-new-style-btn,
+.prop-preset-btn
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-3)
+
+  &:hover
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+.prop-divider
+  border-top-color: var(--panel-border-color)
+
+.prop-action-btn
+  color: var(--accent-foreground-color)
+  background: var(--accent-color)
+
+.prop-delete-vp-btn
+  color: #fff
+  background: color-mix(in srgb, var(--danger-color) 72%, #28191a)
+
+.prop-color-box,
+.prop-color-box-wide,
+.prop-color-swatch
+  border-color: var(--panel-border-color)
+
+// The command line reads as a translucent strip of ink laid over the sheet.
+.terminal
+  overflow: hidden
+  border: 1px solid var(--panel-border-color)
+  border-bottom: 0
+  border-radius: 8px 8px 0 0
+  color: var(--app-foreground-color)
+  background: color-mix(in srgb, var(--surface-0) 90%, transparent)
+  box-shadow: 0 -12px 30px rgba(var(--shadow-color), .32), inset 0 2px 0 var(--accent-color)
+  backdrop-filter: blur(10px)
+
+.terminal-log
+  padding: 11px 17px 20px
+  scrollbar-color: var(--surface-4) transparent
+
+  p
+    margin: 0 0 3px
+    color: var(--app-muted-foreground-color)
+
+.terminal-input
+  border-top: 1px solid var(--panel-border-color)
+  border-radius: 0
+  color: var(--accent-color)
+  background: var(--surface-0)
+
+.terminal-input-field
+  color: var(--app-foreground-color)
+  caret-color: var(--accent-color)
+
+.terminal-autocomplete
+  border: 1px solid var(--panel-border-color)
+  border-radius: 7px 7px 0 0
+  color: var(--app-foreground-color)
+  background: var(--surface-2)
+  box-shadow: var(--elevation-panel)
+
+  .autocomplete-item
+    color: var(--app-muted-foreground-color)
+
+    &:hover,
+    &.active
+      color: var(--app-foreground-color)
+      background: var(--hover-surface)
+
+    .autocomplete-match
+      color: var(--accent-color)
+
+    .autocomplete-alias
+      color: var(--app-muted-foreground-color)
+
+.terminal-resize-handle:hover
+  background: var(--accent-soft)
+
+// Viewport interaction remains semantically distinct and theme-aware.
+.selectionRectangle
+  stroke: var(--app-foreground-color)
+  fill: var(--accent-color)
+  fill-opacity: .13
+
+.selection-handler,
+.selection-handler-circle
+  fill: var(--accent-color)
+  stroke: var(--canvas-bg-color)
+
+.selection-handler.active
+  fill: var(--warning-color)
+  stroke: var(--accent-color)
+
+.svg_select_points_point
+  fill: var(--canvas-bg-color)
+  stroke: var(--accent-color)
+
+.measure-ghost,
+.measure-line
+  stroke: var(--success-color)
+
+// Dialog family, including Preferences and block workflows.
+.prefs-overlay,
+.block-modal-overlay
+  background: color-mix(in srgb, var(--surface-0) 65%, transparent)
+  backdrop-filter: blur(7px)
+
+.prefs-dialog,
+.block-modal-dialog
+  box-sizing: border-box
+  max-height: calc(100vh - 32px)
+  overflow-y: auto
+  border: 1px solid var(--panel-border-color)
+  border-radius: 10px
+  color: var(--app-foreground-color)
+  background: var(--surface-1)
+  box-shadow: var(--elevation-dialog)
+
+.prefs-title
+  color: var(--app-foreground-color)
+  border-bottom-color: var(--panel-border-color)
+  font-family: var(--font-display)
+  letter-spacing: -.01em
+
+.prefs-label
+  color: var(--app-muted-foreground-color)
+
+.prefs-help
+  margin: -4px 0 12px
+  color: var(--app-muted-foreground-color)
+  font-size: 10px
+  line-height: 1.45
+
+.prefs-section
+  margin-top: 17px
+  padding-top: 15px
+  border-top: 1px solid var(--panel-border-color)
+
+  &:first-of-type
+    margin-top: 0
+    padding-top: 0
+    border-top: 0
+
+.prefs-section-title
+  margin: 0 0 10px
+  color: var(--app-muted-foreground-color)
+  font-size: 10px
+  font-weight: 700
+  letter-spacing: .11em
+  text-transform: uppercase
+
+.prefs-select
+  width: 156px
+  min-width: 156px
+  padding: 5px 28px 5px 8px
+  text-align: left
+
+.prefs-color-input
+  width: 44px
+  height: 28px
+  box-sizing: border-box
+  padding: 2px
+  border: 1px solid var(--panel-border-color)
+  border-radius: 5px
+  background: var(--surface-0)
+  cursor: pointer
+
+.prefs-theme-preview
+  min-height: 42px
+  border: 1px solid var(--panel-border-color)
+  border-radius: 6px
+  background: var(--app-background-color)
+  box-shadow: inset 3px 0 0 var(--accent-color)
+
+.prefs-buttons
+  border-top-color: var(--panel-border-color)
+
+.prefs-btn
+  min-height: 30px
+  border: 1px solid var(--panel-border-color)
+  transition: transform var(--transition-speed) ease, border-color var(--transition-speed) ease, background var(--transition-speed) ease
+
+  &:active
+    transform: translateY(1px)
+
+.prefs-btn-save
+  border-color: var(--accent-border)
+  color: var(--accent-foreground-color)
+  background: var(--accent-color)
+
+  &:hover
+    filter: none
+    background: color-mix(in srgb, var(--accent-color) 88%, var(--accent-foreground-color))
+
+.prefs-btn-cancel
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-3)
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+.block-modal-preview,
+.insert-modal-card
+  border-color: var(--panel-border-color)
+  color: var(--app-foreground-color)
+  background: var(--canvas-bg-color)
+
+.insert-modal-card:hover
+  border-color: var(--accent-color)
+  background: var(--hover-surface)
+
+.insert-modal-label
+  color: var(--app-muted-foreground-color)
+
+.block-modal-error
+  color: var(--danger-color)
+
+// Welcome screen: an opening folio with an inked spine.
+.welcome-overlay
+  background: color-mix(in srgb, var(--surface-0) 68%, transparent)
+
+.ws-dialog
+  border: 1px solid var(--panel-border-color)
+  border-radius: 10px
+  color: var(--app-foreground-color)
+  background: var(--surface-1)
+  box-shadow: var(--elevation-dialog)
+
+.ws-left
+  position: relative
+  border-right: 1px solid var(--panel-border-color)
+  background-color: var(--surface-1)
+  background-image: linear-gradient(115deg, var(--accent-soft), transparent 44%), repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--app-foreground-color) 2%, transparent) 23px 24px)
+
+  &::before
+    content: ''
+    width: 3px
+    position: absolute
+    inset: 0 auto 0 0
+    background: var(--accent-color)
+
+.ws-app-name
+  color: var(--app-foreground-color)
+  font-family: var(--font-display)
+
+.ws-tagline,
+.ws-right-header,
+.ws-recent-date,
+.ws-no-recent
+  color: var(--app-muted-foreground-color)
+
+.ws-tagline
+  opacity: .72
+
+.ws-btn
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-3)
+
+  &:hover
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &:first-child
+    border-color: var(--accent-border)
+    color: var(--accent-foreground-color)
+    background: var(--accent-color)
+
+    &:hover
+      color: var(--accent-foreground-color)
+      background: color-mix(in srgb, var(--accent-color) 88%, var(--accent-foreground-color))
+
+  &.ws-btn-ghost
+    border-color: var(--panel-border-color)
+    color: var(--app-muted-foreground-color)
+    background: transparent
+
+    &:hover
+      border-color: var(--accent-border)
+      color: var(--app-foreground-color)
+      background: var(--hover-surface)
+
+.ws-dismiss-btn
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+
+  &:hover
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+
+.ws-right
+  background: var(--surface-1)
+
+.ws-right-header
+  border-bottom-color: var(--panel-border-color)
+
+.ws-recent-item:hover
+  background: var(--hover-surface)
+
+  .ws-recent-name
+    color: var(--app-foreground-color)
+
+.ws-recent-name
+  color: var(--app-muted-foreground-color)
+
+// Help uses the same drafting-card language and follows every custom theme.
+.command-help-dialog
+  border-color: var(--panel-border-color)
+  border-radius: 10px
+  color: var(--app-foreground-color)
+  background: var(--surface-1)
+  box-shadow: var(--elevation-dialog)
+
+  &::backdrop
+    background: color-mix(in srgb, var(--surface-0) 70%, transparent)
+
+  kbd
+    border-color: var(--panel-border-color)
+    color: var(--app-foreground-color)
+    background: var(--surface-3)
+    box-shadow: 0 1px 0 var(--separator-color)
+
+.command-help-shell
+  background-color: var(--surface-1)
+  background-image: radial-gradient(circle at 14% -10%, var(--accent-soft), transparent 33%)
+
+.command-help-header,
+.command-help-tools,
+.command-help-shortcut-section
+  border-color: var(--panel-border-color)
+
+.command-help-tools
+  background: color-mix(in srgb, var(--surface-0) 55%, transparent)
+
+.command-help-eyebrow,
+.command-help-illustration-guide,
+.command-help-illustration-annotation,
+.command-help-illustration-point,
+.command-help-illustration-base-point,
+.command-help-illustration-group,
+.command-help-illustration-viewport,
+.command-help-illustration-fill
+  color: var(--accent-color)
+
+.command-help-title,
+.command-help-section-header h3
+  color: var(--app-foreground-color)
+
+.command-help-intro,
+.command-help-section-header p,
+.command-help-shortcut-description,
+.command-help-card p
+  color: var(--app-muted-foreground-color)
+
+.command-help-close
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-2)
+
+  &:hover
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+.command-help-search-wrap
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-0)
+
+.command-help-search
+  color: var(--app-foreground-color)
+
+  &::placeholder
+    color: var(--app-muted-foreground-color)
+
+.command-help-filter
+  color: var(--app-muted-foreground-color)
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &[aria-pressed='true']
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--selected-surface)
+
+.command-help-card,
+.command-help-shortcut-group
+  border-color: var(--panel-border-color)
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent)
+
+.command-help-card:hover
+  border-color: var(--accent-border)
+  background: var(--hover-surface)
+
+.command-help-illustration
+  --command-help-illustration-background: var(--canvas-bg-color)
+  border-color: var(--panel-border-color)
+  color: var(--app-foreground-color)
+
+.command-help-illustration-result,
+.command-help-command-name
+  color: var(--app-foreground-color)
+
+.command-help-aliases kbd
+  border-color: var(--accent-border)
+  color: var(--app-foreground-color)
+  background: var(--selected-surface)
+
+.command-help-group-count,
+.command-help-count
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-3)
+
+// Geometry Nodes retains socket/category semantics while joining the frame.
+.gn-dock,
+.gn-stage
+  color: var(--app-foreground-color)
+  background: var(--canvas-bg-color)
+
+.gn-dock
+  border-top-color: var(--separator-color)
+
+.gn-toolbar
+  border-bottom-color: var(--panel-border-color)
+  background: var(--surface-2)
+  box-shadow: inset 2px 0 0 var(--accent-color)
+
+.gn-editor-mark
+  color: var(--accent-color)
+  background: var(--surface-0)
+
+.gn-graph-kind,
+.gn-palette-category,
+.gn-empty,
+.gn-modifier-status,
+.gn-property-empty
+  color: var(--app-muted-foreground-color)
+
+.gn-graph-name,
+.gn-empty strong,
+.gn-modifier-name
+  color: var(--app-foreground-color)
+
+.gn-toolbar-button,
+.gn-property-button
+  border-color: var(--panel-border-color)
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-3)
+
+  &:hover:not(:disabled),
+  &[aria-expanded='true']
+    border-color: var(--accent-border)
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &.is-primary
+    border-color: var(--accent-border)
+    color: var(--accent-foreground-color)
+    background: var(--accent-color)
+
+.gn-palette
+  border-color: var(--panel-border-color)
+  background: var(--surface-2)
+  box-shadow: var(--elevation-panel)
+
+.gn-palette-search,
+.gn-node-input
+  border-color: var(--panel-border-color)
+  color: var(--app-foreground-color)
+  background: var(--surface-0)
+
+.gn-palette-item
+  color: var(--app-muted-foreground-color)
+
+  &:hover,
+  &.is-highlighted
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+    .gn-palette-socket-name
+      color: var(--app-muted-foreground-color)
+
+.gn-palette-socket-name,
+.gn-palette-empty,
+.gn-socket-label
+  color: var(--app-muted-foreground-color)
+
+.gn-grid
+  background-image: radial-gradient(circle, var(--canvas-grid-color) 1px, transparent 1.2px)
+
+.gn-live-node
+  border-color: var(--separator-color)
+  color: var(--app-foreground-color)
+  background: var(--surface-2)
+  box-shadow: 0 7px 18px rgba(var(--shadow-color), .38), inset 0 2px 0 var(--gn-node-accent)
+
+  &.is-selected
+    box-shadow: 0 0 0 2px var(--accent-color), 0 7px 18px rgba(var(--shadow-color), .42), inset 0 2px 0 var(--gn-node-accent)
+
+.gn-live-node-header,
+.gn-modifier-card-header
+  color: var(--app-foreground-color)
+  background: var(--surface-1)
+
+.gn-socket
+  border-color: var(--surface-1)
+
+.gn-status
+  color: var(--app-foreground-color)
+  background: color-mix(in srgb, var(--surface-1) 90%, transparent)
+
+.gn-modifier-card
+  border-color: var(--panel-border-color)
+  background: var(--surface-2)
+
+.gn-modifier-badge
+  color: var(--success-color)
+  background: color-mix(in srgb, var(--success-color) 20%, var(--surface-1))
+
+  &.is-error
+    color: var(--danger-color)
+    background: color-mix(in srgb, var(--danger-color) 18%, var(--surface-1))
+
+.gn-property-button.is-danger
+  color: var(--danger-color)
+  background: color-mix(in srgb, var(--danger-color) 16%, var(--surface-2))
+
+@media (max-width: 980px)
+  .sidepanel
+    width: 270px
+    min-width: 250px
+
+  .viewport
+    min-width: 520px
+
+  .terminal
+    width: min(600px, calc(100% - 36px))
+
+  .web-section ul > li
+    padding-inline: 6px
+
+@media (prefers-reduced-motion: reduce)
+  *,
+  *::before,
+  *::after
+    scroll-behavior: auto !important
+    animation-duration: .01ms !important
+    animation-iteration-count: 1 !important
+    transition-duration: .01ms !important
+
+@media (forced-colors: active)
+  .editor-header::before,
+  .web-section::after,
+  .ws-left::before
+    background: Highlight
+
+  .outliner-selected,
+  .collection-active,
+  .properties-icon-button.active
+    outline: 1px solid Highlight

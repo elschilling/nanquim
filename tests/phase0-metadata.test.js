@@ -96,10 +96,8 @@ describe('Phase 0 documentation sources of truth', () => {
       readProjectFile('THIRD_PARTY_NOTICES.md'),
     ])
     const retainedAssets = [
-      'public/assets/img/blender_icons.svg',
+      'public/assets/img/nanquim-icons.svg',
       'public/assets/img/nanquim-logo.svg',
-      'public/assets/img/icons/properties-element.svg',
-      'public/assets/img/icons/properties-textstyles.svg',
       'public/js/libs/signals.js',
       'public/js/libs/svg.js/svg.js',
       'public/js/libs/svg.js/svg.panzoom.js',
@@ -110,7 +108,6 @@ describe('Phase 0 documentation sources of truth', () => {
 
     retainedAssets.forEach((asset) => expect(provenance, asset).toContain(asset))
     expect(notices).toMatch(/SIL Open Font\s+License/)
-    expect(notices).toContain('Blender-derived UI icons')
     expect(notices).toContain('Vendored browser libraries')
   })
 })

@@ -57,16 +57,9 @@ The font copyright notices and OFL text are in
 
 | Path | Purpose and provenance | License and modification status |
 | --- | --- | --- |
-| `public/assets/img/blender_icons.svg` | Runtime UI sprite. Its document name identifies it as a Blender 2.81 icon sheet. The original Blender icon system is credited to Andrzej Ambroż (`jendrzych`) with later Blender contributors. Added to Nanquim in commit `7e90f13`. | Blender icon material is GPL. The retained file does not embed an exact source commit or license block, so its byte-level upstream revision remains unresolved. Nanquim redistributes it under GPLv3; see the Blender icon notice. |
-| `public/assets/img/nanquim-logo.svg` | Pen-nib application mark extracted from a path that is also present in the retained Blender icon sheet. Added in `61e83eb` and later cleaned in `e81a5de`. It is not the Blender trademark/logo. | Derivative of the GPL icon sheet, locally cropped and edited. Distributed under GPLv3. |
-| `public/assets/img/icons/properties-element.svg` | Properties-tab icon containing paths also present in the retained Blender icon sheet. Added in `80e796d`. | Derivative of the GPL icon sheet, locally extracted and transformed. Distributed under GPLv3. |
-| `public/assets/img/icons/properties-textstyles.svg` | Simple text-style tab icon created for Nanquim by Eduardo Schilling in `b36ba414`. | Project-authored; distributed under Nanquim's GPLv3 license. |
+| `public/assets/img/nanquim-icons.svg` | Original Nanquim runtime mask sheet created in the repository in August 2026. Its 24-pixel construction uses pen-nib silhouettes, drafting axes, dimension ticks, control points, and restrained monoline geometry. It replaces the former Blender-derived sprite and standalone Properties icons. | Project-authored from new paths with no external artwork. Distributed under Nanquim's GPLv3 license. CSS applies it as a `currentColor` mask, so themes tint the artwork without asset variants. |
+| `public/assets/img/nanquim-logo.svg` | Original application mark created alongside the icon sheet in August 2026. The symmetric technical pen nib and circular ink point echo Nanquim's drawing origin without reusing the former Blender-derived nib. It is the browser favicon; the same construction appears in the runtime mask sheet. | Project-authored from new paths with no external artwork. Distributed under Nanquim's GPLv3 license. |
 | `src/js/libs/dxf/src/util/diagram.png` | Geometry diagram retained with the tailored `dxf` 5.1.0 source snapshot; referenced by `createArcForLWPolyline.js`. | Upstream `dxf` asset, MIT. The upstream license remains at `src/js/libs/dxf/LICENSE`. |
-
-The Blender icon provenance caveat and upstream references are recorded in
-[`third_party/licenses/blender-icons/NOTICE.md`](../third_party/licenses/blender-icons/NOTICE.md).
-Replacing the large sheet with project-authored icons is allowed future work,
-but must preserve the existing icon names and UI meaning.
 
 ## Browser-global JavaScript
 

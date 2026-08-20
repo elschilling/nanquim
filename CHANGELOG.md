@@ -15,6 +15,10 @@ versions may still contain compatibility changes.
   including portable upload/download fallbacks and unsaved-change protection.
 - Central document-state tracking for dirty revisions, file associations, and
   save/session race protection.
+- Oxide Red, Verdigris Green, and Blueprint Blue appearance presets, plus
+  custom accent/background colors with adaptive foreground contrast.
+- A project-authored technical-drafting SVG icon set and original Nanquim
+  pen-nib application mark.
 
 ### Changed
 
@@ -23,6 +27,15 @@ versions may still contain compatibility changes.
 - Opening or creating a document now resets command helpers, selection,
   managers, spatial indexes, and Undo/Redo history as one document lifecycle.
 - Native Save is lossless and separate from presentation export conversions.
+- The existing editor layout now uses Nanquim-specific ink-and-paper surfaces,
+  focus states, and visual hierarchy across the workspace, dialogs, Help, and
+  Geometry Nodes.
+- The application rail and drafting viewport are darker, while toolbar and
+  Properties icons have roomier pointer targets without scaling their glyphs.
+- Drawing-aid icons now provide hover descriptions, native keyboard controls,
+  accessible names, and synchronized pressed/disclosure state.
+- Appearance previews apply immediately, persist locally only when saved, and
+  remain independent from drawing document state.
 
 ### Fixed
 

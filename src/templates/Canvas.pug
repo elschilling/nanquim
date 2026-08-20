@@ -13,12 +13,13 @@
             | Paper Space
     .align-buttons-center
       .wgt.wgt-menu
-        .icon.icon-orthomode(onclick='handleToogleOrtho()')
-        .icon.icon-snap-off(onclick='handleToogleSnap()')
+        button.icon.icon-orthomode.toolbar-icon-button#ortho-toggle(type='button' title='Ortho (F8)' aria-label='Ortho' aria-keyshortcuts='F8' aria-pressed='false' onclick='handleToogleOrtho()')
+        button.icon.icon-snap-off.toolbar-icon-button#object-snap-toggle(type='button' title='Object Snap (F9)' aria-label='Object Snap' aria-keyshortcuts='F9' aria-pressed='false' onclick='handleToogleSnap()')
       .wgt.wgt-menu
-        .icon.icon-snap-options(onclick='toggleSnapMenu(event)')
-        .icon.icon-dropdown(onclick='toggleSnapMenu(event)')
-        .snap-options-menu#snap-options-menu
+        button.toolbar-icon-button.toolbar-composite-button#snap-options-button(type='button' title='Object Snap settings' aria-label='Object Snap settings' aria-haspopup='dialog' aria-controls='snap-options-menu' aria-expanded='false' onclick='toggleSnapMenu(event)')
+          span.icon.icon-snap-options(aria-hidden='true')
+          span.icon.icon-dropdown(aria-hidden='true')
+        .snap-options-menu#snap-options-menu(role='dialog' aria-label='Object Snap options' aria-hidden='true')
           label.snap-menu-item
             input.snap-checkbox(type='checkbox' data-snap='endpoint' checked onchange='handleSnapTypeChange(this)')
             | Endpoint
@@ -53,8 +54,8 @@
           label.snap-menu-item
             input.snap-checkbox(type='checkbox' checked onchange='handleSnapExcludeNonSelectableChange(this)')
             | Exclude non-selectable
-      .wgt.wgt-menu 
-        .icon.icon-polartrack(onclick='handleTogglePolarTracking()')
+      .wgt.wgt-menu
+        button.icon.icon-polartrack.toolbar-icon-button#polar-tracking-toggle(type='button' title='Polar Tracking (F10)' aria-label='Polar Tracking' aria-keyshortcuts='F10' aria-pressed='false' onclick='handleTogglePolarTracking()')
     .wgt.wgt-menu.align-buttons-right
       .icon.icon-overlay.is-active(onclick='handleToogleOverlay()')
       .icon.icon-dropdown(onclick='toggleOverlayMenu(event)')
