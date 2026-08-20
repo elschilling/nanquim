@@ -14,6 +14,7 @@ const RECENT_LIMIT = 10
 function WelcomeScreen(editor) {
   this.editor = editor
   this._overlay = null
+  this._dismissState = null
 
   // Remove snapshots written by versions that cached the file contents.
   localStorage.removeItem(LEGACY_STORAGE_KEY)
@@ -70,14 +71,45 @@ WelcomeScreen.prototype.show = async function () {
 }
 
 WelcomeScreen.prototype.dismiss = function (onComplete) {
-  if (!this._overlay) return
-  this._overlay.classList.add('ws-fade-out')
-  document.removeEventListener('keydown', this._keyHandler)
-  this._overlay.addEventListener('animationend', () => {
-    this._overlay.remove()
-    this._overlay = null
+  const overlay = this._overlay
+  if (!overlay) {
     if (onComplete) onComplete()
-  }, { once: true })
+    return
+  }
+
+  const pendingDismissal = this._dismissState
+  if (pendingDismissal?.overlay === overlay) {
+    if (onComplete) pendingDismissal.callbacks.push(onComplete)
+    if (!overlay.isConnected) pendingDismissal.finish()
+    return
+  }
+
+  const dismissal = {
+    overlay,
+    callbacks: onComplete ? [onComplete] : [],
+    finish: null,
+  }
+  const finish = (event) => {
+    // The welcome dialog has its own entrance animation whose animationend
+    // event bubbles through the overlay. Only the overlay fade-out completes
+    // dismissal.
+    if (event && event.target !== overlay) return
+
+    overlay.removeEventListener('animationend', finish)
+    overlay.remove()
+    if (this._overlay === overlay) this._overlay = null
+    if (this._dismissState === dismissal) this._dismissState = null
+
+    const callbacks = dismissal.callbacks.splice(0)
+    callbacks.forEach(callback => callback())
+  }
+  dismissal.finish = finish
+  this._dismissState = dismissal
+
+  overlay.classList.add('ws-fade-out')
+  document.removeEventListener('keydown', this._keyHandler)
+  overlay.addEventListener('animationend', finish)
+  if (!overlay.isConnected) finish()
 }
 
 // ── Recent files helpers ─────────────────────────────────────────────────────

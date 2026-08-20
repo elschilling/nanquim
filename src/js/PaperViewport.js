@@ -119,7 +119,11 @@ PaperViewport.prototype.refreshTransform = function () {
   const s = 1 / scale
   const tx = x - modelOriginX * s
   const ty = y - modelOriginY * s
-  _useEl.transform({ scale: s, translateX: tx, translateY: ty })
+  // Use an explicit matrix so SVG.js does not apply its default center origin.
+  // Scaling the referenced drawing around its bounding-box center adds a
+  // center-preservation offset, which can move otherwise centered model
+  // geometry outside the viewport clip and every serialized Paper export.
+  _useEl.transform({ a: s, b: 0, c: 0, d: s, e: tx, f: ty })
 }
 
 /**

@@ -25,6 +25,13 @@ versions may still contain compatibility changes.
 - Legacy production assets and duplicate sources were removed, and active Sass
   styles were migrated to the module system.
 
+### Fixed
+
+- Paper viewports and their SVG/PDF exports now scale model geometry around the
+  SVG origin instead of shifting it outside the viewport clip.
+- Repeated welcome-screen dismissal around Firefox's file chooser no longer
+  raises an uncaught error.
+
 ### Security
 
 - SVG imports and clipboard content pass through bounded sanitization and
