@@ -336,6 +336,11 @@
 .command-help-card
   min-width: 0
   padding: 11px 12px
+  display: grid
+  grid-template-columns: 132px minmax(0, 1fr)
+  grid-template-rows: auto 1fr
+  align-items: start
+  gap: 6px 12px
   border: 1px solid rgba(255, 255, 255, .06)
   border-radius: 8px
   background: rgba(255, 255, 255, .025)
@@ -347,16 +352,90 @@
     transform: translateY(-1px)
 
   p
-    margin: 7px 0 0
+    grid-column: 2
+    margin: 0
     color: #9d9d9d
     font-size: 10px
     line-height: 1.45
 
 .command-help-card-top
+  grid-column: 2
   display: flex
   align-items: center
   justify-content: space-between
   gap: 10px
+
+.command-help-illustration
+  --command-help-illustration-background: #17191d
+  width: 100%
+  aspect-ratio: 5 / 3
+  grid-column: 1
+  grid-row: 1 / span 2
+  display: block
+  box-sizing: border-box
+  overflow: hidden
+  border: 1px solid rgba(255, 255, 255, .065)
+  border-radius: 6px
+  color: #edf2fb
+  background-color: var(--command-help-illustration-background)
+  background-image: linear-gradient(rgba(255, 255, 255, .026) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .026) 1px, transparent 1px)
+  background-size: 16px 16px
+  pointer-events: none
+
+  text
+    font-family: 'JetBrains Mono', 'Fira Code', monospace
+
+.command-help-illustration-shape
+  vector-effect: non-scaling-stroke
+  stroke-width: 1.8
+  stroke-linecap: round
+  stroke-linejoin: round
+
+.command-help-illustration-result
+  color: #edf2fb
+  stroke-width: 2.2
+
+.command-help-illustration-source,
+.command-help-illustration-surface,
+.command-help-illustration-paper
+  color: #747c88
+
+.command-help-illustration-guide
+  color: #7898d4
+  stroke-width: 1.35
+  stroke-dasharray: 4 4
+
+.command-help-illustration-annotation,
+.command-help-illustration-point,
+.command-help-illustration-base-point
+  color: #83a6e8
+
+.command-help-illustration-annotation
+  stroke-width: 1.45
+  font-family: 'JetBrains Mono', 'Fira Code', monospace
+  font-size: 9px
+  font-weight: 600
+
+.command-help-illustration-boundary,
+.command-help-illustration-island
+  color: #a1a8b3
+  stroke-width: 1.7
+  stroke-dasharray: 5 3
+
+.command-help-illustration-group,
+.command-help-illustration-viewport
+  color: #7898d4
+  stroke-width: 1.5
+  stroke-dasharray: 5 3
+
+.command-help-illustration-fill
+  color: #7898d4
+  opacity: .8
+
+.command-help-illustration-deleted
+  color: #d47777
+  stroke-width: 2
+  stroke-dasharray: 5 4
 
 .command-help-command-name
   min-width: 0
@@ -476,7 +555,19 @@
   .command-help-title
     font-size: 21px
 
+  .command-help-card
+    display: flex
+    flex-direction: column
+    gap: 8px
+
+    p
+      margin: 0
+
+  .command-help-illustration
+    max-height: 112px
+
   .command-help-card-top
+    width: 100%
     align-items: flex-start
     flex-direction: column
     gap: 7px

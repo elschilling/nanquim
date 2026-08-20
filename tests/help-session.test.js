@@ -3,6 +3,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { HelpSession } from '../src/js/HelpSession.js'
+import {
+  COMMAND_ILLUSTRATION_NAMES,
+  createCommandIllustration,
+  hasCommandIllustration,
+} from '../src/js/CommandIllustrations.js'
 import commands, { commandCategories } from '../src/js/commands/_commands.js'
 import { helpCommand } from '../src/js/commands/HelpCommand.js'
 
@@ -83,6 +88,24 @@ describe('help command registry', () => {
       aliases: ['help', '?'],
       category: 'General',
     })
+  })
+
+  test('provides one decorative SVG illustration for every command', () => {
+    expect([...COMMAND_ILLUSTRATION_NAMES].sort()).toEqual([...expectedCommands].sort())
+
+    expectedCommands.forEach((name) => {
+      expect(hasCommandIllustration(name), name).toBe(true)
+      const illustration = createCommandIllustration(name)
+      expect(illustration, name).toBeInstanceOf(SVGElement)
+      expect(illustration.dataset.commandIllustration, name).toBe(name)
+      expect(illustration.getAttribute('viewBox'), name).toBe('0 0 160 96')
+      expect(illustration.getAttribute('aria-hidden'), name).toBe('true')
+      expect(illustration.getAttribute('focusable'), name).toBe('false')
+      expect(illustration.querySelectorAll('.command-help-illustration-shape').length, name).toBeGreaterThan(0)
+    })
+
+    expect(hasCommandIllustration('NOT_A_COMMAND')).toBe(false)
+    expect(createCommandIllustration('NOT_A_COMMAND')).toBeNull()
   })
 })
 
@@ -193,6 +216,16 @@ describe('HelpSession', () => {
     expect(helpSession.dialog.getAttribute('aria-hidden')).toBe('false')
     expect(helpSession.count.textContent).toBe(`${expectedCommands.length} commands`)
     expect(commandNames(visibleCommandCards(helpSession.dialog)).sort()).toEqual([...expectedCommands].sort())
+
+    const illustrations = helpSession.dialog.querySelectorAll('.command-help-card > .command-help-illustration')
+    expect(illustrations).toHaveLength(expectedCommands.length)
+    illustrations.forEach((illustration) => {
+      const card = illustration.closest('.command-help-card')
+      const commandName = card.querySelector('.command-help-command-name').textContent.replace(/ /g, '_')
+      expect(illustration.dataset.commandIllustration).toBe(commandName)
+      expect(illustration.getAttribute('aria-hidden')).toBe('true')
+      expect(illustration.hasAttribute('tabindex')).toBe(false)
+    })
   })
 
   test('opens from F1 and moves focus to command search', async () => {

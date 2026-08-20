@@ -1,4 +1,5 @@
 import commands, { commandCategories } from './commands/_commands'
+import { createCommandIllustration } from './CommandIllustrations'
 
 const TERMINAL_SHORTCUTS = [
   { keys: ['F1'], description: 'Open this command reference.' },
@@ -237,7 +238,10 @@ class HelpSession {
     const aliases = el('span', 'command-help-aliases')
     ;(command.aliases || []).forEach((alias) => aliases.appendChild(el('kbd', '', String(alias).toUpperCase())))
     top.appendChild(aliases)
-    card.append(top, el('p', '', command.description || `Run the ${commandLabel(name)} command.`))
+    card.appendChild(top)
+    const illustration = createCommandIllustration(name)
+    if (illustration) card.appendChild(illustration)
+    card.appendChild(el('p', '', command.description || `Run the ${commandLabel(name)} command.`))
     return card
   }
 
