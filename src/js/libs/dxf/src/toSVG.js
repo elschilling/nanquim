@@ -9,6 +9,182 @@ import rgbToColorAttribute from './util/rgbToColorAttribute'
 import toPiecewiseBezier, { multiplicity } from './util/toPiecewiseBezier'
 import transformBoundingBoxAndElement from './util/transformBoundingBoxAndElement'
 
+const DEFAULT_DXF_VIEW_BOX = Object.freeze({ x: -5, y: -5, width: 10, height: 10 })
+const MAX_DXF_COORDINATE = 1000000000
+const MAX_REPORTED_ENTITY_TYPES = 12
+const FULL_ROTATION = Math.PI * 2
+const SVG_NUMBER_PATTERN = /[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?/gi
+const DXF_UNITS_TO_CENTIMETERS = new Map([
+  [1, Object.freeze({ factor: 2.54, name: 'inches' })],
+  [2, Object.freeze({ factor: 30.48, name: 'feet' })],
+  [4, Object.freeze({ factor: 0.1, name: 'millimeters' })],
+  [5, Object.freeze({ factor: 1, name: 'centimeters' })],
+  [6, Object.freeze({ factor: 100, name: 'meters' })],
+  [10, Object.freeze({ factor: 91.44, name: 'yards' })],
+])
+
+function escapeXmlAttribute(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  })[character])
+}
+
+function safeEntityType(value) {
+  const normalized = String(value || '').trim().toUpperCase()
+  return /^[A-Z0-9_]{1,32}$/.test(normalized) ? normalized : 'OTHER'
+}
+
+function recordSkippedEntity(report, type, count = 1) {
+  if (!report || typeof report !== 'object' || !Number.isSafeInteger(count) || count < 1) return
+  if (!report.skippedEntityTypes || typeof report.skippedEntityTypes !== 'object') {
+    report.skippedEntityTypes = Object.create(null)
+  }
+  const key = safeEntityType(type)
+  const keys = Object.keys(report.skippedEntityTypes)
+  const target = (
+    Object.prototype.hasOwnProperty.call(report.skippedEntityTypes, key)
+    || keys.length < MAX_REPORTED_ENTITY_TYPES
+  )
+    ? key
+    : 'OTHER'
+  report.skippedEntityTypes[target] = (report.skippedEntityTypes[target] || 0) + count
+}
+
+function hasBoundedNumericValues(value) {
+  const pending = [value]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (typeof current === 'number') {
+      if (!Number.isFinite(current) || Math.abs(current) > MAX_DXF_COORDINATE) return false
+      continue
+    }
+    if (!current || typeof current !== 'object') continue
+    if (Array.isArray(current)) pending.push(...current)
+    else pending.push(...Object.values(current))
+  }
+  return true
+}
+
+function hasBoundedSvgNumbers(element) {
+  SVG_NUMBER_PATTERN.lastIndex = 0
+  for (const match of element.matchAll(SVG_NUMBER_PATTERN)) {
+    const value = Number(match[0])
+    if (!Number.isFinite(value) || Math.abs(value) > MAX_DXF_COORDINATE) return false
+  }
+  return !/(?:^|[^a-z0-9_.])(?:nan|[-+]?infinity)(?=$|[^a-z0-9_.])/i.test(element)
+}
+
+function hasValidEntityDimensions(entity) {
+  if (entity.type === 'CIRCLE' || entity.type === 'ARC') {
+    return Number.isFinite(entity.r) && entity.r > 0
+  }
+  if (entity.type === 'ELLIPSE') {
+    const majorRadius = Math.hypot(entity.majorX, entity.majorY)
+    return Number.isFinite(majorRadius)
+      && majorRadius > 0
+      && Number.isFinite(entity.axisRatio)
+      && entity.axisRatio > 0
+  }
+  return true
+}
+
+function normalizedArcAngles(startAngle, endAngle) {
+  const start = ((startAngle % FULL_ROTATION) + FULL_ROTATION) % FULL_ROTATION
+  const rawSweep = endAngle - startAngle
+  let sweep = ((rawSweep % FULL_ROTATION) + FULL_ROTATION) % FULL_ROTATION
+  if (Math.abs(sweep) < 1e-9 || Math.abs(sweep - FULL_ROTATION) < 1e-9) {
+    sweep = FULL_ROTATION
+  }
+  return { start, end: start + sweep, full: sweep === FULL_ROTATION }
+}
+
+function scaledBoundsAreSafe(bbox, scale) {
+  if (!bbox?.valid || !Number.isFinite(scale) || scale <= 0) return false
+  const minX = bbox.min.x * scale
+  const minY = bbox.min.y * scale
+  const maxX = bbox.max.x * scale
+  const maxY = bbox.max.y * scale
+  const width = (bbox.max.x - bbox.min.x) * scale
+  const height = (bbox.max.y - bbox.min.y) * scale
+  return [minX, minY, maxX, maxY, width, height].every(Number.isFinite)
+    && [minX, minY, maxX, maxY].every(value => Math.abs(value) <= MAX_DXF_COORDINATE)
+    && width >= 0
+    && height >= 0
+    && width <= MAX_DXF_COORDINATE
+    && height <= MAX_DXF_COORDINATE
+}
+
+function combinedBounds(current, incoming) {
+  const next = new Box2()
+  if (current.valid) {
+    next.expandByPoint(current.min)
+    next.expandByPoint(current.max)
+  }
+  next.expandByPoint(incoming.min)
+  next.expandByPoint(incoming.max)
+  return next
+}
+
+function coordinateScale(parsed, report) {
+  const rawCode = parsed?.header?.insUnits
+  const code = Number.isSafeInteger(rawCode) ? rawCode : 0
+  const profile = DXF_UNITS_TO_CENTIMETERS.get(code)
+  if (profile) {
+    if (report) {
+      report.units = {
+        code,
+        factor: profile.factor,
+        name: profile.name,
+        status: profile.factor === 1 ? 'centimeters' : 'converted',
+      }
+    }
+    return profile.factor
+  }
+  if (report) {
+    report.units = {
+      code,
+      factor: 1,
+      name: null,
+      status: code === 0 ? 'unitless' : 'unsupported',
+    }
+  }
+  return 1
+}
+
+function positiveViewBox(bounds, scale) {
+  if (!bounds.valid) return { ...DEFAULT_DXF_VIEW_BOX }
+  let x = bounds.min.x * scale
+  let y = -bounds.max.y * scale
+  let width = (bounds.max.x - bounds.min.x) * scale
+  let height = (bounds.max.y - bounds.min.y) * scale
+  if (
+    ![x, y, width, height].every(Number.isFinite)
+    || Math.abs(x) > MAX_DXF_COORDINATE
+    || Math.abs(y) > MAX_DXF_COORDINATE
+    || width > MAX_DXF_COORDINATE
+    || height > MAX_DXF_COORDINATE
+  ) return { ...DEFAULT_DXF_VIEW_BOX }
+  if (width <= 0) {
+    width = 1
+    x = Math.min(
+      MAX_DXF_COORDINATE - width,
+      Math.max(-MAX_DXF_COORDINATE, x - width / 2),
+    )
+  }
+  if (height <= 0) {
+    height = 1
+    y = Math.min(
+      MAX_DXF_COORDINATE - height,
+      Math.max(-MAX_DXF_COORDINATE, y - height / 2),
+    )
+  }
+  return { x, y, width, height }
+}
+
 const addFlipXIfApplicable = (entity, { bbox, element }) => {
   if (entity.extrusionZ === -1) {
     return {
@@ -97,6 +273,9 @@ const ellipseOrArc = (
   endAngle,
   flipX,
 ) => {
+  const angles = normalizedArcAngles(startAngle, endAngle)
+  startAngle = angles.start
+  endAngle = angles.end
   const rx = Math.sqrt(majorX * majorX + majorY * majorY)
   const ry = axisRatio * rx
   const rotationAngle = -Math.atan2(-majorY, majorX)
@@ -112,10 +291,7 @@ const ellipseOrArc = (
     flipX,
   )
 
-  if (
-    Math.abs(startAngle - endAngle) < 1e-9 ||
-    Math.abs(startAngle - endAngle + Math.PI * 2) < 1e-9
-  ) {
+  if (angles.full) {
     // Use a native <ellipse> when start and end angles are the same, and
     // arc paths with same start and end points don't render (at least on Safari)
     const element = `<g transform="rotate(${(rotationAngle / Math.PI) * 180
@@ -146,8 +322,7 @@ const ellipseOrArc = (
       x: cx + endOffset.x,
       y: cy + endOffset.y,
     }
-    const adjustedEndAngle =
-      endAngle < startAngle ? endAngle + Math.PI * 2 : endAngle
+    const adjustedEndAngle = endAngle
 
     const midAngle = startAngle + (adjustedEndAngle - startAngle) / 2
     const midOffset = rotate(
@@ -191,10 +366,6 @@ const bboxEllipseOrArc = (
   // The extrema are found by setting either the x or y component of the ellipse's
   // tangent vector to zero and solving for the angle.
 
-  // Ensure start and end angles are > 0 and well-ordered
-  while (startAngle < 0) startAngle += Math.PI * 2
-  while (endAngle <= startAngle) endAngle += Math.PI * 2
-
   // When rotated, the extrema of the ellipse will be found at these angles
   const angles = []
 
@@ -212,8 +383,8 @@ const bboxEllipseOrArc = (
   }
 
   // Remove angles not falling between start and end
-  for (let i = 4; i >= 0; i--) {
-    while (angles[i] < startAngle) angles[i] += Math.PI * 2
+  for (let i = angles.length - 1; i >= 0; i--) {
+    while (angles[i] < startAngle) angles[i] += FULL_ROTATION
     if (angles[i] > endAngle) {
       angles.splice(i, 1)
     }
@@ -330,7 +501,7 @@ const bezier = (entity) => {
  * Switcth the appropriate function on entity type. CIRCLE, ARC and ELLIPSE
  * produce native SVG elements, the rest produce interpolated polylines.
  */
-const entityToBoundsAndElement = (entity) => {
+const entityToBoundsAndElement = (entity, report) => {
   switch (entity.type) {
     case 'CIRCLE':
       return circle(entity)
@@ -358,61 +529,93 @@ const entityToBoundsAndElement = (entity) => {
     }
     default:
       logger.warn('entity type not supported in SVG rendering:', entity.type)
+      recordSkippedEntity(report, entity.type)
       return null
   }
 }
 
-export default (parsed) => {
-  const entities = denormalise(parsed)
+export default (parsed, options = {}) => {
+  const report = options.report && typeof options.report === 'object' ? options.report : null
+  const unitScale = coordinateScale(parsed, report)
+  const parserSkipped = parsed?.diagnostics?.unsupportedEntityTypes
+  if (parserSkipped && typeof parserSkipped === 'object') {
+    Object.entries(parserSkipped).forEach(([type, count]) => recordSkippedEntity(report, type, count))
+  }
+  const entities = denormalise(parsed, {
+    ...(options.limits || {}),
+    report,
+  })
+  const layerTable = parsed?.tables?.layers || Object.create(null)
 
   // Group entities by layer
-  const groupedEntities = entities.reduce((acc, entity) => {
+  const groupedEntities = entities.reduce((groups, entity) => {
     const layer = entity.layer || 'Default'
-    if (!acc[layer]) {
-      acc[layer] = []
-    }
-    acc[layer].push(entity)
-    return acc
-  }, {})
+    if (!groups.has(layer)) groups.set(layer, [])
+    groups.get(layer).push(entity)
+    return groups
+  }, new Map())
 
   let globalBbox = new Box2()
   const layerGroups = []
   let collectionIndex = 1
 
   // Process each layer
-  Object.keys(groupedEntities).forEach(layerName => {
-    const layerEntities = groupedEntities[layerName]
+  groupedEntities.forEach((layerEntities, layerName) => {
     const layerElements = []
 
     // Find layer attributes from the header tables if available
     let layerColor = '#ffffff'
-    if (parsed.tables && parsed.tables.layers && parsed.tables.layers[layerName]) {
-      const layerData = parsed.tables.layers[layerName]
-      layerColor = rgbToColorAttribute(getRGBForEntity(parsed.tables.layers, { layer: layerName, colorNumber: layerData.colorNumber }))
+    const layerData = Object.prototype.hasOwnProperty.call(layerTable, layerName)
+      ? layerTable[layerName]
+      : null
+    if (layerData) {
+      layerColor = rgbToColorAttribute(getRGBForEntity(layerTable, { layer: layerName, colorNumber: layerData.colorNumber }))
     }
+    const layerFlags = Number.isInteger(layerData?.flags) ? layerData.flags : 0
+    const hidden = Number(layerData?.colorNumber) < 0 || (layerFlags & 1) !== 0
+    const locked = (layerFlags & 4) !== 0
 
-    const insertGroups = {}
+    const insertGroups = new Map()
 
     layerEntities.forEach((entity) => {
-      const rgb = getRGBForEntity(parsed.tables.layers, entity)
-      const boundsAndElement = entityToBoundsAndElement(entity)
+      const rgb = getRGBForEntity(layerTable, entity)
+      if (!hasBoundedNumericValues(entity) || !hasValidEntityDimensions(entity)) {
+        recordSkippedEntity(report, entity.type)
+        return
+      }
+
+      let boundsAndElement
+      try {
+        boundsAndElement = entityToBoundsAndElement(entity, report)
+      } catch (error) {
+        logger.warn('invalid entity skipped in SVG rendering:', safeEntityType(entity.type))
+        recordSkippedEntity(report, entity.type)
+        return
+      }
 
       if (boundsAndElement) {
         const { bbox, element } = boundsAndElement
-        if (bbox.valid) {
-          globalBbox.expandByPoint(bbox.min)
-          globalBbox.expandByPoint(bbox.max)
+        if (!hasBoundedSvgNumbers(element) || !scaledBoundsAreSafe(bbox, unitScale)) {
+          recordSkippedEntity(report, entity.type)
+          return
         }
+        const nextGlobalBbox = combinedBounds(globalBbox, bbox)
+        if (!scaledBoundsAreSafe(nextGlobalBbox, unitScale)) {
+          recordSkippedEntity(report, entity.type)
+          return
+        }
+        globalBbox = nextGlobalBbox
 
         // Entity inherits layer color by default, unless it specifies its own
         const strokeColor = rgbToColorAttribute(rgb)
-        const svgString = `<g stroke="${strokeColor}">${element}</g>`
+        const entityHidden = entity.visible === false
+        const svgString = `<g stroke="${strokeColor}"${entityHidden ? ' data-hidden="true" style="display:none"' : ''}>${element}</g>`
 
         if (entity.insertGroup) {
-          if (!insertGroups[entity.insertGroup]) {
-            insertGroups[entity.insertGroup] = { name: entity.insertName, elements: [] }
+          if (!insertGroups.has(entity.insertGroup)) {
+            insertGroups.set(entity.insertGroup, { name: entity.insertName, elements: [] })
           }
-          insertGroups[entity.insertGroup].elements.push(svgString)
+          insertGroups.get(entity.insertGroup).elements.push(svgString)
         } else {
           layerElements.push(svgString)
         }
@@ -420,11 +623,10 @@ export default (parsed) => {
     })
 
     // Add block insert groups to the layer
-    Object.keys(insertGroups).forEach(groupId => {
-      const groupData = insertGroups[groupId]
-      const sanitizedName = (groupData.name || 'Block').replace(/"/g, '&quot;')
+    insertGroups.forEach((groupData, groupId) => {
+      const sanitizedName = escapeXmlAttribute(groupData.name || 'Block')
       layerElements.push(`
-        <g id="${groupId.replace(/[^a-zA-Z0-9_\-]/g, '_')}" data-group="true" name="${sanitizedName}">
+        <g id="${String(groupId).replace(/[^a-zA-Z0-9_\-]/g, '_')}" data-group="true" name="${sanitizedName}">
           ${groupData.elements.join('\n')}
         </g>
       `)
@@ -433,17 +635,19 @@ export default (parsed) => {
     if (layerElements.length > 0) {
       // Build the nanquim-compatible collection group wrapper
       // Apply the DXF Y-inversion matrix directly to the collection group so they remain root-level layers
-      const safeLayerName = layerName.replace(/[^a-zA-Z0-9_\-]/g, '_')
       layerGroups.push(`
-        <g 
-          id="collection-${Date.now()}-${collectionIndex++}" 
-          data-collection="true" 
-          name="${layerName}"
+        <g
+          id="collection-dxf-${collectionIndex++}"
+          data-collection="true"
+          data-hidden="${hidden ? 'true' : 'false'}"
+          data-locked="${locked ? 'true' : 'false'}"
+          name="${escapeXmlAttribute(layerName)}"
           stroke="${layerColor}"
           stroke-width="0.1"
           stroke-linecap="round"
           fill="transparent"
-          transform="matrix(1,0,0,-1,0,0)"
+          ${hidden ? 'style="display:none"' : ''}
+          transform="matrix(${unitScale},0,0,${-unitScale},0,0)"
         >
           ${layerElements.join('\n')}
         </g>
@@ -451,24 +655,12 @@ export default (parsed) => {
     }
   })
 
-  const viewBox = globalBbox.valid
-    ? {
-      x: globalBbox.min.x,
-      y: -globalBbox.max.y,
-      width: globalBbox.max.x - globalBbox.min.x,
-      height: globalBbox.max.y - globalBbox.min.y,
-    }
-    : {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-    }
+  const viewBox = positiveViewBox(globalBbox, unitScale)
 
   return `<?xml version="1.0"?>
 <svg
   xmlns="http://www.w3.org/2000/svg"
-  xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
   preserveAspectRatio="xMinYMin meet"
   viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}"
   width="100%" height="100%"
@@ -476,5 +668,3 @@ export default (parsed) => {
 ${layerGroups.join('\n')}
 </svg>`
 }
-
-

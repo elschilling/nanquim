@@ -52,8 +52,8 @@ export default class Helper {
     return this._groups
   }
 
-  toSVG() {
-    return toSVG(this.parsed)
+  toSVG(options = {}) {
+    return toSVG(this.parsed, options)
   }
 
   toPolylines() {

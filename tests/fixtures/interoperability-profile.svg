@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nanquim contributors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="210mm" height="148mm" viewBox="0 0 210 148">
+  <title>Nanquim SVG interoperability profile</title>
+  <desc>Purpose-built primitives, curves, text, references, transforms, hatch paint, and unsafe unsupported content.</desc>
+  <defs>
+    <linearGradient id="profile-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9b6267"/>
+      <stop offset="1" stop-color="#607d9e"/>
+    </linearGradient>
+    <pattern id="profile-hatch" width="4" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0,4 L4,0" fill="none" stroke="#5f806a" stroke-width="0.35"/>
+    </pattern>
+    <marker id="profile-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#d9d4d5"/>
+    </marker>
+    <clipPath id="profile-clip">
+      <rect x="0" y="0" width="28" height="18" rx="2"/>
+    </clipPath>
+    <symbol id="profile-block" viewBox="0 0 12 8">
+      <rect x="0.5" y="0.5" width="11" height="7" fill="none" stroke="currentColor" stroke-width="0.5"/>
+      <line x1="1" y1="4" x2="11" y2="4" stroke="currentColor" stroke-width="0.5"/>
+    </symbol>
+    <style>
+      .profile-stroke { fill: none; stroke: #d9d4d5; stroke-width: 0.6; stroke-linecap: round; }
+    </style>
+  </defs>
+
+  <g id="profile-primitives" aria-label="Primitives">
+    <line id="profile-line" class="profile-stroke" x1="10" y1="14" x2="45" y2="14"/>
+    <rect id="profile-rect" x="10" y="22" width="35" height="20" rx="2"
+      fill="url(#profile-gradient)" stroke="#d9d4d5" stroke-width="0.8"/>
+    <circle id="profile-circle" cx="65" cy="24" r="12"
+      fill="none" stroke="#9b6267" stroke-width="0.7"/>
+    <ellipse id="profile-ellipse" cx="103" cy="24" rx="18" ry="10"
+      fill="none" stroke="#607d9e" stroke-width="0.7"/>
+    <polyline id="profile-polyline" points="130,34 142,12 154,34 166,12"
+      fill="none" stroke="#5f806a" stroke-width="0.55"/>
+    <polygon id="profile-polygon" points="178,12 199,12 194,36 183,36"
+      fill="#5f806a" fill-opacity="0.35" stroke="#d9d4d5" stroke-width="0.5"/>
+  </g>
+
+  <g id="profile-curves" aria-label="Curves">
+    <path id="profile-arc" d="M10,70 A22,15 25 0 1 52,64"
+      fill="none" stroke="#9b6267" stroke-width="0.65"/>
+    <path id="profile-spline" d="M60,72 C72,46 91,92 105,62 S132,46 144,70"
+      fill="none" stroke="#607d9e" stroke-width="0.65"/>
+    <path id="profile-hatched-region" d="M153,50 H199 V78 H153 Z"
+      fill="url(#profile-hatch)" stroke="#5f806a" stroke-width="0.5"/>
+  </g>
+
+  <g id="profile-references" aria-label="References">
+    <g id="profile-transformed" transform="translate(12 92) rotate(-8 24 12)" clip-path="url(#profile-clip)">
+      <rect x="0" y="0" width="34" height="20" fill="url(#profile-gradient)"/>
+      <circle cx="24" cy="10" r="8" fill="none" stroke="#ffffff" stroke-width="0.6"/>
+    </g>
+    <use id="profile-block-a" href="#profile-block" x="62" y="92" width="30" height="20" color="#d9d4d5"/>
+    <use id="profile-block-b" xlink:href="#profile-block" x="100" y="92" width="24" height="16"
+      color="#9b6267" transform="rotate(12 112 100)"/>
+    <path id="profile-dimension-line" d="M140,106 H195" fill="none" stroke="#d9d4d5"
+      stroke-width="0.45" marker-end="url(#profile-arrow)"/>
+  </g>
+
+  <g id="profile-text" aria-label="Text">
+    <text id="profile-label" x="10" y="137" font-family="Inter, sans-serif" font-size="6"
+      font-weight="700" fill="#d9d4d5">Room &amp; curve &lt;profile&gt;</text>
+  </g>
+
+</svg>

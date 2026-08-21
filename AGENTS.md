@@ -54,6 +54,7 @@ pnpm test -- tests/<name>.test.js
 pnpm test:coverage
 pnpm test:browser:chromium
 pnpm test:browser:firefox
+pnpm test:performance
 pnpm test:watch
 pnpm build
 pnpm preview

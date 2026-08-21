@@ -16,6 +16,8 @@
     "test:browser": "pnpm test:browser:chromium",
     "test:browser:chromium": "pnpm build && node scripts/browser/run-workflows.mjs --browser=chromium",
     "test:browser:firefox": "pnpm build && node scripts/browser/run-workflows.mjs --browser=firefox",
+    "qualify:interoperability": "node scripts/qualification/run-interoperability.mjs",
+    "test:performance": "pnpm build && node scripts/performance/run-benchmarks.mjs --browser=chromium",
     "test:watch": "vitest"
   },
   "devDependencies": {

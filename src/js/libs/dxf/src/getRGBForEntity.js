@@ -2,13 +2,15 @@ import colors from './util/colors'
 import logger from './util/logger'
 
 export default (layers, entity) => {
-  const layerTable = layers[entity.layer]
+  const layerTable = Object.prototype.hasOwnProperty.call(layers, entity.layer)
+    ? layers[entity.layer]
+    : null
   if (layerTable) {
     const colorDefinedInEntity =
       'colorNumber' in entity && entity.colorNumber !== 256
-    const colorNumber = colorDefinedInEntity
+    const colorNumber = Math.abs(colorDefinedInEntity
       ? entity.colorNumber
-      : layerTable.colorNumber
+      : layerTable.colorNumber)
     const rgb = colors[colorNumber]
     if (rgb) {
       return rgb

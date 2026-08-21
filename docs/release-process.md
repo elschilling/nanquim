@@ -69,17 +69,41 @@ release deliberately changes that format and includes migration tests.
    ```bash
    pnpm install --frozen-lockfile
    pnpm test
-   pnpm test:browser:chromium
+   pnpm test:coverage
    pnpm build
+   pnpm test:browser:chromium
+   pnpm test:browser:firefox
+   pnpm qualify:interoperability
+   pnpm test:performance
    pnpm audit --audit-level high
    git diff --check
    ```
 
-7. Commit the version, changelog, release notes, and product changes together.
+   Record the coverage totals, browser/operating-system versions, external-tool
+   versions, performance environment/checksums, and ignored JSON result paths.
+   The interoperability command requires the external tools described in
+   [File interoperability and Paper output](file-interoperability.md); verify
+   that its recorded versions match the pinned candidate profile.
+
+7. Complete and record the manual candidate gates:
+
+   - the LibreCAD 2.2.1.2 export/open/edit/save/reopen checklist, including
+     units, layers, supported entity counts, bounds, and every degradation;
+   - visual inspection of representative one-sheet Paper SVG and PDF output in
+     external renderers, including physical size, viewport scale, existing
+     stroke widths, color mapping, vector linework, and readable dimensions;
+   - direct persistent-handle overwrite/reopen in supported Chromium; and
+   - a best-effort Safari check when a macOS test machine is available.
+
+   Keep affected capabilities **Partial** and Phase 3 **In progress** when any
+   applicable record is missing. Per-color plot lineweights and multi-sheet
+   output are deferred, not implied by this checklist.
+
+8. Commit the version, changelog, release notes, and product changes together.
    Open a pull request to `master`, wait for `Test, build, and audit`, and review
    the final diff before merging.
 
-8. Refresh the pinned previous-stable Chromium major in `Browser qualification`
+9. Refresh the pinned previous-stable Chromium major in `Browser qualification`
    if the stable channel advanced, trigger the workflow for the candidate, and
    record current/previous Chromium plus current Firefox/Firefox ESR results.
    The workflow also runs weekly and when a GitHub prerelease is published, but
@@ -101,6 +125,11 @@ integration. GitHub Actions verifies the source but does not deploy it.
    - A line and rectangle can be created, selected, undone, and redone.
    - A small native SVG can be saved, reopened, and inspected without losing
      visible geometry or collection ownership.
+   - A one-sheet Paper document with at least two viewports exports parseable
+     vector SVG and PDF at the configured physical size; existing stroke
+     widths and readable dimension text survive the representative output.
+   - A representative DXF export reports its emitted, approximated, and
+     skipped content instead of silently losing unsupported geometry.
    - File upload/download fallbacks remain usable when persistent browser file
      handles are unavailable.
 

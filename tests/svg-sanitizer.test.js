@@ -14,6 +14,7 @@ import {
   DEFAULT_TEXT_STYLE_PROPERTIES,
 } from '../src/js/document/DocumentMetadata.js'
 import {
+  MAX_SVG_GEOMETRY_MAGNITUDE,
   rewriteStyleReferences,
   parseSafeJson,
   sanitizeStyleSheet,
@@ -212,6 +213,228 @@ describe('untrusted SVG sanitizer', () => {
     expect(textPath.getAttribute('side')).toBe('left')
   })
 
+  test('removes non-finite and overbound geometry while retaining safe siblings and physical root size', () => {
+    const report = {}
+    const documentRef = new DOMParser().parseFromString(`
+      <svg xmlns="${SVG_NS}" width="210mm" height="148mm" viewBox="0 0 210 148">
+        <line id="safe-line" x1="-100" y1="0" x2="100" y2="20"/>
+        <path id="safe-path" d="M0 0 L1e3 -2e2"/>
+        <path id="nan-path" d="M0 0 LNaN 2"/>
+        <path id="infinite-path" d="M0 0 LInfinity 2"/>
+        <path id="huge-path" d="M0 0 L1e308 2"/>
+        <polyline id="huge-points" points="0,0 1e308,2"/>
+        <circle id="overflow-radius" cx="0" cy="0" r="1e309"/>
+        <rect id="huge-coordinate" x="-1e308" y="0" width="2" height="2"/>
+        <g id="bad-matrix" transform="matrix(1,0,0,1,1e308,0)"><line x2="1"/></g>
+      </svg>
+    `, 'image/svg+xml')
+
+    const root = sanitizeSvgDocument(documentRef, { report })
+
+    expect(root.getAttribute('width')).toBe('210mm')
+    expect(root.getAttribute('height')).toBe('148mm')
+    expect(root.querySelector('#safe-line')).not.toBeNull()
+    expect(root.querySelector('#safe-path')).not.toBeNull()
+    expect(root.querySelectorAll([
+      '#nan-path',
+      '#infinite-path',
+      '#huge-path',
+      '#huge-points',
+      '#overflow-radius',
+      '#huge-coordinate',
+      '#bad-matrix',
+    ].join(','))).toHaveLength(0)
+    expect(report).toMatchObject({ changed: true })
+    expect(MAX_SVG_GEOMETRY_MAGNITUDE).toBe(1000000000)
+  })
+
+  test('bounds cumulative transforms and transformed geometry without dropping valid transform lists', () => {
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <g id="qualified" transform="translate(12 92) rotate(-8 24 12)">
+          <line id="qualified-line" x1="0" y1="0" x2="34" y2="20"/>
+        </g>
+        <g id="outer" transform="scale(1000000)">
+          <line id="safe-scaled" x1="0" y1="0" x2="0.001" y2="0.001"/>
+          <g id="overflow-nested" transform="scale(1000000)"><line x2="1" y2="1"/></g>
+        </g>
+        <g id="finite-overflow" transform="translate(1000000000 0)">
+          <line id="translated-overflow" x1="0" y1="0" x2="1" y2="0"/>
+        </g>
+        <text id="text-list-overflow" x="0 1000000000" y="0" transform="scale(2)">ab</text>
+      </svg>
+    `)
+
+    expect(root.querySelector('#qualified-line')).not.toBeNull()
+    expect(root.querySelector('#qualified').getAttribute('transform'))
+      .toBe('translate(12 92) rotate(-8 24 12)')
+    expect(root.querySelector('#safe-scaled')).not.toBeNull()
+    expect(root.querySelector('#overflow-nested')).toBeNull()
+    expect(root.querySelector('#finite-overflow')).not.toBeNull()
+    expect(root.querySelector('#translated-overflow')).toBeNull()
+    expect(root.querySelector('#text-list-overflow')).toBeNull()
+  })
+
+  test('rejects geometry derived beyond the bound by shorthand controls, corrected arcs and miter joins', () => {
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <path id="safe-shorthand" d="M0 0 Q-10 0 10 0 T10 0 C0 0 -10 0 10 0 S10 0 10 0"/>
+        <path id="reflected-cubic-overflow" d="M0 0 C0 0 -1000000000 0 1000000000 0 S1000000000 0 1000000000 0"/>
+        <path id="reflected-quadratic-overflow" d="M0 0 Q-1000000000 0 1000000000 0 T1000000000 0"/>
+        <path id="corrected-arc-overflow" d="M-999999999 -999999999 A.5 .5 0 0 0 999999999 999999999"/>
+        <path id="safe-arc" d="M0 0 A5 5 0 0 0 10 0"/>
+        <path id="miter-overflow" d="M800000000 0L900000000 0L800000000 56600000"
+          fill="none" stroke="#000" stroke-width="100000000"/>
+        <path id="safe-stroked-path" d="M600000000 0L700000000 0L600000000 56600000"
+          fill="none" stroke="#000" stroke-width="100000000"/>
+      </svg>
+    `)
+
+    expect(root.querySelector('#safe-shorthand')).not.toBeNull()
+    expect(root.querySelector('#safe-arc')).not.toBeNull()
+    expect(root.querySelector('#safe-stroked-path')).not.toBeNull()
+    expect(root.querySelector('#reflected-cubic-overflow')).toBeNull()
+    expect(root.querySelector('#reflected-quadratic-overflow')).toBeNull()
+    expect(root.querySelector('#corrected-arc-overflow')).toBeNull()
+    expect(root.querySelector('#miter-overflow')).toBeNull()
+  })
+
+  test('normalizes missing nested SVG viewport dimensions without dropping bounded content', () => {
+    const report = {}
+    const documentRef = new DOMParser().parseFromString(`
+      <svg xmlns="${SVG_NS}">
+        <svg id="viewbox-only" viewBox="0 0 100 100"><line id="nested-safe" x2="10"/></svg>
+      </svg>
+    `, 'image/svg+xml')
+
+    const root = sanitizeSvgDocument(documentRef, { report })
+    const nested = root.querySelector('#viewbox-only')
+
+    expect(nested).not.toBeNull()
+    expect(nested.getAttribute('width')).toBe('100')
+    expect(nested.getAttribute('height')).toBe('100')
+    expect(root.querySelector('#nested-safe')).not.toBeNull()
+    expect(report.changed).toBe(true)
+  })
+
+  test('bounds marker viewport, reference point and markerUnits scaling at shape references', () => {
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <style>.css-marker { marker-end:url(#unsafe-marker); stroke:#123456; }</style>
+        <defs>
+          <marker id="unsafe-marker" markerUnits="userSpaceOnUse" markerWidth="1000000000"
+            markerHeight="1" viewBox="0 0 1 1"><path d="M0 0L1 0"/></marker>
+          <marker id="safe-marker" markerWidth="5" markerHeight="5" refX="5" refY="2.5">
+            <path d="M0 0L5 2.5L0 5Z"/>
+          </marker>
+          <marker id="stroke-marker" markerWidth="5" markerHeight="5" viewBox="0 0 1 1">
+            <path d="M0 0L1 0"/>
+          </marker>
+        </defs>
+        <line id="unsafe-marker-line" x2="1" marker-end="url(#unsafe-marker)"/>
+        <line id="safe-marker-line" x2="20" stroke-width="0.5" marker-end="url(#safe-marker)"/>
+        <line id="stroke-marker-overflow" x2="1" stroke-width="300000000"
+          marker-end="url(#stroke-marker)"/>
+        <line id="inline-marker" x2="1" style="marker-end:url(#unsafe-marker);stroke:#123456"/>
+        <line id="css-marker" class="css-marker" x2="1"/>
+        <g id="inherited-marker" marker-end="url(#unsafe-marker)"><path id="inherited-marker-child" d="M0 0L1 0"/></g>
+      </svg>
+    `)
+
+    expect(root.querySelector('#unsafe-marker-line')).not.toBeNull()
+    expect(root.querySelector('#unsafe-marker-line').hasAttribute('marker-end')).toBe(false)
+    expect(root.querySelector('#safe-marker-line').getAttribute('marker-end')).toBe('url(#safe-marker)')
+    expect(root.querySelector('#stroke-marker-overflow')).not.toBeNull()
+    expect(root.querySelector('#stroke-marker-overflow').hasAttribute('marker-end')).toBe(false)
+    expect(root.querySelector('#inline-marker').getAttribute('style')).toBe('stroke:#123456')
+    expect(root.querySelector('style').textContent).not.toContain('marker-end')
+    expect(root.querySelector('#css-marker')).not.toBeNull()
+    expect(root.querySelector('#inherited-marker').hasAttribute('marker-end')).toBe(false)
+    expect(root.querySelector('#inherited-marker-child')).not.toBeNull()
+  })
+
+  test('drops stylesheet transforms and overbound CSS geometry while bounding inline transforms', () => {
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <style>
+          .unsafe { transform: matrix(1e308,0,0,1,0,0); stroke-width: 1e308; font-size: 1e308; stroke: red; }
+          .outer-css { transform: scale(1000000); }
+          .inner-css { transform: scale(1000000); }
+          .safe-css { transform: translate(2px, 3px) rotate(4deg); stroke-width: 0.5; }
+        </style>
+        <line id="inline-safe" x2="1" style="transform:scale(1e308);stroke-width:1e308;stroke:red"/>
+        <g class="unsafe"><line id="rule-safe-fallback" x2="1"/></g>
+        <g style="transform:scale(1000000)">
+          <line id="inline-safe-scaled" x2="0.001"/>
+          <g id="inline-overflow" style="transform:scale(1000000)"><line x2="1"/></g>
+        </g>
+        <line id="safe-css" class="safe-css" x2="2"/>
+        <line id="safe-inline-transform" x2="2" style="transform:translate(2px, 3px) rotate(4deg);transform-origin:1e9px 0"/>
+        <line id="duplicate-inline-overflow" x2="2" style="transform:scale(1e-9);transform:scale(1e9)"/>
+        <line id="physical-overflow" x2="1" style="stroke-width:1e9in;stroke:red"/>
+        <line id="paint-overflow" style="stroke-width:1000000000;transform:scale(1000000000)"/>
+      </svg>
+    `)
+
+    const css = root.querySelector('style').textContent
+    expect(css).toContain('#Collection .unsafe{stroke:red}')
+    expect(css).not.toMatch(/1e308/i)
+    expect(css).not.toContain('transform:')
+    expect(root.querySelector('#inline-safe').getAttribute('style')).toBe('stroke:red')
+    expect(root.querySelector('#rule-safe-fallback')).not.toBeNull()
+    expect(root.querySelector('#inline-safe-scaled')).not.toBeNull()
+    expect(root.querySelector('#inline-overflow')).toBeNull()
+    expect(root.querySelector('#safe-css')).not.toBeNull()
+    expect(root.querySelector('#safe-inline-transform').getAttribute('style'))
+      .toBe('transform:translate(2px, 3px) rotate(4deg)')
+    expect(root.querySelector('#duplicate-inline-overflow')).toBeNull()
+    expect(root.querySelector('#physical-overflow').getAttribute('style')).toBe('stroke:red')
+    expect(root.querySelector('#paint-overflow')).toBeNull()
+  })
+
+  test('degrades unresolved relative paint lengths without deleting unrelated safe geometry', () => {
+    const report = {}
+    const documentRef = new DOMParser().parseFromString(`
+      <svg xmlns="${SVG_NS}">
+        <style>.label { font-size: 1em; }</style>
+        <line id="relative-style-sibling" x2="10"/>
+        <text id="relative-style-text" class="label" x="2" y="4">Room</text>
+      </svg>
+    `, 'image/svg+xml')
+
+    const root = sanitizeSvgDocument(documentRef, { report })
+
+    expect(root.querySelector('#relative-style-sibling')).not.toBeNull()
+    expect(root.querySelector('#relative-style-text')).not.toBeNull()
+    expect(root.querySelector('style')).toBeNull()
+    expect(report.changed).toBe(true)
+  })
+
+  test('bounds local use references, nested references, and cycles with safe siblings retained', () => {
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <defs>
+          <g id="far-target"><line x1="800000000" y1="0" x2="800000001" y2="0"/></g>
+          <g id="nested-target"><use href="#far-target" x="100000000"/></g>
+          <symbol id="text-target" viewBox="0 0 1 1"><text x="0" y="0">${'x'.repeat(1000)}</text></symbol>
+          <use id="cyclic-target" href="#cyclic-target"/>
+        </defs>
+        <use id="safe-use" href="#far-target" x="-800000000"/>
+        <use id="overflow-use" href="#far-target" x="800000000"/>
+        <use id="nested-overflow-use" href="#nested-target" x="200000000"/>
+        <use id="inherited-text-overflow" href="#text-target" x="500000000" style="font-size:1000000"/>
+        <line id="safe-use-sibling" x2="4" y2="4"/>
+      </svg>
+    `)
+
+    expect(root.querySelector('#safe-use')).not.toBeNull()
+    expect(root.querySelector('#overflow-use')).toBeNull()
+    expect(root.querySelector('#nested-overflow-use')).toBeNull()
+    expect(root.querySelector('#inherited-text-overflow')).toBeNull()
+    expect(root.querySelector('#cyclic-target')).toBeNull()
+    expect(root.querySelector('#safe-use-sibling')).not.toBeNull()
+  })
+
   test('does not trust a data-collection marker as a sanitizer bypass', () => {
     const root = sanitize(`
       <svg xmlns="${SVG_NS}" data-nanquim-version="999">
@@ -237,6 +460,10 @@ describe('untrusted SVG sanitizer', () => {
     expect(parseSafeJson('{"nested":{"constructor":{"prototype":{"polluted":true}}}}')).toBeNull()
     expect(parseSafeJson('{"a":{"b":{"c":1}}}', { maxDepth: 2 })).toBeNull()
     expect(parseSafeJson('"123456"', { maxLength: 4 })).toBeNull()
+    expect(parseSafeJson('{"x":1e308}', { maxAbsNumber: 1000000000 })).toBeNull()
+    expect(parseSafeJson('{"x":1e309}')).toBeNull()
+    expect(parseSafeJson('{"x":-1000000000}', { maxAbsNumber: 1000000000 }))
+      .toEqual({ x: -1000000000 })
     expect({}.polluted).toBeUndefined()
   })
 

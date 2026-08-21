@@ -212,9 +212,13 @@ async function createViewportCommand(editor, args) {
     const command = new CreateViewportCommand(editor, { x, y, w, h, scale })
     editor.execute(command)
     const vp = command.viewport
+    const configuredUnitsPerCm = Number(editor.paperConfig?.unitsPerCm)
+    const unitsPerCm = Number.isFinite(configuredUnitsPerCm) && configuredUnitsPerCm > 0
+      ? configuredUnitsPerCm
+      : 1
     signals.terminalLogged.dispatch({
       type: 'span',
-      msg: `VP: Created viewport ${vp.id} (${w.toFixed(2)}×${h.toFixed(2)} cm) at 1:${scale}`
+      msg: `VP: Created viewport ${vp.id} (${(w / unitsPerCm).toFixed(2)}×${(h / unitsPerCm).toFixed(2)} cm) at 1:${scale}`
     })
   } catch (err) {
     if (err.message !== 'cancelled') console.error(err)

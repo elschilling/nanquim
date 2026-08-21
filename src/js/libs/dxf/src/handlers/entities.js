@@ -42,9 +42,32 @@ const handlers = [
 ].reduce((acc, mod) => {
   acc[mod.TYPE] = mod
   return acc
-}, {})
+}, Object.create(null))
 
-export default (tuples) => {
+const MAX_REPORTED_UNSUPPORTED_TYPES = 12
+
+function safeEntityType(value) {
+  const normalized = String(value || '').trim().toUpperCase()
+  return /^[A-Z0-9_]{1,32}$/.test(normalized) ? normalized : 'OTHER'
+}
+
+function recordUnsupportedType(report, value) {
+  if (!report || typeof report !== 'object') return
+  if (!report.unsupportedEntityTypes || typeof report.unsupportedEntityTypes !== 'object') {
+    report.unsupportedEntityTypes = Object.create(null)
+  }
+  const key = safeEntityType(value)
+  const keys = Object.keys(report.unsupportedEntityTypes)
+  const target = (
+    Object.prototype.hasOwnProperty.call(report.unsupportedEntityTypes, key)
+    || keys.length < MAX_REPORTED_UNSUPPORTED_TYPES
+  )
+    ? key
+    : 'OTHER'
+  report.unsupportedEntityTypes[target] = (report.unsupportedEntityTypes[target] || 0) + 1
+}
+
+export default (tuples, report = null) => {
   const entities = []
   const entityGroups = []
   let currentEntityTuples
@@ -85,8 +108,9 @@ export default (tuples) => {
         // All other entities
         entities.push(e)
       }
-    } else {
-      logger.warn('unsupported type in ENTITIES section:', entityType)
+    } else if (entityType !== 'SEQEND') {
+      logger.warn('unsupported type in ENTITIES section:', safeEntityType(entityType))
+      recordUnsupportedType(report, entityType)
     }
   })
 

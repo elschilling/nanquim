@@ -19,6 +19,9 @@ const TEST_RECTANGLE_WIDTH = 2
 const TEST_RECTANGLE_HEIGHT = 1.5
 const TEST_MOVE_DELTA = Object.freeze({ x: 1, y: 0.5 })
 const FIXTURE_PATH = join(ROOT, 'tests/fixtures/native-v3.svg')
+const SVG_PROFILE_FIXTURE_PATH = join(ROOT, 'tests/fixtures/interoperability-profile.svg')
+const SVG_UNSUPPORTED_FIXTURE_PATH = join(ROOT, 'tests/fixtures/interoperability-unsupported.svg')
+const DXF_FIXTURE_PATH = join(ROOT, 'tests/fixtures/dxf-layers-units-r2000.dxf')
 const ARTIFACTS_ROOT = join(ROOT, 'test-results/browser')
 const cli = parseArguments(process.argv.slice(2))
 const browserName = cli.browser || process.env.NANQUIM_BROWSER || 'chromium'
@@ -376,6 +379,264 @@ async function runWorkflows(activePage) {
     assert(result.history.undos === 0 && result.history.redos === 0, 'Reopen retained History from the prior session.')
     assert(result.clean, 'A current-schema native reopen did not produce a clean session.')
     assert(result.fileHandleIsNull, 'Portable reopen retained or adopted a stale writable handle.')
+
+    const [profileSource, unsupportedSource, dxfSource] = await Promise.all([
+      readFile(SVG_PROFILE_FIXTURE_PATH, 'utf8'),
+      readFile(SVG_UNSUPPORTED_FIXTURE_PATH, 'utf8'),
+      readFile(DXF_FIXTURE_PATH, 'utf8'),
+    ])
+    const exchange = await activePage.evaluate(async ({ dxf, profile, unsupported }) => {
+      const terminalText = () => document.getElementById('terminalLog')?.textContent || ''
+      const localReferenceReport = (roots, resolutionRoot) => {
+        const references = new Set()
+        roots.forEach((root) => {
+          if (!root) return
+          ;[root, ...root.querySelectorAll('*')].forEach((element) => {
+            Array.from(element.attributes || []).forEach((attribute) => {
+              const value = attribute.value.trim()
+              if (attribute.localName.toLowerCase() === 'href' && value.startsWith('#')) {
+                references.add(value.slice(1))
+              }
+              for (const match of value.matchAll(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g)) {
+                references.add(match[1])
+              }
+            })
+            if (element.localName?.toLowerCase() === 'style') {
+              for (const match of (element.textContent || '').matchAll(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g)) {
+                references.add(match[1])
+              }
+            }
+          })
+        })
+        const ids = new Set(Array.from(resolutionRoot.querySelectorAll('[id]'), element => element.id))
+        return {
+          count: references.size,
+          missing: Array.from(references).filter(id => !ids.has(id)),
+        }
+      }
+      const openFixture = (source, name, type) => window.editor.documents.openFile(
+        new File([source], name, { type }),
+      )
+
+      const profileLoaded = await openFixture(
+        profile,
+        'interoperability-profile.svg',
+        'image/svg+xml',
+      )
+      const profileRoot = window.editor.drawing.node.querySelector('[data-nanquim-import-root="true"]')
+      const profileAssets = Array.from(
+        window.editor.svg.node.querySelectorAll('defs > [data-nanquim-import-assets="true"]'),
+      )
+      const profileReferences = localReferenceReport(
+        [profileRoot, ...profileAssets],
+        window.editor.svg.node,
+      )
+      const profileResult = {
+        loaded: profileLoaded,
+        dirty: window.editor.documentState?.isDirty,
+        hasImportRoot: Boolean(profileRoot),
+        counts: Object.fromEntries([
+          'circle', 'ellipse', 'line', 'path', 'polygon', 'polyline', 'rect', 'text', 'use',
+        ].map(name => [
+          name,
+          [profileRoot, ...profileAssets].reduce(
+            (count, root) => count + (root?.querySelectorAll(name).length || 0),
+            0,
+          ),
+        ])),
+        references: profileReferences,
+        text: profileRoot?.querySelector('text')?.textContent || '',
+        viewBox: window.editor.svg.viewbox(),
+      }
+
+      const svgTerminalStart = terminalText().length
+      const unsupportedLoaded = await openFixture(
+        unsupported,
+        'interoperability-unsupported.svg',
+        'image/svg+xml',
+      )
+      const unsupportedRoot = window.editor.drawing.node.querySelector('[data-nanquim-import-root="true"]')
+      const unsupportedAssets = Array.from(
+        window.editor.svg.node.querySelectorAll('defs > [data-nanquim-import-assets="true"]'),
+      )
+      const unsupportedScope = [unsupportedRoot, ...unsupportedAssets].filter(Boolean)
+      const safeRect = Array.from(unsupportedRoot?.querySelectorAll('rect') || []).find(rect => (
+        Number(rect.getAttribute('x')) === 2
+        && Number(rect.getAttribute('y')) === 2
+        && Number(rect.getAttribute('width')) === 20
+        && Number(rect.getAttribute('height')) === 12
+      ))
+      const unsupportedResult = {
+        loaded: unsupportedLoaded,
+        dirty: window.editor.documentState?.isDirty,
+        safeFallback: Boolean(safeRect),
+        terminalSummary: terminalText().slice(svgTerminalStart),
+        unsafeNodes: unsupportedScope.reduce((count, root) => count + root.querySelectorAll(
+          'script, foreignObject, [onload], [onclick], [onerror]',
+        ).length, 0),
+        externalReferences: unsupportedScope.reduce((count, root) => count + Array.from(
+          root.querySelectorAll('[href], [xlink\\:href]'),
+        ).filter(element => /^(?:https?:|data:text\/html)/i.test(
+          element.getAttribute('href') || element.getAttribute('xlink:href') || '',
+        )).length, 0),
+      }
+
+      const dxfTerminalStart = terminalText().length
+      const beforeDxfDownloads = window.__nanquimBrowserDownloads.length
+      const dxfLoaded = await openFixture(
+        dxf,
+        'dxf-layers-units-r2000.dxf',
+        'image/vnd.dxf',
+      )
+      const directCollections = Array.from(window.editor.drawing.node.children)
+      const collectionStates = directCollections.map(collection => {
+        const state = Array.from(window.editor.collections.values()).find(
+          candidate => candidate.group?.node === collection,
+        )
+        return {
+          name: collection.getAttribute('name'),
+          visible: state?.visible,
+          locked: state?.locked,
+        }
+      })
+      const firstLine = directCollections[0]?.querySelector('line')
+      const hiddenCircle = directCollections[1]?.querySelector('circle')
+      const lockedLine = directCollections[2]?.querySelector('line')
+
+      window.saveDXF()
+      const dxfDownload = window.__nanquimBrowserDownloads.at(-1)
+      const exportedSource = dxfDownload ? await dxfDownload.blob.text() : ''
+      const lines = exportedSource.replace(/\r/g, '').split('\n')
+      const pairs = []
+      for (let index = 0; index + 1 < lines.length; index += 2) {
+        pairs.push({ code: lines[index].trim(), value: lines[index + 1].trim() })
+      }
+      const exportedLayers = []
+      for (let index = 0; index < pairs.length; index += 1) {
+        if (pairs[index].code !== '0' || pairs[index].value !== 'LAYER') continue
+        const layer = { name: '', flags: 0, color: 0 }
+        for (let cursor = index + 1; cursor < pairs.length && pairs[cursor].code !== '0'; cursor += 1) {
+          if (pairs[cursor].code === '2') layer.name = pairs[cursor].value
+          if (pairs[cursor].code === '70') layer.flags = Number(pairs[cursor].value)
+          if (pairs[cursor].code === '62') layer.color = Number(pairs[cursor].value)
+        }
+        exportedLayers.push(layer)
+      }
+      const insUnitsIndex = pairs.findIndex(pair => pair.code === '9' && pair.value === '$INSUNITS')
+      const exportedEntities = []
+      let inEntities = false
+      for (let index = 0; index < pairs.length; index += 1) {
+        const pair = pairs[index]
+        if (
+          pair.code === '0'
+          && pair.value === 'SECTION'
+          && pairs[index + 1]?.code === '2'
+          && pairs[index + 1]?.value === 'ENTITIES'
+        ) {
+          inEntities = true
+          continue
+        }
+        if (inEntities && pair.code === '0' && pair.value === 'ENDSEC') {
+          inEntities = false
+          continue
+        }
+        if (inEntities && pair.code === '0') exportedEntities.push(pair.value)
+      }
+      const dxfResult = {
+        loaded: dxfLoaded,
+        dirty: window.editor.documentState?.isDirty,
+        fileHandleIsNull: window.editor.documentState?.fileHandle == null,
+        directCollections: directCollections.every(
+          collection => collection.getAttribute('data-collection') === 'true',
+        ),
+        hasForeignWrapper: Boolean(
+          window.editor.drawing.node.querySelector('[data-nanquim-import-root="true"]'),
+        ),
+        collectionStates,
+        viewBox: window.editor.svg.viewbox(),
+        geometry: {
+          firstLine: firstLine ? [
+            firstLine.getAttribute('x1'), firstLine.getAttribute('y1'),
+            firstLine.getAttribute('x2'), firstLine.getAttribute('y2'),
+          ].map(Number) : null,
+          hiddenCircle: hiddenCircle ? [
+            hiddenCircle.getAttribute('cx'), hiddenCircle.getAttribute('cy'), hiddenCircle.getAttribute('r'),
+          ].map(Number) : null,
+          lockedLine: lockedLine ? [
+            lockedLine.getAttribute('x1'), lockedLine.getAttribute('y1'),
+            lockedLine.getAttribute('x2'), lockedLine.getAttribute('y2'),
+          ].map(Number) : null,
+        },
+        download: {
+          downloaded: window.__nanquimBrowserDownloads.length === beforeDxfDownloads + 1,
+          name: dxfDownload?.name,
+          type: dxfDownload?.blob?.type,
+          size: dxfDownload?.blob?.size || 0,
+        },
+        exported: {
+          entities: exportedEntities,
+          insUnits: insUnitsIndex >= 0
+            ? Number(pairs.slice(insUnitsIndex + 1).find(pair => pair.code === '70')?.value)
+            : null,
+          layers: exportedLayers,
+        },
+        terminalSummary: terminalText().slice(dxfTerminalStart),
+      }
+
+      return { profile: profileResult, unsupported: unsupportedResult, dxf: dxfResult }
+    }, { dxf: dxfSource, profile: profileSource, unsupported: unsupportedSource })
+    trace('exchange-qualification', exchange)
+
+    assert(exchange.profile.loaded?.ok && exchange.profile.loaded?.kind === 'foreign-svg', 'The supported foreign SVG profile did not load.')
+    assert(exchange.profile.dirty && exchange.profile.hasImportRoot, 'The foreign SVG was not adopted as a dirty imported collection.')
+    assert(exchange.profile.counts.path >= 6 && exchange.profile.counts.use === 2, 'The foreign SVG lost supported vector elements.')
+    assert(exchange.profile.references.count >= 5 && exchange.profile.references.missing.length === 0, 'The foreign SVG contains unresolved local references after import.')
+    assert(exchange.profile.text === 'Room & curve <profile>', 'The foreign SVG text changed during import.')
+    assertNear(exchange.profile.viewBox.x, 0, 1e-9, 'foreign SVG viewBox x')
+    assertNear(exchange.profile.viewBox.y, 0, 1e-9, 'foreign SVG viewBox y')
+    assertNear(exchange.profile.viewBox.width, 210, 1e-9, 'foreign SVG viewBox width')
+    assertNear(exchange.profile.viewBox.height, 148, 1e-9, 'foreign SVG viewBox height')
+
+    assert(exchange.unsupported.loaded?.ok && exchange.unsupported.loaded?.kind === 'foreign-svg', 'The sanitization SVG profile did not load.')
+    assert(exchange.unsupported.loaded.diagnostics?.some(({ code }) => code === 'sanitized-content'), 'Foreign SVG sanitization did not return a diagnostic code.')
+    assert(exchange.unsupported.safeFallback, 'Foreign SVG sanitization discarded the safe fallback geometry.')
+    assert(exchange.unsupported.unsafeNodes === 0 && exchange.unsupported.externalReferences === 0, 'Foreign SVG sanitization retained active or external content.')
+    assert(exchange.unsupported.terminalSummary.includes('Unsafe or unsupported SVG content was removed'), 'The foreign SVG sanitization summary was not shown in the terminal.')
+    assert(exchange.unsupported.terminalSummary.includes('Opened: interoperability-unsupported.svg'), 'The sanitized foreign SVG did not report a completed open.')
+
+    assert(exchange.dxf.loaded?.ok && exchange.dxf.loaded?.kind === 'dxf', 'The DXF qualification fixture did not load.')
+    assert(exchange.dxf.loaded.diagnostics?.some(({ code }) => code === 'dxf-units-converted'), 'DXF unit conversion did not return a diagnostic code.')
+    assert(exchange.dxf.dirty && exchange.dxf.fileHandleIsNull, 'DXF import incorrectly adopted a clean writable session.')
+    assert(exchange.dxf.directCollections && !exchange.dxf.hasForeignWrapper, 'DXF layers were not imported as direct Model collections.')
+    assert(JSON.stringify(exchange.dxf.collectionStates) === JSON.stringify([
+      { name: 'A&B', visible: true, locked: false },
+      { name: 'Hidden', visible: false, locked: false },
+      { name: 'Locked', visible: true, locked: true },
+    ]), 'DXF layer names, visibility, or lock state changed during import.')
+    assert(JSON.stringify(exchange.dxf.geometry.firstLine) === JSON.stringify([1, -1, 9, -1]), 'DXF millimetre line coordinates were not converted to centimetres.')
+    assert(exchange.dxf.geometry.hiddenCircle?.length === 3, 'DXF circle geometry was not imported.')
+    ;[5, -4, 1.2].forEach((expected, index) => {
+      assertNear(exchange.dxf.geometry.hiddenCircle[index], expected, 1e-9, `DXF circle coordinate ${index + 1}`)
+    })
+    assert(JSON.stringify(exchange.dxf.geometry.lockedLine) === JSON.stringify([0, 0, 0, -8]), 'DXF locked-layer geometry changed during import.')
+    assertNear(exchange.dxf.viewBox.x, 0, 1e-9, 'DXF viewBox x')
+    assertNear(exchange.dxf.viewBox.y, -8, 1e-9, 'DXF viewBox y')
+    assertNear(exchange.dxf.viewBox.width, 9, 1e-9, 'DXF viewBox width')
+    assertNear(exchange.dxf.viewBox.height, 8, 1e-9, 'DXF viewBox height')
+    assert(exchange.dxf.download.downloaded && exchange.dxf.download.size > 100, 'DXF re-export did not produce a nonempty fallback download.')
+    assert(exchange.dxf.download.name === 'drawing.dxf' && exchange.dxf.download.type === 'application/dxf', 'DXF re-export used the wrong filename or MIME type.')
+    assert(exchange.dxf.exported.insUnits === 5, `Expected centimetre DXF units, received ${exchange.dxf.exported.insUnits}.`)
+    assert(JSON.stringify(exchange.dxf.exported.entities.sort()) === JSON.stringify(['CIRCLE', 'LINE', 'LINE']), 'DXF re-export lost or duplicated vector entities.')
+    const exportedLayerStates = exchange.dxf.exported.layers
+      .filter(layer => ['A&B', 'Hidden', 'Locked'].includes(layer.name))
+      .map(layer => ({ name: layer.name, hidden: layer.color < 0, locked: (layer.flags & 4) !== 0 }))
+    assert(JSON.stringify(exportedLayerStates) === JSON.stringify([
+      { name: 'A&B', hidden: false, locked: false },
+      { name: 'Hidden', hidden: true, locked: false },
+      { name: 'Locked', hidden: false, locked: true },
+    ]), 'DXF re-export did not preserve layer hidden/locked state.')
+    assert(exchange.dxf.terminalSummary.includes('DXF coordinates were converted to Nanquim centimeters.'), 'DXF import did not show its unit-conversion summary.')
+    assert(exchange.dxf.terminalSummary.includes('DXF exported: drawing.dxf') && exchange.dxf.terminalSummary.includes('3 entities'), 'DXF export did not show its entity summary.')
   })
 
   await step('open and evaluate the representative Geometry Nodes fixture', async () => {
@@ -506,28 +767,271 @@ async function runWorkflows(activePage) {
     ).some(line => Number(line.getAttribute('x1')) === 3 && Number(line.getAttribute('y1')) === 3))
 
     const exportResult = await activePage.evaluate(async () => {
+      const paperNote = document.getElementById('paper-note-v3')
+      if (paperNote) {
+        paperNote.setAttribute('font-family', 'Inter')
+        paperNote.setAttribute('font-size', '0.42')
+        paperNote.setAttribute('font-weight', '700')
+        paperNote.setAttribute('font-style', 'normal')
+      }
+      const liveBefore = {
+        drawing: window.editor.drawing.node.outerHTML,
+        paper: window.editor.paperSvg.node.outerHTML,
+      }
       const beforeDownloads = window.__nanquimBrowserDownloads.length
       window.editor.paperEditor.exportSVG()
       const download = window.__nanquimBrowserDownloads.at(-1)
       const source = download ? await download.blob.text() : ''
       const parsed = new DOMParser().parseFromString(source, 'image/svg+xml')
+      const root = parsed.documentElement
+      const ids = Array.from(root.querySelectorAll('[id]'), element => element.id)
+      const idSet = new Set(ids)
+      const localReferences = new Set()
+      ;[root, ...root.querySelectorAll('*')].forEach((element) => {
+        Array.from(element.attributes || []).forEach((attribute) => {
+          const value = attribute.value.trim()
+          if (attribute.localName.toLowerCase() === 'href' && value.startsWith('#')) {
+            localReferences.add(value.slice(1))
+          }
+          for (const match of value.matchAll(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g)) {
+            localReferences.add(match[1])
+          }
+        })
+        if (element.localName?.toLowerCase() === 'style') {
+          for (const match of (element.textContent || '').matchAll(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g)) {
+            localReferences.add(match[1])
+          }
+        }
+      })
+      const liveAfter = {
+        drawing: window.editor.drawing.node.outerHTML,
+        paper: window.editor.paperSvg.node.outerHTML,
+      }
       return {
         annotationLines: parsed.querySelectorAll('#paper-annotations line').length,
+        annotationStrokeWidth: Number.parseFloat(
+          parsed.querySelector('#paper-annotations')?.style.strokeWidth || '',
+        ),
         count: window.editor.paperViewports.length,
+        config: {
+          width: window.editor.paperConfig.width,
+          height: window.editor.paperConfig.height,
+          unitsPerCm: window.editor.paperConfig.unitsPerCm,
+        },
         downloaded: window.__nanquimBrowserDownloads.length === beforeDownloads + 1,
-        isPaperDocument: parsed.documentElement.getAttribute('data-nanquim-paper') === 'true',
+        duplicateIds: ids.length - idSet.size,
+        height: root.getAttribute('height'),
+        isPaperDocument: root.getAttribute('data-nanquim-paper') === 'true',
+        liveUnchanged: liveBefore.drawing === liveAfter.drawing && liveBefore.paper === liveAfter.paper,
+        missingReferences: Array.from(localReferences).filter(id => !idSet.has(id)),
+        modelStrokeWidth: Number.parseFloat(
+          parsed.querySelector('#Collection > [data-collection="true"]')?.style.strokeWidth || '',
+        ),
         name: download?.name,
         parserError: Boolean(parsed.querySelector('parsererror')),
+        rasterImages: root.querySelectorAll('image').length,
+        transientNodes: root.querySelectorAll([
+          '#paper-background',
+          '#paper-handlers',
+          '.vp-frame',
+          '.vp-label',
+          '.selection-handler',
+          '.elementHover',
+          '.elementSelected',
+          '.move-ghost',
+          '.command-preview',
+          '[data-nanquim-transient]',
+          '[selected]',
+        ].join(',')).length,
         type: download?.blob?.type,
+        vectorElements: root.querySelectorAll('path, line, rect, circle, ellipse, polyline, polygon, use').length,
+        viewBox: (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number),
         viewportUses: parsed.querySelectorAll('[data-paper-viewport="true"] use').length,
+        width: root.getAttribute('width'),
       }
     })
+    trace('paper-svg-qualification', exportResult)
     assert(exportResult.count === before + 1, 'Paper viewport count did not increase.')
     assert(exportResult.downloaded, 'Paper SVG export did not trigger a download.')
-    assert(/\.svg$/i.test(exportResult.name || ''), 'Paper export did not use an SVG filename.')
+    assert(exportResult.name === 'paper-custom.svg' && exportResult.type === 'image/svg+xml', 'Paper SVG export used the wrong filename or MIME type.')
     assert(!exportResult.parserError && exportResult.isPaperDocument, 'Paper export was not a well-formed Paper SVG.')
     assert(exportResult.viewportUses > 0, 'Paper export omitted its model viewport reference.')
     assert(exportResult.annotationLines > 0, 'Paper export omitted the edited Paper annotation.')
+    assert(exportResult.width === '500.5mm' && exportResult.height === '321.25mm', 'Paper SVG export lost its physical millimetre page size.')
+    const expectedViewBox = [
+      0,
+      0,
+      exportResult.config.width * exportResult.config.unitsPerCm / 10,
+      exportResult.config.height * exportResult.config.unitsPerCm / 10,
+    ]
+    assert(exportResult.viewBox.length === 4, 'Paper SVG export emitted an invalid viewBox.')
+    expectedViewBox.forEach((expected, index) => {
+      assertNear(exportResult.viewBox[index], expected, 1e-9, `Paper SVG viewBox value ${index + 1}`)
+    })
+    assert(exportResult.vectorElements > 0 && exportResult.rasterImages === 0, 'Paper SVG export did not remain vector-only.')
+    assert(exportResult.transientNodes === 0, `Paper SVG export retained ${exportResult.transientNodes} transient UI node(s).`)
+    assert(exportResult.duplicateIds === 0 && exportResult.missingReferences.length === 0, 'Paper SVG export contains duplicate IDs or broken internal references.')
+    assertNear(exportResult.annotationStrokeWidth, 0.18, 1e-9, 'Paper annotation stroke width')
+    assertNear(exportResult.modelStrokeWidth, 0.2, 1e-9, 'Paper model stroke width')
+    assert(exportResult.liveUnchanged, 'Paper SVG export mutated the live Model or Paper DOM.')
+
+    const pdfFixture = await activePage.evaluate(() => {
+      window.editor.signals.clearSelection.dispatch()
+      const [retainedViewport, ...extraViewports] = window.editor.paperViewports
+      extraViewports.forEach(viewport => window.editor.paperEditor.removeViewport(viewport.id, {
+        notify: false,
+        silent: true,
+      }))
+      retainedViewport.setVisible(true, { silent: true })
+      retainedViewport.setModelOrigin(0, 0, { silent: true })
+      retainedViewport.setScale(1, { silent: true })
+
+      const svgNamespace = 'http://www.w3.org/2000/svg'
+      const create = (name, attributes = {}) => {
+        const element = document.createElementNS(svgNamespace, name)
+        Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)))
+        return element
+      }
+      window.editor.documentState.runWithoutTracking(() => {
+        const collection = create('g', {
+          id: 'browser-pdf-model',
+          name: 'Browser PDF vectors',
+          'data-collection': 'true',
+          style: 'stroke:#112233;stroke-width:0.2;stroke-linecap:round;fill:transparent',
+        })
+        collection.appendChild(create('line', {
+          id: 'browser-pdf-line',
+          x1: 0.5,
+          y1: 1,
+          x2: 3.5,
+          y2: 1,
+        }))
+        const dimension = create('g', {
+          id: 'browser-pdf-dimension',
+          'data-element-type': 'dimension',
+        })
+        dimension.appendChild(create('line', {
+          id: 'browser-pdf-dimension-line',
+          x1: 0.5,
+          y1: 2,
+          x2: 3.5,
+          y2: 2,
+        }))
+        const modelText = create('text', {
+          id: 'browser-pdf-dimension-text',
+          x: 2,
+          y: 1.8,
+          'font-family': 'Inter',
+          'font-size': 0.42,
+          'font-weight': 700,
+          'text-anchor': 'middle',
+        })
+        modelText.textContent = '3 cm'
+        dimension.appendChild(modelText)
+        collection.appendChild(dimension)
+        window.editor.drawing.node.replaceChildren(collection)
+
+        const annotations = window.editor.paperAnnotations.node
+        const annotationLine = create('line', {
+          id: 'browser-pdf-annotation-line',
+          x1: 2,
+          y1: 12,
+          x2: 8,
+          y2: 12,
+        })
+        const annotationText = create('text', {
+          id: 'browser-pdf-annotation-text',
+          x: 5,
+          y: 11.5,
+          'font-family': 'Inter',
+          'font-size': 0.42,
+          'font-weight': 700,
+          'text-anchor': 'middle',
+        })
+        annotationText.textContent = 'Phase 3 PDF'
+        annotations.replaceChildren(annotationLine, annotationText)
+      })
+      window.editor.signals.modelContentChanged.dispatch()
+      return {
+        annotations: window.editor.paperAnnotations.node.childElementCount,
+        modelElements: window.editor.drawing.node.querySelectorAll('line, text').length,
+        viewports: window.editor.paperViewports.length,
+      }
+    })
+    trace('paper-pdf-controlled-fixture', pdfFixture)
+    assert(
+      pdfFixture.viewports === 1 && pdfFixture.modelElements === 3 && pdfFixture.annotations === 2,
+      'The bounded Paper PDF qualification fixture was not prepared correctly.',
+    )
+
+    const pdfDownloadStart = await activePage.evaluate(() => window.__nanquimBrowserDownloads.length)
+    await activePage.evaluate(() => window.editor.paperEditor.exportPDF())
+    try {
+      await activePage.waitForFunction(expected => (
+        window.__nanquimBrowserDownloads.length > expected
+      ), { timeout: 60000 }, pdfDownloadStart)
+    } catch (error) {
+      const diagnostic = await activePage.evaluate(() => ({
+        downloads: window.__nanquimBrowserDownloads.length,
+        terminal: (document.getElementById('terminalLog')?.textContent || '').slice(-512),
+      }))
+      trace('paper-pdf-timeout-diagnostic', diagnostic)
+      throw new Error('Paper PDF did not produce an intercepted fallback download within 60 seconds.', {
+        cause: error,
+      })
+    }
+    const pdfResult = await activePage.evaluate(async (beforeDownloads) => {
+      const terminalText = document.getElementById('terminalLog')?.textContent || ''
+      const download = window.__nanquimBrowserDownloads.at(-1)
+      const bytes = new Uint8Array(await download.blob.arrayBuffer())
+      let source = ''
+      const chunkSize = 8192
+      for (let index = 0; index < bytes.length; index += chunkSize) {
+        source += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+      }
+      const mediaBox = source.match(/\/MediaBox\s*\[([^\]]+)\]/)?.[1]
+        ?.trim().split(/\s+/).map(Number) || []
+      const streams = Array.from(source.matchAll(/stream\r?\n([\s\S]*?)endstream/g), match => match[1])
+      const vectorOperators = streams.reduce((count, stream) => count + (
+        stream.match(/(?:^|\r?\n)-?(?:\d+(?:\.\d*)?|\.\d+)\s+-?(?:\d+(?:\.\d*)?|\.\d+)\s+m(?:\r?\n|\s)/g)?.length || 0
+      ), 0)
+      const fontLengths = Array.from(
+        source.matchAll(/\/Length1\s+(\d+)/g),
+        match => Number(match[1]),
+      )
+      return {
+        downloaded: window.__nanquimBrowserDownloads.length === beforeDownloads + 1,
+        embeddedFontLength: fontLengths.length > 0 ? Math.max(...fontLengths) : 0,
+        hasEmbeddedFont: /\/FontFile2\s+\d+\s+0\s+R/.test(source),
+        header: source.slice(0, 8),
+        imageObjects: source.match(/\/Subtype\s*\/Image\b/g)?.length || 0,
+        mediaBox,
+        name: download?.name,
+        pageObjects: source.match(/\/Type\s*\/Page\b/g)?.length || 0,
+        size: bytes.length,
+        terminalSummary: terminalText.slice(-512),
+        type: download?.blob?.type,
+        vectorOperators,
+      }
+    }, pdfDownloadStart)
+    trace('paper-pdf-qualification', pdfResult)
+    assert(pdfResult.downloaded && pdfResult.size > 1000, 'Paper PDF export did not produce a nonempty fallback download.')
+    assert(pdfResult.name === 'paper-custom.pdf' && pdfResult.type === 'application/pdf', 'Paper PDF export used the wrong filename or MIME type.')
+    assert(pdfResult.header.startsWith('%PDF-') && pdfResult.pageObjects >= 1, 'Paper PDF export did not produce a valid PDF page.')
+    assert(pdfResult.mediaBox.length === 4, 'Paper PDF export did not expose a valid MediaBox.')
+    const pointsPerMillimetre = 72 / 25.4
+    const expectedMediaBox = [
+      0,
+      0,
+      exportResult.config.width * pointsPerMillimetre,
+      exportResult.config.height * pointsPerMillimetre,
+    ]
+    expectedMediaBox.forEach((expected, index) => {
+      assertNear(pdfResult.mediaBox[index], expected, 0.02, `Paper PDF MediaBox value ${index + 1}`)
+    })
+    assert(pdfResult.vectorOperators > 0 && pdfResult.imageObjects === 0, 'Paper PDF export did not retain vector path content.')
+    assert(pdfResult.hasEmbeddedFont && pdfResult.embeddedFontLength > 0, 'Paper PDF export did not embed a nonempty local TTF font.')
+    assert(pdfResult.terminalSummary.includes('Paper exported as PDF: paper-custom.pdf'), 'Paper PDF export did not report its fallback download.')
     await activePage.evaluate(() => window.switchEditorMode('model'))
   })
 
@@ -568,21 +1072,28 @@ async function installDeterministicBrowserCapabilities(activePage) {
 
     const originalCreateObjectURL = URL.createObjectURL.bind(URL)
     const originalAnchorClick = HTMLAnchorElement.prototype.click
+    const originalAnchorDispatchEvent = HTMLAnchorElement.prototype.dispatchEvent
     URL.createObjectURL = blob => {
       const url = originalCreateObjectURL(blob)
       window.__nanquimBrowserObjectUrls ||= new Map()
       window.__nanquimBrowserObjectUrls.set(url, blob)
       return url
     }
+    const captureFallbackDownload = (anchor) => {
+      if (!anchor.download || !window.__nanquimBrowserObjectUrls?.has(anchor.href)) return false
+      window.__nanquimBrowserDownloads.push({
+        blob: window.__nanquimBrowserObjectUrls.get(anchor.href),
+        name: anchor.download,
+      })
+      return true
+    }
     HTMLAnchorElement.prototype.click = function () {
-      if (this.download && window.__nanquimBrowserObjectUrls?.has(this.href)) {
-        window.__nanquimBrowserDownloads.push({
-          blob: window.__nanquimBrowserObjectUrls.get(this.href),
-          name: this.download,
-        })
-        return
-      }
+      if (captureFallbackDownload(this)) return
       return originalAnchorClick.call(this)
+    }
+    HTMLAnchorElement.prototype.dispatchEvent = function (event) {
+      if (event?.type === 'click' && captureFallbackDownload(this)) return true
+      return originalAnchorDispatchEvent.call(this, event)
     }
   })
   const fileApiState = await activePage.evaluate(() => ({
@@ -867,6 +1378,13 @@ async function writeJson(path, value) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message)
+}
+
+function assertNear(actual, expected, tolerance, label) {
+  assert(
+    Number.isFinite(actual) && Math.abs(actual - expected) <= tolerance,
+    `Expected ${label} to be ${expected} ± ${tolerance}, received ${actual}.`,
+  )
 }
 
 function parseArguments(argumentsList) {

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Nanquim contributors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm" viewBox="0 0 40 30">
+  <title>Nanquim unsupported SVG interoperability profile</title>
+  <rect id="safe-fallback" x="2" y="2" width="20" height="12" fill="none" stroke="#607d9e"/>
+  <image id="unsupported-external-image" x="24" y="2" width="12" height="12"
+    href="https://example.invalid/external.png"/>
+  <foreignObject id="unsupported-foreign-object" x="0" y="0" width="10" height="10">
+    <div xmlns="http://www.w3.org/1999/xhtml">unsupported</div>
+  </foreignObject>
+  <script>throw new Error('fixture script must never execute')</script>
+</svg>

@@ -27,6 +27,14 @@ versions may still contain compatibility changes.
 - Production-build browser workflows for current Chromium on pull requests
   and scheduled/prerelease current/previous Chromium plus Firefox stable/ESR
   qualification, with isolated profiles and actionable failure artifacts.
+- Purpose-built SVG/DXF interoperability profiles with semantic expectations,
+  sanitizer/degradation checks, unit/layer coverage, and a path-safe external
+  qualification runner. The recorded Inkscape 1.4.4 and Blender 5.2.0 LTS
+  checks pass; LibreCAD 2.2.1.2 remains an explicit manual gate.
+- Deterministic in-memory 1,000- and 10,000-element performance fixtures and a
+  production-Chromium budget runner for load/save, spatial indexes, viewport
+  interactions, snapping, Outliner synchronization, and Geometry Nodes, with
+  median/p95 checks and bounded ignored JSON evidence.
 
 ### Changed
 
@@ -82,6 +90,16 @@ versions may still contain compatibility changes.
 - Paper viewport Undo/Redo now persists semantic viewport state: Redo creates a
   fresh live object with the same id and geometry and reconnects selection and
   interaction ownership to it.
+- Paper output now has an explicit one-sheet beta contract with multiple
+  viewports: automated checks cover ISO A0-A4/custom physical sizing, scale and
+  origin math, persisted lock/visibility state, detached color mapping that
+  preserves existing stroke widths, dependency-closed vector SVG, and vector
+  PDF with representative bundled-font/dimension output. Per-color plot
+  lineweights and multi-sheet/title-block workflows remain deferred.
+- DXF exchange now converts recognized import units to centimetres, preserves
+  qualified layer names/colors/visibility/locking as direct Model collections,
+  bounds `INSERT` expansion, exports ASCII R2000 Model layers with centimetre
+  units, and summarizes every approximated or skipped export category.
 
 ### Fixed
 

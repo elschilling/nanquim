@@ -5,6 +5,7 @@ import { enterBlockEdit, saveBlockEdit, discardBlockEdit } from './BlockManager'
 import { GeometryNodeEditor } from './GeometryNodeEditor'
 
 const propertiesPanel = document.getElementById('properties-panel')
+const PAPER_VIEWPORT_SCALE_PRESETS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500]
 
 // ── Color Copy/Paste (Blender-style) ────────────────────────────────────────
 // A single module-level clipboard so color can be carried across any color box.
@@ -207,6 +208,10 @@ function Properties(editor) {
   signals.updatedSelection.add(() => {
     render()
   })
+
+  if (signals.paperViewportsChanged && typeof signals.paperViewportsChanged.add === 'function') {
+    signals.paperViewportsChanged.add(() => render())
+  }
 
   ;['nodeGraphChanged', 'activeNodeGraphChanged', 'nodeEvaluationCompleted', 'nodeEvaluationFailed', 'geometryNodesChanged'].forEach((name) => {
     if (signals[name] && typeof signals[name].add === 'function') signals[name].add(() => render())
@@ -1160,11 +1165,16 @@ function Properties(editor) {
     orientRow.appendChild(orientSelect)
     container.appendChild(orientRow)
 
-    // Units per cm (coordinate scale)
-    createPropertyField(container, 'Scale (units/cm)', cfg.unitsPerCm, (val) => {
+    // Units per cm (coordinate density)
+    createPropertyField(container, 'Coordinate density (units/cm)', cfg.unitsPerCm, (val) => {
       const n = parseFloat(val)
       if (!isNaN(n) && n > 0) pe?.setUnitsPerCm(n)
     })
+    const densityHelp = document.createElement('p')
+    densityHelp.className = 'prop-empty-msg'
+    densityHelp.textContent = 'Set before arranging the sheet. Changing density preserves stored Paper-unit coordinates, so existing Paper positions and sizes change physically.'
+    densityHelp.style.margin = '0 8px'
+    container.appendChild(densityHelp)
 
     // Divider
     const divider = document.createElement('hr')
@@ -1193,6 +1203,12 @@ function Properties(editor) {
   // ── VIEWPORT PROPERTIES TAB ────────────────────────────────────────────────
 
   function renderViewportPropertiesTab(container, vp) {
+    const configuredUnitsPerCm = Number(editor.paperConfig?.unitsPerCm)
+    const unitsPerCm = Number.isFinite(configuredUnitsPerCm) && configuredUnitsPerCm > 0
+      ? configuredUnitsPerCm
+      : 1
+    const toCentimetres = value => value / unitsPerCm
+    const toPaperUnits = value => value * unitsPerCm
     const header = document.createElement('div')
     header.className = 'prop-section-header'
     header.textContent = 'Viewport Properties'
@@ -1200,22 +1216,61 @@ function Properties(editor) {
 
     createPropertyField(container, 'ID', vp.id, null, true)
 
-    createPropertyField(container, 'X (cm)', vp.x.toFixed(3), (val) => {
+    createPropertyField(container, 'X (cm)', toCentimetres(vp.x).toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) vp.setGeometry({ x: n })
+      if (!isNaN(n)) vp.setGeometry({ x: toPaperUnits(n) })
     })
-    createPropertyField(container, 'Y (cm)', vp.y.toFixed(3), (val) => {
+    createPropertyField(container, 'Y (cm)', toCentimetres(vp.y).toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n)) vp.setGeometry({ y: n })
+      if (!isNaN(n)) vp.setGeometry({ y: toPaperUnits(n) })
     })
-    createPropertyField(container, 'Width (cm)', vp.w.toFixed(3), (val) => {
+    createPropertyField(container, 'Width (cm)', toCentimetres(vp.w).toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) vp.setGeometry({ w: n })
+      if (!isNaN(n) && n > 0) vp.setGeometry({ w: toPaperUnits(n) })
     })
-    createPropertyField(container, 'Height (cm)', vp.h.toFixed(3), (val) => {
+    createPropertyField(container, 'Height (cm)', toCentimetres(vp.h).toFixed(3), (val) => {
       const n = parseFloat(val)
-      if (!isNaN(n) && n > 0) vp.setGeometry({ h: n })
+      if (!isNaN(n) && n > 0) vp.setGeometry({ h: toPaperUnits(n) })
     })
+    const scalePresetRow = document.createElement('div')
+    scalePresetRow.className = 'property-row'
+    const scalePresetLabel = document.createElement('label')
+    scalePresetLabel.className = 'property-label'
+    scalePresetLabel.textContent = 'Scale preset'
+    scalePresetLabel.htmlFor = 'paper-viewport-scale-preset'
+    const scalePresetSelect = document.createElement('select')
+    scalePresetSelect.id = 'paper-viewport-scale-preset'
+    scalePresetSelect.className = 'property-input property-select'
+    scalePresetSelect.setAttribute('aria-describedby', 'paper-viewport-scale-help')
+    PAPER_VIEWPORT_SCALE_PRESETS.forEach((scale) => {
+      const option = document.createElement('option')
+      option.value = String(scale)
+      option.textContent = `1:${scale}`
+      scalePresetSelect.appendChild(option)
+    })
+    const customScaleOption = document.createElement('option')
+    customScaleOption.value = 'custom'
+    customScaleOption.textContent = 'Custom (1:N)'
+    scalePresetSelect.appendChild(customScaleOption)
+    const selectedPreset = PAPER_VIEWPORT_SCALE_PRESETS.includes(Number(vp.scale))
+      ? String(vp.scale)
+      : 'custom'
+    scalePresetSelect.value = selectedPreset
+    scalePresetSelect.addEventListener('change', () => {
+      if (scalePresetSelect.value === 'custom') return
+      vp.setScale(Number(scalePresetSelect.value))
+    })
+    scalePresetRow.appendChild(scalePresetLabel)
+    scalePresetRow.appendChild(scalePresetSelect)
+    container.appendChild(scalePresetRow)
+
+    const scaleHelp = document.createElement('p')
+    scaleHelp.id = 'paper-viewport-scale-help'
+    scaleHelp.className = 'prop-empty-msg'
+    scaleHelp.textContent = 'Choose a common metric ratio or enter a custom denominator below.'
+    scaleHelp.style.margin = '0 8px'
+    container.appendChild(scaleHelp)
+
     createPropertyField(container, 'Scale (1:N)', vp.scale, (val) => {
       const n = parseFloat(val)
       if (!isNaN(n) && n > 0) vp.setScale(n)
@@ -1228,6 +1283,16 @@ function Properties(editor) {
       const n = parseFloat(val)
       if (!isNaN(n)) vp.setModelOrigin(vp.modelOriginX, n)
     })
+
+    const centerModelBtn = document.createElement('button')
+    centerModelBtn.type = 'button'
+    centerModelBtn.textContent = 'Center Model in Viewport'
+    centerModelBtn.className = 'prop-action-btn prop-center-model-btn'
+    centerModelBtn.title = 'Center the current model bounds in this viewport'
+    centerModelBtn.addEventListener('click', () => {
+      vp.centerOnModelBounds()
+    })
+    container.appendChild(centerModelBtn)
 
     // Delete button
     const deleteBtn = document.createElement('button')

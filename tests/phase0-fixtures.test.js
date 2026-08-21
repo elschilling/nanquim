@@ -165,10 +165,20 @@ describe('Phase 0 format fixtures', () => {
       ],
     })
 
-    const svgRoot = parseSvg(helper.toSVG())
-    expect(svgRoot.getAttribute('viewBox')).toBe('10 -55 80 45')
+    const conversionReport = {}
+    const svgRoot = parseSvg(helper.toSVG({ report: conversionReport }))
+    expect(conversionReport.units).toEqual({
+      code: 4,
+      factor: 0.1,
+      name: 'millimeters',
+      status: 'converted',
+    })
+    expect(svgRoot.getAttribute('viewBox')).toBe('1 -5.5 8 4.5')
     expect(directCollections(svgRoot).map((collection) => collection.getAttribute('name')).sort())
       .toEqual(['Fixtures', 'Walls'])
+    expect(directCollections(svgRoot).every(
+      (collection) => collection.getAttribute('transform') === 'matrix(0.1,0,0,-0.1,0,0)',
+    )).toBe(true)
 
     const renderedLine = svgRoot.querySelector('line')
     const renderedCircle = svgRoot.querySelector('circle')

@@ -17,6 +17,16 @@ const MAX_DOCUMENT_DIAGNOSTICS = 16
 const MAX_SOURCE_NAME_LENGTH = 512
 const MAX_ELEMENT_INDEX = 1000000000
 const SVGJS_NAMESPACE = 'http://svgjs.com/svgjs'
+const DEFAULT_DOCUMENT_VIEW_BOX = Object.freeze({ x: -5, y: -5, width: 10, height: 10 })
+const SVG_LENGTH_TO_PX = Object.freeze({
+  '': 1,
+  cm: 96 / 2.54,
+  in: 96,
+  mm: 96 / 25.4,
+  pc: 16,
+  pt: 96 / 72,
+  px: 1,
+})
 
 const JSON_METADATA = Object.freeze([
   {
@@ -61,6 +71,11 @@ const DIAGNOSTIC_MESSAGES = Object.freeze({
   'duplicate-geometry-nodes': 'Duplicate Geometry Nodes metadata was ignored; safe cached SVG remains available.',
   'duplicate-paper-annotations': 'Duplicate Paper annotation roots were ignored; Paper annotations were reset.',
   'sanitized-content': 'Unsafe or unsupported SVG content was removed while opening the document.',
+  'dxf-units-converted': 'DXF coordinates were converted to Nanquim centimeters.',
+  'dxf-unitless': 'The DXF does not declare drawing units; coordinates were interpreted as centimeters.',
+  'dxf-unsupported-units': 'The DXF declares unsupported drawing units; coordinates were interpreted as centimeters.',
+  'dxf-entities-skipped': 'Unsupported DXF entities were skipped while opening the drawing.',
+  'dxf-missing-blocks': 'DXF block INSERT references without definitions were skipped.',
 })
 
 class DocumentOpenError extends Error {
@@ -139,9 +154,10 @@ function inferSourceFormat(options = {}) {
 
 function convertDxfToSvg(source) {
   try {
-    const converted = new DxfHelper(source).toSVG()
+    const report = {}
+    const converted = new DxfHelper(source).toSVG({ report })
     assertBoundedSource(converted)
-    return converted
+    return { report, source: converted }
   } catch (error) {
     if (error instanceof DocumentOpenError) throw error
     throw documentError('invalid-dxf', 'The DXF file is corrupted or unsupported.', error)
@@ -202,11 +218,35 @@ function parseSvgDocument(source) {
   return { rawMetadataAttributes, root, sanitization }
 }
 
-function addDiagnostic(diagnostics, code) {
+function addDiagnostic(diagnostics, code, message = DIAGNOSTIC_MESSAGES[code]) {
   if (diagnostics.length >= MAX_DOCUMENT_DIAGNOSTICS) return
-  const message = DIAGNOSTIC_MESSAGES[code]
   if (!message) return
   diagnostics.push(Object.freeze({ level: 'warning', code, message }))
+}
+
+function appendDxfDiagnostics(diagnostics, report) {
+  if (!report || typeof report !== 'object') return
+  const unitStatus = report.units?.status
+  if (unitStatus === 'converted') addDiagnostic(diagnostics, 'dxf-units-converted')
+  else if (unitStatus === 'unitless') addDiagnostic(diagnostics, 'dxf-unitless')
+  else if (unitStatus === 'unsupported') addDiagnostic(diagnostics, 'dxf-unsupported-units')
+
+  const skippedEntries = report.skippedEntityTypes && typeof report.skippedEntityTypes === 'object'
+    ? Object.entries(report.skippedEntityTypes).filter(([, count]) => Number.isSafeInteger(count) && count > 0)
+    : []
+  const skippedCount = skippedEntries.reduce((total, [, count]) => total + count, 0)
+  if (skippedCount > 0) {
+    const labels = skippedEntries.slice(0, 12).map(([type]) => type).join(', ')
+    const noun = skippedCount === 1 ? 'entity was' : 'entities were'
+    addDiagnostic(
+      diagnostics,
+      'dxf-entities-skipped',
+      `${skippedCount} unsupported DXF ${noun} skipped${labels ? ` (${labels})` : ''}.`,
+    )
+  }
+  if (Number.isSafeInteger(report.missingBlockInserts) && report.missingBlockInserts > 0) {
+    addDiagnostic(diagnostics, 'dxf-missing-blocks')
+  }
 }
 
 function classifySchema(root, format, diagnostics) {
@@ -266,9 +306,25 @@ function classifySchema(root, format, diagnostics) {
   }
 }
 
-function parseViewBox(root, diagnostics) {
+function parsePositiveSvgLength(value) {
+  const match = String(value || '').trim().match(/^([+]?(?:\d+(?:\.\d*)?|\.\d+))(px|mm|cm|in|pt|pc)?$/i)
+  if (!match) return null
+  const unit = (match[2] || '').toLowerCase()
+  const factor = SVG_LENGTH_TO_PX[unit]
+  const length = Number(match[1]) * factor
+  return Number.isFinite(length) && length > 0 && length <= 1000000000 ? length : null
+}
+
+function fallbackViewBox(root) {
+  const width = parsePositiveSvgLength(root.getAttribute('width'))
+  const height = parsePositiveSvgLength(root.getAttribute('height'))
+  if (width !== null && height !== null) return { x: 0, y: 0, width, height }
+  return { ...DEFAULT_DOCUMENT_VIEW_BOX }
+}
+
+function parseViewBox(root, diagnostics, schema) {
   const raw = root.getAttribute('viewBox')
-  if (raw === null) return null
+  if (raw === null) return schema.isNative ? null : fallbackViewBox(root)
   const values = raw.trim().split(/[\s,]+/).map(Number)
   if (
     values.length !== 4
@@ -277,7 +333,7 @@ function parseViewBox(root, diagnostics) {
     || values[3] < 0
   ) {
     addDiagnostic(diagnostics, 'invalid-view-box')
-    return null
+    return schema.isNative ? null : fallbackViewBox(root)
   }
   return { x: values[0], y: values[1], width: values[2], height: values[3] }
 }
@@ -364,17 +420,21 @@ function parsePaperAnnotations(root, diagnostics) {
 function prepareDocumentSource(source, options = {}) {
   assertBoundedSource(source)
   const format = inferSourceFormat(options)
-  const svgSource = format === 'dxf' ? convertDxfToSvg(source) : repairLegacySvgjsNamespace(source)
+  const dxfConversion = format === 'dxf' ? convertDxfToSvg(source) : null
+  const svgSource = format === 'dxf'
+    ? dxfConversion.source
+    : repairLegacySvgjsNamespace(source)
   const parsed = parseSvgDocument(svgSource)
   const { rawMetadataAttributes, root, sanitization } = parsed
   const diagnostics = []
   if (sanitization.changed) addDiagnostic(diagnostics, 'sanitized-content')
+  appendDxfDiagnostics(diagnostics, dxfConversion?.report)
   const schema = classifySchema(root, format, diagnostics)
   const jsonMetadata = parseJsonMetadata(root, diagnostics, rawMetadataAttributes)
   const paperAnnotations = parsePaperAnnotations(root, diagnostics)
 
   const metadata = Object.freeze({
-    viewBox: parseViewBox(root, diagnostics),
+    viewBox: parseViewBox(root, diagnostics, schema),
     elementIndex: parseElementIndex(root, diagnostics),
     activeCollectionId: parseActiveCollectionId(root, diagnostics),
     convertedStrokes: parseConvertedStrokes(root, diagnostics),

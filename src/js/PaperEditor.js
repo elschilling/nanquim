@@ -5,9 +5,9 @@
  *
  * Coordinate system:
  *   - Paper dimensions are stored in mm.
- *   - SVG user units: 1 unit = 1cm by default (editor.paperConfig.unitsPerCm = 1).
- *   - So a paper of 210x297mm (A4) = 21x29.7 SVG units.
- *   - A viewport at 1:100 scale means 1m of draw space = 1cm on paper = 1 SVG unit.
+ *   - One paper centimetre = editor.paperConfig.unitsPerCm SVG user units.
+ *   - At the default density of 1, A4 is 21x29.7 SVG units.
+ *   - A viewport at 1:100 maps 1m of Model space to one physical paper centimetre.
  *
  * Viewport rendering strategy: LIVE <use> references.
  *   - Each PaperViewport creates an SVG <use> pointing to editor.drawing's DOM id.
@@ -18,7 +18,15 @@
  */
 
 import { PaperViewport } from './PaperViewport'
-import { exportPaperSVG, exportPaperPDF } from './utils/ExportPaper'
+import { invalidateSpatialIndexes } from './utils/invalidateSpatialIndexes'
+import {
+  exportPaperSVG,
+  exportPaperPDF,
+  getPaperModelDefinitionSources,
+  normalizePaperPaint,
+  normalizedPaperColorMap,
+  resolvePaperPaint,
+} from './utils/ExportPaper'
 
 // Standard ISO paper sizes in mm
 const PAPER_SIZES = {
@@ -31,6 +39,13 @@ const PAPER_SIZES = {
 }
 
 const PAPER_ANNOTATIONS_ID = 'paper-annotations'
+const MAX_PAPER_ORIGIN = 1000000000
+const MAX_PAPER_SCALE = 1000000000
+const MAX_PAPER_VIEWPORT_COORDINATE = 1000000
+const MIN_PAPER_SCALE = 0.000001
+const MIN_PAPER_VIEWPORT_DIMENSION = 0.000001
+const MIN_PAPER_DIMENSION = 0.1
+const MAX_PAPER_DIMENSION = 10000
 const PAPER_ANNOTATION_STYLE = Object.freeze({
   stroke: 'black',
   'stroke-width': 0.1,
@@ -71,6 +86,8 @@ function PaperEditor(editor) {
   // Last known annotation collection state. Model collection hydration clears
   // editor.collections, but must not discard this separate Paper collection.
   let annotationCollectionState = null
+  let livePaintSources = new WeakMap()
+  let livePaintNodes = new Set()
   const preparedDocumentStates = new WeakSet()
 
   // ── Activation / Deactivation ───────────────────────────────────────────────
@@ -502,9 +519,18 @@ function PaperEditor(editor) {
    * @param {number} h - height in SVG units
    * @param {number} scale - drawing scale denominator (e.g. 100 for 1:100)
    */
-  function _finiteViewportNumber(value, label, { positive = false } = {}) {
+  function _finiteViewportNumber(value, label, {
+    positive = false,
+    min = -Infinity,
+    max = Infinity,
+  } = {}) {
     const number = Number(value)
-    if (!Number.isFinite(number) || (positive && number <= 0)) {
+    if (
+      !Number.isFinite(number)
+      || (positive && number <= 0)
+      || number < min
+      || number > max
+    ) {
       throw new TypeError(`${label} must be ${positive ? 'positive and ' : ''}finite.`)
     }
     return Object.is(number, -0) ? 0 : number
@@ -524,18 +550,35 @@ function PaperEditor(editor) {
     }
     return {
       id: _normalizeViewportId(value.id, index),
-      x: _finiteViewportNumber(value.x, `Paper viewport ${index + 1} x`),
-      y: _finiteViewportNumber(value.y, `Paper viewport ${index + 1} y`),
-      w: _finiteViewportNumber(value.w, `Paper viewport ${index + 1} width`, { positive: true }),
-      h: _finiteViewportNumber(value.h, `Paper viewport ${index + 1} height`, { positive: true }),
-      scale: _finiteViewportNumber(value.scale, `Paper viewport ${index + 1} scale`, { positive: true }),
+      x: _finiteViewportNumber(value.x, `Paper viewport ${index + 1} x`, {
+        min: -MAX_PAPER_VIEWPORT_COORDINATE,
+        max: MAX_PAPER_VIEWPORT_COORDINATE,
+      }),
+      y: _finiteViewportNumber(value.y, `Paper viewport ${index + 1} y`, {
+        min: -MAX_PAPER_VIEWPORT_COORDINATE,
+        max: MAX_PAPER_VIEWPORT_COORDINATE,
+      }),
+      w: _finiteViewportNumber(value.w, `Paper viewport ${index + 1} width`, {
+        min: MIN_PAPER_VIEWPORT_DIMENSION,
+        max: MAX_PAPER_VIEWPORT_COORDINATE,
+      }),
+      h: _finiteViewportNumber(value.h, `Paper viewport ${index + 1} height`, {
+        min: MIN_PAPER_VIEWPORT_DIMENSION,
+        max: MAX_PAPER_VIEWPORT_COORDINATE,
+      }),
+      scale: _finiteViewportNumber(value.scale, `Paper viewport ${index + 1} scale`, {
+        min: MIN_PAPER_SCALE,
+        max: MAX_PAPER_SCALE,
+      }),
       modelOriginX: _finiteViewportNumber(
         value.modelOriginX,
         `Paper viewport ${index + 1} model origin x`,
+        { min: -MAX_PAPER_ORIGIN, max: MAX_PAPER_ORIGIN },
       ),
       modelOriginY: _finiteViewportNumber(
         value.modelOriginY,
         `Paper viewport ${index + 1} model origin y`,
+        { min: -MAX_PAPER_ORIGIN, max: MAX_PAPER_ORIGIN },
       ),
       visible: value.visible !== false,
       locked: value.locked === true,
@@ -641,8 +684,9 @@ function PaperEditor(editor) {
     if (modelOriginX === undefined && modelOriginY === undefined && bbox) {
       const cx = bbox.x + bbox.width / 2
       const cy = bbox.y + bbox.height / 2
-      modelOriginX = cx - (w / 2) * scale
-      modelOriginY = cy - (h / 2) * scale
+      const modelUnitsPerPaperUnit = scale / editor.paperConfig.unitsPerCm
+      modelOriginX = cx - (w / 2) * modelUnitsPerPaperUnit
+      modelOriginY = cy - (h / 2) * modelUnitsPerPaperUnit
     }
     if (modelOriginX === undefined) modelOriginX = 0
     if (modelOriginY === undefined) modelOriginY = 0
@@ -880,21 +924,23 @@ function PaperEditor(editor) {
    */
   function getUsedColors() {
     const colors = new Set()
-    const scan = (el) => {
-      if (!el || !el.node) return
-      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
-      const addColor = (c) => {
-        if (!c || c === 'none' || c === 'transparent') return
-        colors.add(normalizeColor(c))
-      }
-      addColor(el.css('stroke') || el.attr('stroke'))
-      addColor(el.css('fill') || el.attr('fill'))
-      
-      if (el.children) {
-        el.children().each(child => scan(child))
-      }
+    const colorContext = document.createElement('canvas').getContext('2d')
+    const scan = (node) => {
+      if (!node || node.nodeType !== 1) return
+      if (node.getAttribute('data-hidden') === 'true' || node.getAttribute('data-gn-source') === 'true') return
+      const remembered = livePaintSources.get(node)
+      let resolvedStyle = null
+      try { resolvedStyle = window.getComputedStyle?.(node) || null } catch (_) {}
+      ;['stroke', 'fill'].forEach((property) => {
+        const color = remembered?.[property]?.source
+          || resolvePaperPaint(node, property, colorContext, resolvedStyle)
+        if (color) colors.add(color)
+      })
+
+      Array.from(node.children).forEach(scan)
     }
-    editor.drawing.children().each(collGroup => scan(collGroup))
+    Array.from(editor.drawing.node.children).forEach(scan)
+    getPaperModelDefinitionSources(editor).forEach(scan)
     return Array.from(colors).filter(Boolean)
   }
 
@@ -905,9 +951,19 @@ function PaperEditor(editor) {
     const cfg = editor.paperConfig
     const previous = { size: cfg.size, width: cfg.width, height: cfg.height }
     if (sizeKey === 'custom') {
+      const width = customW === undefined ? cfg.width : Number(customW)
+      const height = customH === undefined ? cfg.height : Number(customH)
+      if (
+        !Number.isFinite(width)
+        || !Number.isFinite(height)
+        || width < MIN_PAPER_DIMENSION
+        || height < MIN_PAPER_DIMENSION
+        || width > MAX_PAPER_DIMENSION
+        || height > MAX_PAPER_DIMENSION
+      ) return false
       cfg.size = 'custom'
-      cfg.width = customW || cfg.width
-      cfg.height = customH || cfg.height
+      cfg.width = width
+      cfg.height = height
     } else if (PAPER_SIZES[sizeKey]) {
       cfg.size = sizeKey
       const dims = PAPER_SIZES[sizeKey]
@@ -966,6 +1022,7 @@ function PaperEditor(editor) {
     _renderPaperSheet()
     _updatePaperViewbox()
     _refreshAllViewports()
+    invalidateSpatialIndexes(editor)
     _markDocumentChanged('paper-units-per-centimeter', options)
     return true
   }
@@ -982,77 +1039,75 @@ function PaperEditor(editor) {
 
   function _applyLiveColorMapping() {
     const cfg = editor.paperConfig
-    const colorMap = cfg.colorMap
+    const colorContext = document.createElement('canvas').getContext('2d')
+    const colorMap = normalizedPaperColorMap(cfg.colorMap, colorContext)
 
-    const scan = (el) => {
-      if (!el || !el.node) return
-      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
-      
-      const node = el.node
+    // Always return to the authored cascade before resolving class and
+    // inherited paints. Otherwise a previous print mapping becomes the source
+    // of the next update and inherited descendants drift between colors.
+    _clearLiveColorMapping()
+    if (colorMap.size === 0) return
+
+    const scan = (node) => {
+      if (!node || node.nodeType !== 1) return
+      if (node.getAttribute('data-hidden') === 'true' || node.getAttribute('data-gn-source') === 'true') return
+
       // Only process geometry elements that might have stroke/fill
-      if (['g', 'path', 'line', 'circle', 'ellipse', 'rect', 'text', 'polyline', 'polygon'].includes(node.nodeName)) {
-        ['stroke', 'fill'].forEach(attr => {
-          const dataKey = 'nanquimOrig' + attr.charAt(0).toUpperCase() + attr.slice(1)
-          
-          // Get the TRUE source value. If already mapped, it's in dataset.
-          // Note: we check for existence of the key, as the value might be an empty string.
-          const isAlreadyMapped = dataKey in node.dataset
-          const sourceVal = isAlreadyMapped ? (node.dataset[dataKey] || node.getAttribute(attr)) : (node.style[attr] || node.getAttribute(attr))
+      if (['g', 'path', 'line', 'circle', 'ellipse', 'rect', 'text', 'tspan', 'polyline', 'polygon', 'use'].includes(node.localName)) {
+        let resolvedStyle = null
+        try { resolvedStyle = window.getComputedStyle?.(node) || null } catch (_) {}
+        ;['stroke', 'fill'].forEach(property => {
+          const source = resolvePaperPaint(node, property, colorContext, resolvedStyle)
+          const printColor = source ? colorMap.get(source) : null
+          if (!printColor || printColor === source) return
 
-          if (!sourceVal || sourceVal === 'none' || sourceVal === 'transparent' || sourceVal === 'inherit') {
-            // If it was previously mapped but the source is now gone/none, clear tracking
-            if (isAlreadyMapped) {
-              node.style[attr] = node.dataset[dataKey]
-              delete node.dataset[dataKey]
-            }
-            return
+          const dataKey = 'nanquimOrig' + property.charAt(0).toUpperCase() + property.slice(1)
+          const remembered = livePaintSources.get(node) || {}
+          remembered[property] = {
+            source,
+            inline: node.style.getPropertyValue(property),
+            hadStyleAttribute: node.hasAttribute('style'),
           }
-
-          let norm = normalizeColor(sourceVal)
-          if (norm && colorMap[norm] && colorMap[norm].enabled && colorMap[norm].printColor !== norm) {
-            // Store original inline style if not already stored
-            if (!isAlreadyMapped) {
-              node.dataset[dataKey] = node.style[attr] || ''
-            }
-            // Apply theme color
-            node.style[attr] = colorMap[norm].printColor
-          } else {
-            // Restore if previously mapped but no longer needed (e.g. disabled in map or maps to itself)
-            if (isAlreadyMapped) {
-              node.style[attr] = node.dataset[dataKey]
-              delete node.dataset[dataKey]
-            }
-          }
+          livePaintSources.set(node, remembered)
+          livePaintNodes.add(node)
+          node.dataset[dataKey] = remembered[property].inline
+          node.style.setProperty(property, printColor)
         })
       }
 
-      if (el.children && typeof el.children === 'function') {
-        el.children().each(child => scan(child))
-      }
+      Array.from(node.children).forEach(scan)
     }
-    scan(editor.drawing)
+    scan(editor.drawing.node)
+    getPaperModelDefinitionSources(editor).forEach(scan)
   }
 
   function _clearLiveColorMapping() {
-    const scan = (el) => {
-      if (!el || !el.node) return
-      if (el.attr && (el.attr('data-hidden') === 'true' || el.attr('data-gn-source') === 'true')) return
-      const node = el.node
-      
+    const restore = (node) => {
+      if (!node || node.nodeType !== 1) return
+      const rememberedPaints = livePaintSources.get(node)
+      const preserveEmptyStyle = Object.values(rememberedPaints || {})
+        .some(entry => entry.hadStyleAttribute)
       // Restore original colors
-      ;['Stroke', 'Fill'].forEach(suffix => {
-        const dataKey = 'nanquimOrig' + suffix
+      ;['stroke', 'fill'].forEach(property => {
+        const dataKey = 'nanquimOrig' + property.charAt(0).toUpperCase() + property.slice(1)
         if (dataKey in node.dataset) {
-          node.style[suffix.toLowerCase()] = node.dataset[dataKey]
+          const remembered = livePaintSources.get(node)?.[property]
+          const original = remembered?.inline ?? node.dataset[dataKey]
+          if (original) node.style.setProperty(property, original)
+          else node.style.removeProperty(property)
           delete node.dataset[dataKey]
         }
       })
-
-      if (el.children && typeof el.children === 'function') {
-        el.children().each(child => scan(child))
+      if (!preserveEmptyStyle && !node.getAttribute('style')?.trim()) {
+        node.removeAttribute('style')
       }
     }
-    scan(editor.drawing)
+    livePaintNodes.forEach(restore)
+    editor.svg?.node?.querySelectorAll(
+      '[data-nanquim-orig-stroke], [data-nanquim-orig-fill]',
+    ).forEach(restore)
+    livePaintSources = new WeakMap()
+    livePaintNodes = new Set()
   }
 
   // ── Signals: keep viewports in sync with model changes ────────────────────
@@ -1109,6 +1164,7 @@ function PaperEditor(editor) {
   this.createViewport = createViewport
   this.removeViewport = removeViewport
   this.getUsedColors = getUsedColors
+  this.getLivePaintSource = (node, property) => livePaintSources.get(node)?.[property]?.source || null
   this.setPaperSize = setPaperSize
   this.setOrientation = setOrientation
   this.setUnitsPerCm = setUnitsPerCm
@@ -1116,29 +1172,6 @@ function PaperEditor(editor) {
   this.exportPDF = doExportPDF
   this.getPaperDimsSVG = _getPaperDimsSVG
   this.PAPER_SIZES = PAPER_SIZES
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function normalizeColor(color) {
-  if (!color || typeof color !== 'string') return null
-  const c = color.trim().toLowerCase()
-  if (c === 'none' || c === 'transparent' || c === 'inherit' || c.startsWith('url(')) return null
-
-  // Use a shared canvas context if possible for performance, but for now this is safe
-  const ctx = document.createElement('canvas').getContext('2d')
-  
-  // To detect invalid colors, we set a known color first and see if it changes
-  ctx.fillStyle = '#123456'
-  ctx.fillStyle = color
-  const result = ctx.fillStyle
-  
-  // If result is still #123456, it means setting 'color' failed OR 'color' was actually #123456
-  if (result === '#123456' && c !== '#123456') {
-    return null
-  }
-  
-  return result // returns '#rrggbb'
 }
 
 export { PaperEditor }

@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import {
+  MAX_SVG_GEOMETRY_MAGNITUDE,
   markupFitsSvgElementBudget,
   parseSafeJson,
   remapSvgIds,
@@ -129,6 +130,7 @@ class PasteCommand extends Command {
       const scopeSelector = `[data-nanquim-paste-scope="${scopeToken}"]`
       try {
         sourceRoot = sanitizeSvgDocument(doc, {
+          rootViewportIsGeometry: !wrappedFragment,
           scopeSelector,
           // Fragment pastes discard their synthetic <svg>, so the scope
           // wrapper replaces that stylesheet root. A full SVG retains its root
@@ -181,7 +183,12 @@ class PasteCommand extends Command {
             Array.from(current.node.attributes).forEach(attr => {
               if (!attr.name.startsWith('data-')) return
               const key = attr.name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-              const value = parseSafeJson(attr.value, { maxLength: 1024 * 1024, maxDepth: 32, maxNodes: 50000 })
+              const value = parseSafeJson(attr.value, {
+                maxLength: 1024 * 1024,
+                maxDepth: 32,
+                maxNodes: 50000,
+                maxAbsNumber: MAX_SVG_GEOMETRY_MAGNITUDE,
+              })
               if (value !== null) current.data(key, value)
               else if (/^\s*[{[]/.test(attr.value)) current.node.removeAttribute(attr.name)
               else current.data(key, attr.value)

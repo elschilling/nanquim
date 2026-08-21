@@ -1,0 +1,39 @@
+{
+  "profile": "nanquim-svg-interoperability-v1",
+  "units": "millimetres",
+  "physicalSize": {
+    "width": 210,
+    "height": 148
+  },
+  "viewBox": [0, 0, 210, 148],
+  "supportedElementCounts": {
+    "circle": 2,
+    "ellipse": 1,
+    "line": 2,
+    "path": 6,
+    "polygon": 1,
+    "polyline": 1,
+    "rect": 4,
+    "text": 1,
+    "use": 2
+  },
+  "localReferences": [
+    "profile-arrow",
+    "profile-block",
+    "profile-clip",
+    "profile-gradient",
+    "profile-hatch"
+  ],
+  "blenderImport": {
+    "objects": 17,
+    "curves": 14,
+    "splines": 14
+  },
+  "toolVersions": {
+    "inkscape": "^Inkscape 1\\.4\\.4(?:[ (]|$)",
+    "blender": "^Blender 5\\.2\\.0 LTS(?:[ (]|$)"
+  },
+  "tolerances": {
+    "boundsAbsolute": 0.01
+  }
+}

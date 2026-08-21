@@ -5,6 +5,7 @@ import { SVG, registerWindow } from '@svgdotjs/svg.js'
 
 import { PaperEditor } from '../src/js/PaperEditor.js'
 import { DocumentState } from '../src/js/document/DocumentState.js'
+import { buildPaperSVGString } from '../src/js/utils/ExportPaper.js'
 
 class TestSignal {
   constructor() {
@@ -70,6 +71,8 @@ function createFixture({ observe = false } = {}) {
       colorMap: {},
     },
     selected: [],
+    spatialIndex: { markDirty: vi.fn() },
+    fullSpatialIndex: { markDirty: vi.fn() },
     signals,
     svg,
   }
@@ -159,13 +162,20 @@ describe('Paper document state', () => {
     const colorContext = {
       _fillStyle: '#000000',
       get fillStyle() { return this._fillStyle },
-      set fillStyle(value) { this._fillStyle = String(value).toLowerCase() },
+      set fillStyle(value) {
+        const source = String(value).toLowerCase().replaceAll(' ', '')
+        this._fillStyle = ({
+          white: '#ffffff',
+          'rgb(0,0,0)': '#000000',
+        })[source] || source
+      },
     }
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(colorContext)
+    let colorLine
     editor.documentState.runWithoutTracking(() => {
-      modelCollection.line(0, 0, 5, 5).attr('stroke', '#ffffff')
-      editor.paperConfig.colorMap['#ffffff'] = {
-        printColor: '#000000',
+      colorLine = modelCollection.line(0, 0, 5, 5).attr('stroke', '#ffffff')
+      editor.paperConfig.colorMap.white = {
+        printColor: 'rgb(0, 0, 0)',
         enabled: true,
       }
     })
@@ -176,21 +186,31 @@ describe('Paper document state', () => {
     await Promise.resolve()
     editor.documentState.flushObservedMutations()
     expect(editor.documentState.isDirty).toBe(false)
+    expect(colorLine.node.style.stroke).toBe('rgb(0, 0, 0)')
 
     editor.mode = 'model'
     paperEditor.deactivate()
     await Promise.resolve()
     editor.documentState.flushObservedMutations()
     expect(editor.documentState.isDirty).toBe(false)
+    expect(colorLine.node.style.stroke).toBe('')
 
-    editor.paperConfig.colorMap['#ffffff'].enabled = false
+    editor.paperConfig.colorMap.white.enabled = false
     editor.signals.colorMapUpdated.dispatch()
     expect(editor.documentState.isDirty).toBe(true)
 
     editor.documentState.replaceSession({ name: 'paper.svg', dirty: false })
+    editor.spatialIndex.markDirty.mockClear()
+    editor.fullSpatialIndex.markDirty.mockClear()
     expect(paperEditor.setUnitsPerCm(2)).toBe(true)
     expect(editor.paperConfig.unitsPerCm).toBe(2)
     expect(editor.documentState.isDirty).toBe(true)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledOnce()
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledOnce()
+    expect(paperEditor.setUnitsPerCm(2)).toBe(false)
+    expect(paperEditor.setUnitsPerCm(Number.POSITIVE_INFINITY)).toBe(false)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledOnce()
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledOnce()
 
     editor.documentState.replaceSession({ name: 'paper.svg', dirty: false })
     const viewport = paperEditor.createViewport(1, 2, 3, 4, 50, { silent: true })
@@ -199,6 +219,133 @@ describe('Paper document state', () => {
     expect(viewport).toMatchObject({ x: 6, y: 2, w: 8, h: 4 })
     expect(editor.documentState.isDirty).toBe(true)
     editor.documentState.disconnect()
+  })
+
+  test('keeps class and block paint sources stable through live preview and detached export', async () => {
+    const { editor, modelCollection, paperEditor } = createFixture({ observe: true })
+    const colorContext = {
+      _fillStyle: '#000000',
+      get fillStyle() { return this._fillStyle },
+      set fillStyle(value) {
+        const source = String(value).toLowerCase().replaceAll(' ', '')
+        this._fillStyle = ({
+          'rgb(17,34,51)': '#112233',
+          'rgb(51,68,85)': '#334455',
+          'rgb(68,85,102)': '#445566',
+          'rgb(102,119,136)': '#667788',
+        })[source] || source
+      },
+    }
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(colorContext)
+
+    let inheritedGroup
+    let blockLine
+    editor.documentState.runWithoutTracking(() => {
+      const defs = editor.svg.defs().node
+      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+      style.textContent = [
+        '.live-inherited-paint { stroke: rgb(17, 34, 51); fill: none; }',
+        '.live-block-paint { stroke: rgb(68, 85, 102); fill: none; }',
+      ].join('\n')
+      defs.appendChild(style)
+      const browserStyle = document.createElement('style')
+      browserStyle.textContent = style.textContent
+      document.body.appendChild(browserStyle)
+      inheritedGroup = modelCollection.group().addClass('live-inherited-paint')
+      inheritedGroup.line(0, 0, 5, 0).attr('id', 'live-inherited-line')
+      const block = document.createElementNS('http://www.w3.org/2000/svg', 'symbol')
+      block.setAttribute('id', 'live-class-block')
+      block.setAttribute('data-block-def', 'true')
+      blockLine = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+      blockLine.setAttribute('id', 'live-class-block-line')
+      blockLine.setAttribute('class', 'live-block-paint')
+      blockLine.setAttribute('x2', '5')
+      block.appendChild(blockLine)
+      defs.appendChild(block)
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use')
+      use.setAttribute('href', '#live-class-block')
+      modelCollection.node.appendChild(use)
+      editor.paperConfig.colorMap = {
+        '#112233': { enabled: true, printColor: '#334455' },
+        '#445566': { enabled: true, printColor: '#667788' },
+      }
+    })
+    const sourceDrawingMarkup = editor.drawing.node.outerHTML
+    const sourceDefinitionsMarkup = editor.svg.node.querySelector('defs').outerHTML
+    editor.documentState.replaceSession({ name: 'paper.svg', dirty: false })
+
+    expect(paperEditor.getUsedColors()).toEqual(expect.arrayContaining(['#112233', '#445566']))
+    editor.mode = 'paper'
+    paperEditor.activate()
+    await Promise.resolve()
+    editor.documentState.flushObservedMutations()
+
+    expect(inheritedGroup.node.style.stroke.replaceAll(' ', '')).toBe('rgb(51,68,85)')
+    expect(blockLine.style.stroke.replaceAll(' ', '')).toBe('rgb(102,119,136)')
+    expect(paperEditor.getUsedColors()).toEqual(expect.arrayContaining(['#112233', '#445566']))
+    expect(editor.documentState.isDirty).toBe(false)
+    const activeMarkup = editor.svg.node.outerHTML
+
+    const output = buildPaperSVGString(editor, editor.paperViewports)
+    const parsed = new DOMParser().parseFromString(output, 'image/svg+xml')
+    expect(parsed.querySelector('defs #Collection .live-inherited-paint').style.stroke.replaceAll(' ', ''))
+      .toBe('rgb(51,68,85)')
+    expect(parsed.querySelector('defs #live-class-block-line').style.stroke.replaceAll(' ', ''))
+      .toBe('rgb(102,119,136)')
+    expect(editor.svg.node.outerHTML).toBe(activeMarkup)
+    expect(editor.documentState.isDirty).toBe(false)
+
+    editor.mode = 'model'
+    paperEditor.deactivate()
+    await Promise.resolve()
+    editor.documentState.flushObservedMutations()
+    expect(editor.drawing.node.outerHTML).toBe(sourceDrawingMarkup)
+    expect(editor.svg.node.querySelector('defs').outerHTML).toBe(sourceDefinitionsMarkup)
+    expect(editor.documentState.isDirty).toBe(false)
+    editor.documentState.disconnect()
+  })
+
+  test('rejects serializer-incompatible viewport bounds without dirtying', () => {
+    const { editor, paperEditor } = createFixture()
+    paperEditor.ensureDocumentInfrastructure()
+    const viewport = paperEditor.createViewport(1, 2, 3, 4, 50, { silent: true })
+    editor.documentState.replaceSession({ name: 'paper.svg', dirty: false })
+    const original = {
+      x: viewport.x,
+      y: viewport.y,
+      w: viewport.w,
+      h: viewport.h,
+    }
+
+    for (const geometry of [
+      { x: 1000000.000001 },
+      { y: -1000000.000001 },
+      { w: 1000000.000001 },
+      { h: 0.0000001 },
+    ]) {
+      expect(viewport.setGeometry(geometry)).toBe(false)
+      expect(viewport).toMatchObject(original)
+      expect(editor.documentState.snapshot()).toMatchObject({ revision: 0, isDirty: false })
+    }
+
+    const count = editor.paperViewports.length
+    expect(() => paperEditor.createViewport(1000001, 0, 1, 1, 1, { silent: true }))
+      .toThrow(/viewport 2 x/i)
+    expect(() => paperEditor.replaceDocumentState({
+      annotations: null,
+      viewports: [{
+        id: 'too-wide',
+        x: 0,
+        y: 0,
+        w: 1000001,
+        h: 1,
+        scale: 1,
+        modelOriginX: 0,
+        modelOriginY: 0,
+      }],
+    })).toThrow(/viewport 1 width/i)
+    expect(editor.paperViewports).toHaveLength(count)
+    expect(editor.documentState.snapshot()).toMatchObject({ revision: 0, isDirty: false })
   })
 
   test('destroying a viewport cancels an in-flight document-level pan without dirtying a new session', () => {
@@ -368,6 +515,75 @@ describe('Paper document state', () => {
     expect(editor.collections.get('paper-annotations')).toMatchObject({
       visible: true,
       locked: false,
+    })
+  })
+
+  test('exports every ISO preset at its physical portrait and landscape size', () => {
+    const { editor, paperEditor } = createFixture()
+    const sizes = {
+      A0: [841, 1189],
+      A1: [594, 841],
+      A2: [420, 594],
+      A3: [297, 420],
+      A4: [210, 297],
+    }
+    paperEditor.ensureDocumentInfrastructure()
+
+    for (const unitsPerCm of [1, 2.5]) {
+      paperEditor.setUnitsPerCm(unitsPerCm, { silent: true })
+      for (const [size, [portraitWidth, portraitHeight]] of Object.entries(sizes)) {
+        paperEditor.setOrientation('portrait', { silent: true })
+        paperEditor.setPaperSize(size, undefined, undefined, { silent: true })
+        for (const [orientation, width, height] of [
+          ['portrait', portraitWidth, portraitHeight],
+          ['landscape', portraitHeight, portraitWidth],
+        ]) {
+          paperEditor.setOrientation(orientation, { silent: true })
+          const output = buildPaperSVGString(editor, editor.paperViewports)
+          const root = new DOMParser().parseFromString(output, 'image/svg+xml').documentElement
+          const viewBox = root.getAttribute('viewBox').split(/\s+/).map(Number)
+
+          expect(root.getAttribute('width')).toBe(`${width}mm`)
+          expect(root.getAttribute('height')).toBe(`${height}mm`)
+          expect(viewBox.slice(0, 2)).toEqual([0, 0])
+          expect(viewBox[2]).toBeCloseTo(width * unitsPerCm / 10, 10)
+          expect(viewBox[3]).toBeCloseTo(height * unitsPerCm / 10, 10)
+        }
+      }
+    }
+  })
+
+  test('centers new viewports with units-aware origins and rejects invalid custom sizes', () => {
+    const { editor, paperEditor } = createFixture()
+    editor.paperConfig.unitsPerCm = 2.5
+    editor._drawingBBox = { x: 0, y: 0, width: 100, height: 60 }
+
+    const viewport = paperEditor.createViewport(1, 1, 10, 8, 100, { silent: true })
+    expect(viewport).toMatchObject({ modelOriginX: -150, modelOriginY: -130 })
+
+    const viewportCount = editor.paperViewports.length
+    expect(() => paperEditor.createViewport(1, 1, 10, 8, 0, { silent: true }))
+      .toThrow(/scale/)
+    expect(() => paperEditor.createViewport(1, 1, 10, 8, 100, {
+      modelOriginX: 1000000001,
+      modelOriginY: 0,
+      silent: true,
+    })).toThrow(/origin/)
+    expect(editor.paperViewports).toHaveLength(viewportCount)
+
+    const before = { ...editor.paperConfig }
+    const revision = editor.documentState.revision
+    expect(paperEditor.setPaperSize('custom', Number.POSITIVE_INFINITY, 297)).toBe(false)
+    expect(paperEditor.setPaperSize('custom', 0.09, 297)).toBe(false)
+    expect(paperEditor.setPaperSize('custom', 210, 10001)).toBe(false)
+    expect(editor.paperConfig).toMatchObject(before)
+    expect(editor.documentState.revision).toBe(revision)
+
+    expect(paperEditor.setPaperSize('custom', 420.5, 297.25)).toBe(true)
+    expect(editor.paperConfig).toMatchObject({
+      size: 'custom',
+      width: 420.5,
+      height: 297.25,
     })
   })
 

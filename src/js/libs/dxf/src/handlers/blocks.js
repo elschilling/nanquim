@@ -1,6 +1,6 @@
 import entitiesHandler from './entities'
 
-export default (tuples) => {
+export default (tuples, report = null) => {
   let state
   const blocks = []
   let block
@@ -17,7 +17,7 @@ export default (tuples) => {
       blocks.push(block)
     } else if (value === 'ENDBLK') {
       if (state === 'entities') {
-        block.entities = entitiesHandler(entitiesTuples)
+        block.entities = entitiesHandler(entitiesTuples, report)
       } else {
         block.entities = []
       }

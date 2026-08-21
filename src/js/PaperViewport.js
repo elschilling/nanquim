@@ -24,10 +24,12 @@
  *   </g>
  *
  * The draw drawing group has id="Collection" (set in Editor.js).
- * At scale 1:S: SVG units in draw = S × SVG units in paper.
- * So we need to scale draw content DOWN by 1/S and translate so that
- * drawOrigin lands at (vpX, vpY).
+ * Paper geometry is stored in SVG user units, with U = paperConfig.unitsPerCm
+ * user units per centimetre. At scale 1:S, model content is scaled by U/S and
+ * translated so that drawOrigin lands at (vpX, vpY).
  */
+
+import { invalidateSpatialIndexes } from './utils/invalidateSpatialIndexes'
 
 function PaperViewport(editor, parentGroup, opts) {
   const {
@@ -124,6 +126,59 @@ function PaperViewport(editor, parentGroup, opts) {
   }
 }
 
+const MAX_PAPER_ORIGIN = 1000000000
+const MAX_PAPER_SCALE = 1000000000
+const MAX_PAPER_VIEWPORT_COORDINATE = 1000000
+const MIN_PAPER_SCALE = 0.000001
+const MIN_PAPER_VIEWPORT_DIMENSION = 0.000001
+
+function normalizedUnitsPerCm(editor) {
+  const unitsPerCm = Number(editor?.paperConfig?.unitsPerCm)
+  return Number.isFinite(unitsPerCm) && unitsPerCm > 0 ? unitsPerCm : 1
+}
+
+function normalizedScale(value) {
+  const scale = Number(value)
+  if (
+    !Number.isFinite(scale)
+    || scale < MIN_PAPER_SCALE
+    || scale > MAX_PAPER_SCALE
+  ) return null
+  return scale
+}
+
+function normalizedOrigin(value) {
+  const origin = Number(value)
+  if (!Number.isFinite(origin) || Math.abs(origin) > MAX_PAPER_ORIGIN) return null
+  return Object.is(origin, -0) ? 0 : origin
+}
+
+function normalizedModelBounds(value) {
+  const bounds = {
+    x: Number(value?.x),
+    y: Number(value?.y),
+    width: Number(value?.width),
+    height: Number(value?.height),
+  }
+  if (
+    !Object.values(bounds).every(Number.isFinite)
+    || bounds.width < 0
+    || bounds.height < 0
+    || (bounds.width === 0 && bounds.height === 0)
+  ) return null
+  return bounds
+}
+
+function currentModelBounds(editor) {
+  try {
+    const liveBounds = normalizedModelBounds(editor?.drawing?.node?.getBBox?.())
+    if (liveBounds) return liveBounds
+  } catch (_) {
+    // Paper mode hides the Model SVG in browsers where getBBox then throws.
+  }
+  return normalizedModelBounds(editor?._drawingBBox)
+}
+
 /**
  * Update the SVG transform on the <use> element based on current
  * scale, modelOrigin, and viewport position.
@@ -133,11 +188,12 @@ function PaperViewport(editor, parentGroup, opts) {
  *   paperX = vpX + (modelX - modelOriginX) / scale × unitsPerCm
  *   paperY = vpY + (modelY - modelOriginY) / scale × unitsPerCm
  *
- *   As SVG transform: translate(vpX - modelOriginX/scale, vpY - modelOriginY/scale) scale(1/scale)
+ *   As SVG transform, with U SVG units per paper centimetre:
+ *   translate(vpX - modelOriginX*U/scale, vpY - modelOriginY*U/scale) scale(U/scale)
  */
 PaperViewport.prototype.refreshTransform = function () {
-  const { x, y, scale, modelOriginX, modelOriginY, _useEl } = this
-  const s = 1 / scale
+  const { x, y, scale, modelOriginX, modelOriginY, _useEl, _editor } = this
+  const s = normalizedUnitsPerCm(_editor) / scale
   const tx = x - modelOriginX * s
   const ty = y - modelOriginY * s
   // Use an explicit matrix so SVG.js does not apply its default center origin.
@@ -188,8 +244,12 @@ PaperViewport.prototype.setGeometry = function (values = {}, options = {}) {
     || !Number.isFinite(next.y)
     || !Number.isFinite(next.w)
     || !Number.isFinite(next.h)
-    || next.w <= 0
-    || next.h <= 0
+    || Math.abs(next.x) > MAX_PAPER_VIEWPORT_COORDINATE
+    || Math.abs(next.y) > MAX_PAPER_VIEWPORT_COORDINATE
+    || next.w < MIN_PAPER_VIEWPORT_DIMENSION
+    || next.h < MIN_PAPER_VIEWPORT_DIMENSION
+    || next.w > MAX_PAPER_VIEWPORT_COORDINATE
+    || next.h > MAX_PAPER_VIEWPORT_COORDINATE
   ) return false
   if (next.x === this.x && next.y === this.y && next.w === this.w && next.h === this.h) {
     return false
@@ -197,6 +257,7 @@ PaperViewport.prototype.setGeometry = function (values = {}, options = {}) {
 
   Object.assign(this, next)
   this.refreshGeometry()
+  invalidateSpatialIndexes(this._editor)
   this._persistChange('paper-viewport-geometry', options)
   return true
 }
@@ -206,21 +267,54 @@ PaperViewport.prototype.setGeometry = function (values = {}, options = {}) {
  * top-left of the viewport). Usually set by panning inside the viewport.
  */
 PaperViewport.prototype.setModelOrigin = function (mx, my, options = {}) {
-  if (this.modelOriginX === mx && this.modelOriginY === my) return false
-  this.modelOriginX = mx
-  this.modelOriginY = my
+  const nextX = normalizedOrigin(mx)
+  const nextY = normalizedOrigin(my)
+  if (nextX === null || nextY === null) return false
+  if (this.modelOriginX === nextX && this.modelOriginY === nextY) return false
+  this.modelOriginX = nextX
+  this.modelOriginY = nextY
   this.refreshTransform()
+  invalidateSpatialIndexes(this._editor)
   this._persistChange('paper-viewport-origin', options)
   return true
+}
+
+/**
+ * Center the current model bounds inside this viewport. PaperEditor captures a
+ * model-space bounding box before hiding Model Space; a live box is preferred
+ * when the browser can still provide one.
+ */
+PaperViewport.prototype.centerOnModelBounds = function (options = {}) {
+  const bounds = currentModelBounds(this._editor)
+  const scale = normalizedScale(this.scale)
+  if (
+    !bounds
+    || scale === null
+    || !Number.isFinite(this.w)
+    || !Number.isFinite(this.h)
+    || this.w <= 0
+    || this.h <= 0
+  ) return false
+
+  const modelUnitsPerPaperUnit = scale / normalizedUnitsPerCm(this._editor)
+  const centerX = bounds.x + bounds.width / 2
+  const centerY = bounds.y + bounds.height / 2
+  return this.setModelOrigin(
+    centerX - (this.w / 2) * modelUnitsPerPaperUnit,
+    centerY - (this.h / 2) * modelUnitsPerPaperUnit,
+    options,
+  )
 }
 
 /**
  * Set the drawing scale (e.g. 100 for 1:100).
  */
 PaperViewport.prototype.setScale = function (scale, options = {}) {
-  if (this.scale === scale) return false
-  this.scale = scale
+  const nextScale = normalizedScale(scale)
+  if (nextScale === null || this.scale === nextScale) return false
+  this.scale = nextScale
   this.refreshGeometry()
+  invalidateSpatialIndexes(this._editor)
   this._persistChange('paper-viewport-scale', options)
   return true
 }
@@ -238,6 +332,7 @@ PaperViewport.prototype.setVisible = function (visible, options = {}) {
   } else {
     this._group.hide()
   }
+  invalidateSpatialIndexes(this._editor)
   this._persistChange('paper-viewport-visibility', options)
   return true
 }
@@ -251,6 +346,7 @@ PaperViewport.prototype.setLocked = function (locked, options = {}) {
   this.locked = nextLocked
   this._group.attr('data-locked', nextLocked ? 'true' : null)
   if (nextLocked) this.deactivate()
+  invalidateSpatialIndexes(this._editor)
   this._persistChange('paper-viewport-lock', options)
   return true
 }
@@ -335,8 +431,9 @@ PaperViewport.prototype._attachInteractions = function() {
         // 2. Convert paper SVG units delta to model units delta
         // If we move the mouse RIGHT, we are looking at things to the LEFT in the model, 
         // which means the modelOriginX decreases.
-        const modelDx = -svgDx * this.scale
-        const modelDy = -svgDy * this.scale
+        const modelUnitsPerPaperUnit = this.scale / normalizedUnitsPerCm(_editor)
+        const modelDx = -svgDx * modelUnitsPerPaperUnit
+        const modelDy = -svgDy * modelUnitsPerPaperUnit
 
         panState.moved = this.setModelOrigin(
           startOrigin.x + modelDx,

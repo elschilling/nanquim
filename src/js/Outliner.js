@@ -103,6 +103,22 @@ function Outliner(editor) {
     })
   }
 
+  function clearSelectedViewport(vp) {
+    const isSelected = editor.selected.some(item => item?._paperVp === vp)
+    if (!isSelected) return false
+    signals.clearSelection.dispatch()
+    signals.updatedSelection.dispatch()
+    return true
+  }
+
+  function restoreViewportControlFocus(vpId, action, shouldRestore) {
+    if (!shouldRestore) return
+    const control = Array.from(
+      drawingTree.querySelectorAll(`[data-paper-viewport-action="${action}"]`),
+    ).find(candidate => candidate.getAttribute('data-paper-viewport-id') === vpId)
+    control?.focus()
+  }
+
   function renderViewportsPseudoCollection() {
     const vps = editor.paperViewports || []
 
@@ -136,6 +152,8 @@ function Outliner(editor) {
       const vpUl = document.createElement('ul')
       const vpLi = document.createElement('li')
       vpLi.className = 'collection-row'
+      if (vp.visible === false) vpLi.classList.add('collection-hidden-row')
+      if (vp.locked) vpLi.classList.add('collection-locked-row')
 
       const vpLeft = document.createElement('div')
       vpLeft.style.cssText = 'display:flex;align-items:center;flex:1;padding-left:20px;cursor:pointer;'
@@ -163,14 +181,43 @@ function Outliner(editor) {
       // Visibility
       const iconsDiv = document.createElement('div')
       iconsDiv.className = 'collection-icons'
-      const eyeIcon = document.createElement('div')
-      eyeIcon.className = 'icon collection-icon icon-restrict-screen' + (vp.visible ? '' : ' icon-off')
+      const eyeIcon = document.createElement('button')
+      eyeIcon.type = 'button'
+      eyeIcon.className = 'icon collection-icon icon-restrict-screen'
+      if (vp.visible === false) eyeIcon.classList.add('icon-off')
+      eyeIcon.title = vp.visible === false ? `Show viewport ${vp.id}` : `Hide viewport ${vp.id}`
+      eyeIcon.setAttribute('aria-label', eyeIcon.title)
+      eyeIcon.setAttribute('aria-pressed', String(vp.visible !== false))
+      eyeIcon.setAttribute('data-paper-viewport-action', 'visibility')
+      eyeIcon.setAttribute('data-paper-viewport-id', vp.id)
       eyeIcon.addEventListener('click', (e) => {
         e.stopPropagation()
-        vp.setVisible(!vp.visible)
-        editor.signals.paperViewportsChanged.dispatch()
+        const shouldRestoreFocus = document.activeElement === eyeIcon
+        const nextVisible = vp.visible === false
+        if (!nextVisible) clearSelectedViewport(vp)
+        vp.setVisible(nextVisible)
+        restoreViewportControlFocus(vp.id, 'visibility', shouldRestoreFocus)
       })
       iconsDiv.appendChild(eyeIcon)
+
+      const lockIcon = document.createElement('button')
+      lockIcon.type = 'button'
+      lockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+      lockIcon.classList.add(vp.locked ? 'icon-on' : 'icon-off')
+      lockIcon.title = vp.locked ? `Unlock viewport ${vp.id}` : `Lock viewport ${vp.id}`
+      lockIcon.setAttribute('aria-label', lockIcon.title)
+      lockIcon.setAttribute('aria-pressed', String(vp.locked === true))
+      lockIcon.setAttribute('data-paper-viewport-action', 'lock')
+      lockIcon.setAttribute('data-paper-viewport-id', vp.id)
+      lockIcon.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const shouldRestoreFocus = document.activeElement === lockIcon
+        const nextLocked = vp.locked !== true
+        if (nextLocked) clearSelectedViewport(vp)
+        vp.setLocked(nextLocked)
+        restoreViewportControlFocus(vp.id, 'lock', shouldRestoreFocus)
+      })
+      iconsDiv.appendChild(lockIcon)
 
       vpLi.appendChild(vpLeft)
       vpLi.appendChild(iconsDiv)
