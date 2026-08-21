@@ -114,6 +114,11 @@ Node graphs are stored in saved SVG metadata, preserve a last-known rendered SVG
 
 Enter a command or alias in the terminal, then follow its prompt.
 
+The left command palette exposes the same registry-backed commands as the
+terminal through icon buttons. Drag its right edge to resize it: the compact
+rail shows icons, while widths of 168px or more reveal tool names grouped by
+category. Use **Tools** in the application bar or press `F4` to show or hide it.
+
 | Area | Commands |
 | --- | --- |
 | General | `HELP (?)` |
@@ -138,6 +143,7 @@ Enter a command or alias in the terminal, then follow its prompt.
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / Redo |
 | `F2` | Expand or restore the terminal |
 | `F3` | Toggle all viewport overlays |
+| `F4` | Show or hide the command tools palette |
 | `F7` | Toggle the grid |
 | `F8` | Toggle Ortho |
 | `F9` | Toggle object snapping |

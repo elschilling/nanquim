@@ -19,6 +19,8 @@ versions may still contain compatibility changes.
   custom accent/background colors with adaptive foreground contrast.
 - A project-authored technical-drafting SVG icon set and original Nanquim
   pen-nib application mark.
+- A resizable left command palette with distinct project-authored icons for all
+  registered tools, compact and categorized labeled modes, and an `F4` toggle.
 
 ### Changed
 

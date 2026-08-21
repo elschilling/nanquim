@@ -70,5 +70,15 @@
           input.overlay-checkbox(type='checkbox' onchange='handleToggleNonScalingStroke(this.checked)')
           | Non-scaling stroke
 
-  .layout-editor#canvas
-    include Terminal
+  .canvas-workspace
+    nav.command-tool-palette#command-tool-palette(aria-label='Command tools')
+      .command-tool-palette-scroll#command-tool-palette-content
+    .command-tool-palette-resizer#command-tool-palette-resizer(
+      role='separator'
+      tabindex='0'
+      aria-label='Resize command tools'
+      aria-orientation='vertical'
+      aria-controls='command-tool-palette'
+    )
+    .layout-editor#canvas
+      include Terminal

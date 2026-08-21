@@ -1,4 +1,4 @@
-import commands from './commands/_commands'
+import commands, { executeRegisteredCommand } from './commands/_commands'
 import { RemoveElementCommand } from './commands/RemoveElementCommand'
 import { SVG } from '@svgdotjs/svg.js'
 import { parseSafeJson } from './utils/sanitizeSvg'
@@ -417,11 +417,9 @@ function Terminal(editor) {
             }
           }
 
-          for (const [command, { execute, aliases }] of Object.entries(commands)) {
+          for (const [command, { aliases }] of Object.entries(commands)) {
             if (aliases.includes(typed)) {
-              signals.commandCancelled.dispatch()
-              editor.lastCommand = { execute: () => execute(editor) }
-              execute(editor)
+              executeRegisteredCommand(editor, command)
               terminalText.value = ''
               hideAutocomplete()
               return

@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="96" viewBox="0 0 192 96">
+  <title>Nanquim command icon mask sheet</title>
+  <desc>Project-authored technical drafting icons for the thirty registered commands, arranged in an eight by four grid of 24 pixel cells.</desc>
+  <g fill="none" stroke="#fff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Row 0: General and Draw commands. -->
+    <g id="command-help" transform="translate(0 0)">
+      <path d="M5 3.5h11l3 3v14H5zM16 3.5v3h3"/>
+      <path d="M9.2 10a2.8 2.8 0 1 1 4.5 2.2c-1.2.8-1.7 1.4-1.7 2.6"/>
+      <circle cx="12" cy="18" r=".8" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-line" transform="translate(24 0)">
+      <path d="m4.5 18.5 15-13"/>
+      <rect x="3" y="17" width="3" height="3" rx=".3"/>
+      <rect x="18" y="4" width="3" height="3" rx=".3"/>
+    </g>
+    <g id="command-circle" transform="translate(48 0)">
+      <circle cx="12" cy="12" r="7.5"/>
+      <path d="m12 12 6-4"/>
+      <circle cx="12" cy="12" r="1.2" fill="#fff" stroke="none"/>
+      <path d="M12 2.5v2M21.5 12h-2" opacity=".65"/>
+    </g>
+    <g id="command-ellipse" transform="translate(72 0)">
+      <ellipse cx="12" cy="12" rx="9" ry="5.75"/>
+      <path d="M3 12h18M12 4v16" opacity=".55" stroke-dasharray="1.5 2"/>
+      <circle cx="12" cy="12" r="1.1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-rectangle" transform="translate(96 0)">
+      <rect x="4" y="5" width="16" height="14" rx=".5"/>
+      <rect x="2.75" y="16.75" width="3" height="3" rx=".3"/>
+      <rect x="18.25" y="4.25" width="3" height="3" rx=".3"/>
+      <path d="m5.5 18.5 13-12.5" opacity=".55" stroke-dasharray="1.5 2"/>
+    </g>
+    <g id="command-arc" transform="translate(120 0)">
+      <path d="M4.5 18A10.5 10.5 0 0 1 19.5 7"/>
+      <rect x="3" y="16.5" width="3" height="3" rx=".3"/>
+      <rect x="18" y="5.5" width="3" height="3" rx=".3"/>
+      <circle cx="11.5" cy="8.5" r="1.15" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-hatch" transform="translate(144 0)">
+      <path d="M4 5h16v14H4z"/>
+      <path d="m5 15 6-9M7 19 16 6M12 19l7-10"/>
+    </g>
+    <g id="command-text" transform="translate(168 0)">
+      <path d="M5 5h14M12 5v14M8.5 19h7"/>
+      <path d="M4 3v5M20 3v5M18 13v7" opacity=".65"/>
+      <circle cx="18" cy="11" r=".8" fill="#fff" stroke="none"/>
+    </g>
+
+    <!-- Row 1: remaining Draw commands and the first Modify commands. -->
+    <g id="command-polyline" transform="translate(0 24)">
+      <path d="m4 18 5-11 6 6 5-8"/>
+      <circle cx="4" cy="18" r="1.2"/><circle cx="9" cy="7" r="1.2"/>
+      <circle cx="15" cy="13" r="1.2"/><circle cx="20" cy="5" r="1.2"/>
+    </g>
+    <g id="command-spline" transform="translate(24 24)">
+      <path d="M4 18C7 5 10 5 12 12s5 7 8-6"/>
+      <path d="m4 18 6-12 5 12 5-12" opacity=".45" stroke-dasharray="1.5 2"/>
+      <circle cx="4" cy="18" r="1.1"/><circle cx="10" cy="6" r="1.1"/>
+      <circle cx="15" cy="18" r="1.1"/><circle cx="20" cy="6" r="1.1"/>
+    </g>
+    <g id="command-move" transform="translate(48 24)">
+      <rect x="3.5" y="13" width="7" height="7" rx=".5" opacity=".55"/>
+      <rect x="14" y="4" width="7" height="7" rx=".5"/>
+      <path d="m9.5 14.5 7-7M12.5 6.5l4-.5-.5 4"/>
+    </g>
+    <g id="command-copy" transform="translate(72 24)">
+      <rect x="3.5" y="8.5" width="10.5" height="10.5" rx=".5" opacity=".65"/>
+      <rect x="8.5" y="3.5" width="10.5" height="10.5" rx=".5"/>
+      <path d="M17 16v5M14.5 18.5h5"/>
+    </g>
+    <g id="command-rotate" transform="translate(96 24)">
+      <circle cx="12" cy="12" r="1.2" fill="#fff" stroke="none"/>
+      <path d="M12 12h6V8"/>
+      <path d="M5 14a7.5 7.5 0 0 1 11-7M16 4v3h-3"/>
+      <path d="m5 11-1 3 3 1"/>
+    </g>
+    <g id="command-scale" transform="translate(120 24)">
+      <path d="M5 19v-8h8v8M5 19V5h14v14"/>
+      <path d="m10 14 8-8M14 5h5v5"/>
+      <circle cx="5" cy="19" r="1.15" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-offset" transform="translate(144 24)">
+      <path d="M4 17V6h10M8 21V11h12"/>
+      <path d="M17 6v5M14.5 8.5 17 6l2.5 2.5"/>
+      <path d="M11 17h5" opacity=".65" stroke-dasharray="1.5 2"/>
+    </g>
+    <g id="command-fillet" transform="translate(168 24)">
+      <path d="M4 19h15V4" opacity=".45" stroke-dasharray="1.5 2"/>
+      <path d="M4 19h7a8 8 0 0 0 8-8V4"/>
+      <path d="M11 11h8M11 11v8" opacity=".55"/>
+      <circle cx="11" cy="11" r="1" fill="#fff" stroke="none"/>
+    </g>
+
+    <!-- Row 2: remaining Modify commands and Organize commands. -->
+    <g id="command-erase" transform="translate(0 48)">
+      <path d="m4 20 5-5M15 9l5-5" opacity=".6"/>
+      <path d="m8 14 7-8 4 4-7 8H8zM12 18l-4-4"/>
+      <path d="M6 21h11"/>
+    </g>
+    <g id="command-extend" transform="translate(24 48)">
+      <path d="M20 4v16M4 14h8"/>
+      <path d="M12 14h8" stroke-dasharray="1.5 2"/>
+      <path d="m15 10 5 4-5 4"/>
+      <circle cx="12" cy="14" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-trim" transform="translate(48 48)">
+      <path d="M12 3v18M3 14h9"/>
+      <path d="M12 14h9" opacity=".45" stroke-dasharray="1.5 2"/>
+      <path d="m15.5 10.5 4 7M19.5 10.5l-4 7"/>
+      <circle cx="12" cy="14" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-mirror" transform="translate(72 48)">
+      <path d="M12 3v18" stroke-dasharray="1.5 2"/>
+      <path d="M4 19h5V7zM20 19h-5V7z"/>
+      <path d="M9 5h6M10.5 3.5 9 5l1.5 1.5M13.5 3.5 15 5l-1.5 1.5"/>
+    </g>
+    <g id="command-match-properties" transform="translate(96 48)">
+      <circle cx="6.5" cy="7.5" r="3.5"/>
+      <path d="m4.5 9.5 4-4M9.5 10l6 5M12 15h3v-3"/>
+      <rect x="14" y="14" width="6" height="6" rx=".5"/>
+      <path d="m15.5 18.5 3-3"/>
+    </g>
+    <g id="command-group" transform="translate(120 48)">
+      <path d="M6 4H3v16h3M18 4h3v16h-3"/>
+      <circle cx="9" cy="12" r="3"/>
+      <rect x="13.5" y="9" width="5.5" height="6" rx=".5"/>
+    </g>
+    <g id="command-ungroup" transform="translate(144 48)">
+      <path d="M6 4H3v5M3 15v5h3M18 4h3v5M21 15v5h-3"/>
+      <circle cx="9" cy="12" r="3"/>
+      <rect x="13.5" y="9" width="5.5" height="6" rx=".5"/>
+      <path d="M5 12H2M2 12l2-2M2 12l2 2M19 12h3M22 12l-2-2M22 12l-2 2"/>
+    </g>
+    <g id="command-block" transform="translate(168 48)">
+      <rect x="4" y="4" width="16" height="16" rx=".75"/>
+      <rect x="6" y="6" width="5" height="5" rx=".4"/>
+      <rect x="13" y="6" width="5" height="5" rx=".4"/>
+      <rect x="6" y="13" width="5" height="5" rx=".4"/>
+      <rect x="13" y="13" width="5" height="5" rx=".4"/>
+      <path d="M2 20h4M4 18v4"/>
+    </g>
+
+    <!-- Row 3: remaining Organize, Measure, and Paper Space commands. -->
+    <g id="command-insert" transform="translate(0 72)">
+      <rect x="3" y="3" width="9" height="9" rx=".5"/>
+      <path d="M7.5 3v9M3 7.5h9M11 11l6 6M13 17h4v-4"/>
+      <path d="M17 14v7M13.5 17.5h7"/>
+      <circle cx="17" cy="17.5" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-dist" transform="translate(24 72)">
+      <path d="m5 17 14-9" opacity=".55"/>
+      <circle cx="5" cy="17" r="1.2" fill="#fff" stroke="none"/>
+      <circle cx="19" cy="8" r="1.2" fill="#fff" stroke="none"/>
+      <path d="M4 13 18 4M4 10v3h3M15 4h3v3M7 18l-3-5M21 9l-3-5"/>
+    </g>
+    <g id="command-dimlinear" transform="translate(48 72)">
+      <path d="M5 6v13M19 6v13M5 18h14M5 7h14"/>
+      <path d="m8 4-3 3 3 3M16 4l3 3-3 3"/>
+      <circle cx="5" cy="18" r="1" fill="#fff" stroke="none"/>
+      <circle cx="19" cy="18" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-dimaligned" transform="translate(72 72)">
+      <path d="m5 18 13-7M3 13l13-7M5 18l-2-5M18 11l-2-5"/>
+      <path d="m6.5 9.5-3.5 3.5 4.7.5M12.2 5.5l3.8.5-2 4.3"/>
+      <circle cx="5" cy="18" r="1" fill="#fff" stroke="none"/>
+      <circle cx="18" cy="11" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-area" transform="translate(96 72)">
+      <path d="m4 18 3-13 11-1 3 11-7 5z"/>
+      <path d="M9 9h6v6H9zM12 9v6M9 12h6"/>
+    </g>
+    <g id="command-viewport" transform="translate(120 72)">
+      <path d="M4 3h12l4 4v14H4zM16 3v4h4"/>
+      <rect x="7" y="9" width="10" height="8" rx=".4"/>
+      <path d="M12 9v8M7 13h10" opacity=".65"/>
+      <circle cx="12" cy="13" r="1" fill="#fff" stroke="none"/>
+    </g>
+  </g>
+</svg>
