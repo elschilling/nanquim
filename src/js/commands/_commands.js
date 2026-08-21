@@ -223,5 +223,16 @@ const commands = {
   // Add more commands and functions as needed
 }
 
-export { LinearDimensionCommand, commandCategories }
+function executeRegisteredCommand(editor, commandName) {
+  const key = String(commandName || '').trim().toUpperCase()
+  if (!Object.hasOwn(commands, key)) return false
+
+  const { execute } = commands[key]
+  editor.signals.commandCancelled.dispatch()
+  editor.lastCommand = { execute: () => execute(editor) }
+  execute(editor)
+  return true
+}
+
+export { LinearDimensionCommand, commandCategories, executeRegisteredCommand }
 export default commands

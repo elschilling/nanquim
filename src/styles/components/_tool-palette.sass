@@ -1,0 +1,191 @@
+// Resizable registry-driven command palette. The icons remain legible in the
+// compact rail; labels and category headings appear only after the width
+// threshold maintained by ToolPalette.
+
+.canvas-workspace
+  display: flex
+  flex: 1 1 auto
+  min-width: 0
+  min-height: 0
+  overflow: hidden
+  position: relative
+
+  > .layout-editor
+    flex: 1 1 auto
+    min-width: 0
+    width: auto
+
+.command-tool-palette
+  --command-tool-palette-width: 48px
+  box-sizing: border-box
+  flex: 0 0 var(--command-tool-palette-width)
+  width: var(--command-tool-palette-width)
+  min-width: 0
+  overflow: hidden
+  color: var(--app-muted-foreground-color)
+  background: var(--surface-1)
+
+  &[hidden]
+    display: none
+
+.command-tool-palette-scroll
+  box-sizing: border-box
+  height: 100%
+  padding: 5px 4px 12px
+  overflow-x: hidden
+  overflow-y: auto
+  scrollbar-width: thin
+
+.command-tool-category
+  margin: 0
+  padding: 5px 0
+  border: 0
+  border-bottom: 1px solid var(--panel-border-color)
+
+  &:first-child
+    padding-top: 0
+
+  &:last-child
+    border-bottom: 0
+
+.command-tool-category-title
+  width: 1px
+  height: 1px
+  margin: -1px
+  padding: 0
+  position: absolute
+  overflow: hidden
+  clip: rect(0 0 0 0)
+  clip-path: inset(50%)
+  white-space: nowrap
+
+.command-tool-list
+  display: grid
+  gap: 3px
+
+.command-tool-button
+  appearance: none
+  width: 100%
+  min-height: 36px
+  box-sizing: border-box
+  display: grid
+  grid-template-columns: 1fr
+  align-items: center
+  justify-items: center
+  padding: 2px 3px
+  border: 1px solid transparent
+  border-radius: 4px
+  color: inherit
+  background: transparent
+  cursor: pointer
+  font: inherit
+
+  &:hover
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &:active
+    color: var(--accent-foreground-color)
+    background: var(--accent-color)
+
+.command-tool-icon
+  width: 24px
+  height: 24px
+  display: block
+  grid-column: 1
+  color: currentColor
+
+  &::before
+    width: 24px
+    height: 24px
+    content: ''
+    display: block
+    background: currentColor
+    mask-image: url('/assets/img/nanquim-command-icons.svg')
+    mask-position: var(--command-tool-icon-x, 0%) var(--command-tool-icon-y, 0%)
+    mask-repeat: no-repeat
+    mask-size: 800% 400%
+    -webkit-mask-image: url('/assets/img/nanquim-command-icons.svg')
+    -webkit-mask-position: var(--command-tool-icon-x, 0%) var(--command-tool-icon-y, 0%)
+    -webkit-mask-repeat: no-repeat
+    -webkit-mask-size: 800% 400%
+
+.command-tool-label
+  display: none
+
+.command-tool-palette.is-labeled
+  .command-tool-palette-scroll
+    padding-inline: 7px
+
+  .command-tool-category
+    padding-block: 8px
+
+  .command-tool-category-title
+    width: auto
+    height: auto
+    margin: 0 4px 6px
+    position: static
+    overflow: visible
+    clip: auto
+    clip-path: none
+    color: var(--app-muted-foreground-color)
+    font-family: var(--font-mono)
+    font-size: 9px
+    font-weight: 600
+    letter-spacing: .075em
+    text-transform: uppercase
+    white-space: normal
+
+  .command-tool-list
+    gap: 2px
+
+  .command-tool-button
+    grid-template-columns: 30px minmax(0, 1fr)
+    justify-items: start
+    min-height: 32px
+    padding-inline: 5px 8px
+    text-align: left
+
+  .command-tool-label
+    min-width: 0
+    display: block
+    overflow: hidden
+    color: var(--app-foreground-color)
+    font-size: 11px
+    text-overflow: ellipsis
+    white-space: nowrap
+
+.command-tool-palette-resizer
+  flex: 0 0 5px
+  width: 5px
+  position: relative
+  z-index: 4
+  cursor: col-resize
+  background: var(--separator-color)
+  touch-action: none
+
+  &[hidden]
+    display: none
+
+  &::after
+    width: 1px
+    content: ''
+    position: absolute
+    inset: 0 auto 0 2px
+    background: transparent
+    transition: background var(--transition-speed) ease
+
+  &:hover::after,
+  &:focus-visible::after,
+  &.is-resizing::after
+    background: var(--accent-color)
+
+.terminal
+  max-width: calc(100% - 24px)
+
+@media (forced-colors: active)
+  .command-tool-palette-resizer::after
+    background: ButtonText
+
+  .command-tool-button
+    border-color: ButtonText

@@ -97,6 +97,7 @@ describe('Phase 0 documentation sources of truth', () => {
     ])
     const retainedAssets = [
       'public/assets/img/nanquim-icons.svg',
+      'public/assets/img/nanquim-command-icons.svg',
       'public/assets/img/nanquim-logo.svg',
       'public/js/libs/signals.js',
       'public/js/libs/svg.js/svg.js',

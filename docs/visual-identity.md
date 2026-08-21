@@ -62,9 +62,15 @@ negative space so they remain recognizable at the application's normal icon
 size. Icons inherit `currentColor`; active state coloring therefore comes from
 the theme rather than being baked into the artwork.
 
-The artwork remains 20 pixels inside larger interactive hosts: 24 pixels in
-editor headers and 28 pixels in the Properties rail. This adds separation and
-pointer area without making the symbols heavier.
+Application chrome and command tools use separate compact mask sheets. The
+command sheet gives each registered action a distinct construction while
+keeping the same 24-pixel grid, 1.75-pixel monoline weight, round joins, control
+points, dimension ticks, and `currentColor` behavior.
+
+Chrome artwork remains 20 pixels inside larger interactive hosts: 24 pixels in
+editor headers and 28 pixels in the Properties rail. Command-palette glyphs use
+their full 24-pixel construction cell inside buttons at least 36 pixels tall.
+This adds separation and pointer area without making the symbols heavier.
 
 Interactive icon controls use native button semantics, a visible hover title,
 an accessible name, and state attributes such as `aria-pressed` or
@@ -79,6 +85,16 @@ registration point.
 Do not add glyphs copied or extracted from another application's icon sheet.
 New symbols should extend the same grid and stroke grammar and receive an
 inventory test before use.
+
+## Command palette
+
+The command palette is a left-side instrument rail driven directly by the
+canonical command registry. At its compact 48-pixel width it emphasizes the
+icon language; at 168 pixels and wider it reveals tool names beneath visible
+category headings. Its resizer supports pointer and keyboard input and stops at
+280 pixels, preserving useful drawing space. The **Tools** control and `F4`
+toggle visibility without changing the drawing, History, or saved-document
+state. Width and visibility are local interface preferences.
 
 ## Attribution and continuity
 

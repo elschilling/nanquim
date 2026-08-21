@@ -87,6 +87,8 @@ CI also uses `pnpm install --frozen-lockfile` and
   SVG adaptation.
 - `src/js/CommandIllustrations.js` and `src/js/HelpSession.js`: Help content and
   decorative command diagrams.
+- `src/js/ToolPalette.js` and `src/js/CommandIcons.js`: registry-driven command
+  palette behavior and its project-authored icon metadata.
 - `src/js/ThemeController.js`, `src/js/Preferences.js`, and
   `src/js/PreferencesUI.js`: local appearance/interaction preferences and
   theme application.
@@ -299,10 +301,11 @@ with npm `@svgdotjs/svg.js` 3.2.5 imports.
   Test both dark and light custom backgrounds; do not reintroduce component-wide
   hardcoded gray palettes.
 - Runtime icons come from the project-authored
-  `public/assets/img/nanquim-icons.svg` mask sheet and class mappings in
-  `components/_icon.sass`. Preserve `currentColor`, the 24-pixel construction
-  grid, existing accessible labels, and `tests/icon-system.test.js` coverage.
-  Do not copy or extract glyphs from another application's icon artwork.
+  `public/assets/img/nanquim-icons.svg` and
+  `public/assets/img/nanquim-command-icons.svg` mask sheets. Preserve
+  `currentColor`, the 24-pixel construction grid, existing accessible labels,
+  and icon/registry completeness coverage. Do not copy or extract glyphs from
+  another application's icon artwork.
 - Use existing variables for strokes, spacing, and zoom-independent UI geometry
   when they express the intended semantics.
 - Test browser-visible helpers by computed appearance, not only DOM existence.

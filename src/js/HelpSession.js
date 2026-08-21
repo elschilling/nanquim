@@ -15,6 +15,7 @@ const TERMINAL_SHORTCUTS = [
   { keys: ['@x,y', '#x,y'], description: 'Enter relative or absolute coordinates.' },
   { keys: ['F2'], description: 'Expand or restore the terminal.' },
   { keys: ['F3'], description: 'Toggle all viewport overlays.' },
+  { keys: ['F4'], description: 'Show or hide the command tools palette.' },
   { keys: ['F7'], description: 'Toggle the drawing grid.' },
   { keys: ['F8'], description: 'Toggle Ortho.' },
   { keys: ['F9'], description: 'Toggle object snapping.' },

@@ -15,6 +15,7 @@ import { LinearDimensionCommand } from './js/commands/LinearDimensionCommand'
 import { GeometryNodeManager } from './js/geometry-nodes/GeometryNodeManager'
 import { GeometryNodeEditor } from './js/GeometryNodeEditor'
 import { HelpSession } from './js/HelpSession'
+import { ToolPalette } from './js/ToolPalette'
 import { applyApplicationVersion } from './js/applicationVersion'
 
 applyApplicationVersion()
@@ -28,6 +29,7 @@ editor.paperEditor = paperEditor
 const documents = new DocumentController(editor)
 editor.documents = documents
 const navbar = new Navbar(editor)
+const toolPalette = new ToolPalette(editor)
 const viewport = new Viewport(editor)
 const outliner = new Outliner(editor)
 const properties = new Properties(editor)
@@ -44,6 +46,7 @@ editor.signals.updatedSelection.add(() => {
 
 editor.geometryNodeEditor = geometryNodeEditor
 editor.helpSession = helpSession
+editor.toolPalette = toolPalette
 
 // Initialize listeners
 LinearDimensionCommand.registerRedrawListener(editor)
