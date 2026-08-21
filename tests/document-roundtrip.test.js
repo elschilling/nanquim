@@ -436,6 +436,27 @@ describe('native schema-v3 semantic round trips', () => {
     expect(serializedRoot.getAttribute('data-element-index')).toBe('3')
   })
 
+  test('keeps persistent paste-scope wrappers canonical across save and reopen', async () => {
+    const source = `
+      <svg xmlns="http://www.w3.org/2000/svg" data-nanquim-version="3"
+        data-element-index="3" viewBox="0 0 10 10">
+        <g id="collection-main" name="Main" data-collection="true">
+          <g id="2" name="G 2" data-nanquim-paste-scope="nanquim-paste-1">
+            <rect id="1" name="Rect 1" width="2" height="1"/>
+          </g>
+        </g>
+      </svg>
+    `
+    const firstEditor = await openDocument(source, 'paste-scope.svg')
+    const wrapper = firstEditor.drawing.node.querySelector('[data-nanquim-paste-scope]')
+    expect(wrapper.getAttribute('data-nanquim-paste-scope')).toBe('nanquim-paste-1')
+    expect(wrapper.hasAttribute('data-nanquimPasteScope')).toBe(false)
+    const first = serializeNativeDocument(firstEditor)
+
+    const secondEditor = await openDocument(first, 'paste-scope-reopened.svg')
+    expect(serializeNativeDocument(secondEditor)).toBe(first)
+  })
+
   test('resets ambiguous duplicate Paper annotations and marks the recovered document dirty', async () => {
     const source = `
       <svg xmlns="http://www.w3.org/2000/svg" data-nanquim-version="3" viewBox="0 0 10 10">

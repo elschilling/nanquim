@@ -1,6 +1,6 @@
 # Browser and file API support
 
-Last reviewed: 2026-08-20
+Last reviewed: 2026-08-21
 
 This document defines the intended `v0.1` desktop-browser support contract. It
 does not claim that a browser has passed release qualification unless the exact
@@ -20,6 +20,35 @@ browser version numbers here. Each candidate's release notes must record the
 exact browser build, operating system, test date, and result. An installed
 browser is not considered verified merely because the project builds or its
 version was queried.
+
+## Automated workflow qualification
+
+The production build runs the Phase 2 workflow harness in current stable
+Chromium for every pull request and `master` push. A separate weekly,
+manually-dispatchable, and prerelease workflow runs the same flows in current
+stable Chromium, a release-refreshed pin for the immediately preceding stable
+Chromium major, current stable Firefox, and Firefox ESR. GitHub Actions records
+the exact browser build used by each run; the pinned preceding Chromium major
+must be refreshed when the stable channel advances at a release boundary.
+
+The harness exercises typed rectangle creation, Move with Undo/Redo, repeated
+command cancellation, sanitized copy/paste, native SVG save/reopen, Paper
+viewport export, Help keyboard navigation, and the representative Geometry
+Nodes fixture. On failure it retains an action/console/network trace and a
+screenshot; Chromium additionally retains a DevTools timeline trace.
+
+Run the same production-build checks locally with:
+
+```bash
+pnpm test:browser:chromium
+pnpm test:browser:firefox
+```
+
+Set `NANQUIM_BROWSER_EXECUTABLE` when the browser is not installed at a common
+system path. Browser profiles and download targets are created in an isolated
+per-run system temporary directory; live File System Access pickers are
+disabled in this portable workflow suite. Direct handle overwrite and Safari
+remain explicit release-candidate checks rather than automated claims.
 
 ## Capability matrix
 

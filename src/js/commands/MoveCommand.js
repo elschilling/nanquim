@@ -14,9 +14,11 @@ class MoveCommand extends Command {
 
   execute() {
     if (this.interactiveExecutionDone) {
+      this.applyMove()
       return
     }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
 
     if (this.editor.selected.length > 0) {
       this.editor.suppressHandlers = true
@@ -33,7 +35,6 @@ class MoveCommand extends Command {
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
-    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
@@ -225,56 +226,72 @@ class MoveCommand extends Command {
   moveElements(dx, dy) {
     this.dx = dx
     this.dy = dy
-    this.editor.selected.forEach((element, index) => {
+    this.selectedElements = this.editor.selected.slice()
+    this.localDeltas = this.selectedElements.map((element, index) => {
       const originalPos = this.originalPositions[index]
-      
-      let ldx = dx
-      let ldy = dy
-
-      if (originalPos.type !== 'viewport') {
-        const localDelta = calculateLocalDelta(element, dx, dy)
-        ldx = localDelta.dx
-        ldy = localDelta.dy
-      }
-
-      if (originalPos.type === 'line') {
-        // For lines, translate all points
-        const newPoints = originalPos.points.map((point) => [point[0] + ldx, point[1] + ldy])
-        element.plot(newPoints)
-      } else if (originalPos.type === 'center') {
-        // For circles/ellipses, move center
-        element.center(originalPos.cx + ldx, originalPos.cy + ldy)
-      } else if (originalPos.type === 'viewport') {
-        const vp = originalPos.vp
-        vp.x = originalPos.x + ldx
-        vp.y = originalPos.y + ldy
-        vp.refreshGeometry()
-        vp._editor.signals.paperViewportsChanged.dispatch()
-      } else if (originalPos.type === 'text') {
-        const matrix = originalPos.transform
-        element.transform(matrix).translate(ldx, ldy)
-      } else {
-        // For other elements, move position
-        element.move(originalPos.x + ldx, originalPos.y + ldy)
-      }
-
-      this.updateArcData(element, originalPos, ldx, ldy)
+      return originalPos.type === 'viewport'
+        ? { dx, dy }
+        : calculateLocalDelta(element, dx, dy)
     })
 
-    // Moving changes element bounds. Keep hit-testing and rectangle selection
-    // in sync without requiring a subsequent cancellation to refresh the index.
-    this.editor.spatialIndex.markDirty()
-    this.editor.fullSpatialIndex.markDirty()
-
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Elements moved.' })
     this.editor.isInteracting = false
-    this.editor.suppressHandlers = false // Reset handlers suppression
-    this.selectedElements = this.editor.selected
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
+    this.editor.suppressHandlers = false
     this.interactiveExecutionDone = true
-    this.editor.execute(this)
-    this.editor.lastCommand = new MoveCommand(this.editor)
+    try {
+      this.editor.execute(this)
+    } catch (error) {
+      this.editor.distance = null
+      this.cleanup()
+      throw error
+    }
+    this.dispatchSignal('clearSelection')
+    this.editor.selected = []
+    this.dispatchSignal('terminalLogged', { msg: 'Elements moved.' })
+  }
+
+  applyMove() {
+    try {
+      this.selectedElements.forEach((element, index) => this.applyElementMove(element, index))
+    } catch (error) {
+      try {
+        this.restoreOriginalPositions()
+      } catch (rollbackError) {
+        this.invalidateGeometry()
+        throw new AggregateError(
+          [error, rollbackError],
+          'Move failed and its original geometry could not be fully restored.',
+          { cause: error },
+        )
+      }
+      this.invalidateGeometry()
+      throw error
+    }
+    this.invalidateGeometry()
+  }
+
+  applyElementMove(element, index) {
+    const originalPos = this.originalPositions[index]
+    const { dx: ldx, dy: ldy } = this.localDeltas[index]
+
+    if (originalPos.type === 'line') {
+      const newPoints = originalPos.points.map((point) => [point[0] + ldx, point[1] + ldy])
+      element.plot(newPoints)
+    } else if (originalPos.type === 'center') {
+      element.center(originalPos.cx + ldx, originalPos.cy + ldy)
+    } else if (originalPos.type === 'viewport') {
+      const vp = originalPos.vp
+      vp.x = originalPos.x + ldx
+      vp.y = originalPos.y + ldy
+      vp.refreshGeometry()
+      this.dispatchSignal('paperViewportsChanged')
+    } else if (originalPos.type === 'text') {
+      const matrix = originalPos.transform
+      element.transform(matrix).translate(ldx, ldy)
+    } else {
+      element.move(originalPos.x + ldx, originalPos.y + ldy)
+    }
+
+    this.updateArcData(element, originalPos, ldx, ldy)
   }
 
   updateArcData(element, originalPos, dx, dy) {
@@ -305,6 +322,25 @@ class MoveCommand extends Command {
   }
 
   undo() {
+    try {
+      this.restoreOriginalPositions()
+    } catch (error) {
+      try {
+        this.applyMove()
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          'Move Undo failed and the applied geometry could not be fully restored.',
+          { cause: error },
+        )
+      }
+      throw error
+    }
+    this.invalidateGeometry()
+    this.dispatchSignal('terminalLogged', { msg: 'Undo: Elements moved back.' })
+  }
+
+  restoreOriginalPositions() {
     this.selectedElements.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
 
@@ -319,7 +355,7 @@ class MoveCommand extends Command {
         vp.x = originalPos.x
         vp.y = originalPos.y
         vp.refreshGeometry()
-        vp._editor.signals.paperViewportsChanged.dispatch()
+        this.dispatchSignal('paperViewportsChanged')
       } else if (originalPos.type === 'text') {
         element.transform(originalPos.transform)
       } else {
@@ -332,37 +368,17 @@ class MoveCommand extends Command {
       if (originalPos.circleTrimData) element.data('circleTrimData', originalPos.circleTrimData)
       if (originalPos.splineData) element.data('splineData', originalPos.splineData)
     })
-
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Elements moved back.' })
   }
 
   redo() {
-    this.selectedElements.forEach((element, index) => {
-      const originalPos = this.originalPositions[index]
+    this.applyMove()
+    this.dispatchSignal('terminalLogged', { msg: 'Redo: Elements moved again.' })
+  }
 
-      if (originalPos.type === 'line') {
-        // For lines, translate all points
-        const newPoints = originalPos.points.map((point) => [point[0] + this.dx, point[1] + this.dy])
-        element.plot(newPoints)
-      } else if (originalPos.type === 'center') {
-        // For circles/ellipses, move center
-        element.center(originalPos.cx + this.dx, originalPos.cy + this.dy)
-      } else if (originalPos.type === 'viewport') {
-        const vp = originalPos.vp
-        vp.x = originalPos.x + this.dx
-        vp.y = originalPos.y + this.dy
-        vp.refreshGeometry()
-        vp._editor.signals.paperViewportsChanged.dispatch()
-      } else if (originalPos.type === 'text') {
-        element.transform(originalPos.transform).translate(this.dx, this.dy)
-      } else {
-        // For other elements, move position
-        element.move(originalPos.x + this.dx, originalPos.y + this.dy)
-      }
-
-      this.updateArcData(element, originalPos, this.dx, this.dy)
-    })
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Elements moved again.' })
+  invalidateGeometry() {
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('updatedProperties')
   }
 }
 

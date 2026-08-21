@@ -4,7 +4,7 @@
 
 [Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
-[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Visual identity](docs/visual-identity.md) · [Native document format](docs/native-document-format.md) · [Browser support](docs/browser-support.md)
+[Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Visual identity](docs/visual-identity.md) · [Native document format](docs/native-document-format.md) · [Editing transactions](docs/editing-transactions.md) · [Testing](docs/testing.md) · [Browser support](docs/browser-support.md)
 
 > [!WARNING]
 > Nanquim is in active, pre-1.0 development. Features and saved metadata may still change, and some CAD and file-format edge cases are not covered by automated tests. Use copies of important drawings and please report anything that breaks.
@@ -161,7 +161,11 @@ category. Use **Tools** in the application bar or press `F4` to show or hide it.
 - System clipboard access depends on browser permissions, a secure context, and
   user activation; native paste events remain the fallback where available.
 - DXF import/export supports common drawing entities, not every DXF feature or vendor extension.
-- Automated coverage currently focuses on Geometry Nodes, SVG adaptation/rendering, modifier persistence, Undo/Redo edge cases, and terminal input. Much of the legacy CAD workflow still relies on manual testing.
+- Every registered command has a deterministic invocation/cancellation
+  contract, with deeper geometry and Undo/Redo cases for high-risk editing
+  tools. Coverage is ratcheted in CI, and stock Chromium and Firefox run the
+  same production-build workflow harness. Specialized geometry and
+  interoperability combinations still require broader qualification.
 - Real-time collaboration, geometric constraints, direct Blender/Bonsai connectivity, and desktop/PWA packaging are future ideas rather than current features.
 
 See the [browser and file-API support policy](docs/browser-support.md) for the
@@ -189,10 +193,15 @@ Vite will print the local development URL in the terminal.
 
 ```bash
 pnpm test
+pnpm test:coverage
+pnpm test:browser:chromium
+pnpm test:browser:firefox
 pnpm build
 ```
 
-Use `pnpm test:watch` while developing.
+Use `pnpm test:watch` while developing. See [Testing and
+coverage](docs/testing.md) for the fixture contract, current ratchet, browser
+requirements, and failure artifacts.
 
 Release maintainers should use the
 [release, deployment, and rollback checklist](docs/release-process.md).

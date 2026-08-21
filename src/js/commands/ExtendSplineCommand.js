@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
 
 class ExtendSplineCommand extends Command {
     constructor(editor, element, extendStart, newPosition) {
@@ -33,6 +34,7 @@ class ExtendSplineCommand extends Command {
         const d = catmullRomToBezierPath(points)
         this.element.plot(d)
         this.element.data('splineData', { points: points.map(p => ({ x: p.x, y: p.y })) })
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

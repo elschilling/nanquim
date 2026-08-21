@@ -1,5 +1,36 @@
 import { Command } from '../Command'
-import { getBlockDefinition, insertBlockInstance, getBlockNames } from '../BlockManager'
+import { getBlockDefinition, getBlockNames } from '../BlockManager'
+
+function childIndex(element) {
+  const parent = element.parent()
+  return parent ? Array.from(parent.node.children).indexOf(element.node) : -1
+}
+
+function insertAt(parent, element, index) {
+  const reference = index >= 0 ? parent.node.children[index] || null : null
+  parent.node.insertBefore(element.node, reference)
+}
+
+function restoreRecords(records) {
+  const byParent = new Map()
+  records.forEach((record) => {
+    if (!byParent.has(record.parent)) byParent.set(record.parent, [])
+    byParent.get(record.parent).push(record)
+  })
+  byParent.forEach((entries) => {
+    entries
+      .sort((left, right) => left.index - right.index)
+      .forEach((record) => {
+        if (record.element.parent()?.node === record.parent.node) return
+        insertAt(record.parent, record.element, record.index)
+      })
+  })
+}
+
+function combinedError(error, rollbackErrors, message) {
+  if (rollbackErrors.length === 0) return error
+  return new AggregateError([error, ...rollbackErrors], message)
+}
 
 class InsertCommand extends Command {
   constructor(editor) {
@@ -8,13 +39,19 @@ class InsertCommand extends Command {
     this.name = 'Insert'
     this.boundOnInsertStop = this.onInsertStop.bind(this)
     this.allInsertedInstances = []
+    this.insertionRecords = []
+    this.selectionBefore = [...editor.selected]
     this.blockName = null
     this.interactiveExecutionDone = false
     this._overlay = null
+    this._modalAbortController = null
   }
 
   execute() {
-    if (this.interactiveExecutionDone) return
+    if (this.interactiveExecutionDone) {
+      this._applyInitial()
+      return
+    }
 
     const names = getBlockNames(this.editor)
     if (names.length === 0) {
@@ -24,7 +61,7 @@ class InsertCommand extends Command {
 
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'INSERT ' })
     this.editor.isInteracting = true
-    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
+    this.editor.signals.commandCancelled.addOnce(this.cancel, this)
 
     this._showModal(names)
   }
@@ -71,6 +108,10 @@ class InsertCommand extends Command {
   }
 
   _showModal(names) {
+    this._modalAbortController?.abort()
+    this._modalAbortController = new AbortController()
+    const modalListenerOptions = { signal: this._modalAbortController.signal }
+
     // Overlay
     const overlay = document.createElement('div')
     overlay.className = 'block-modal-overlay'
@@ -108,7 +149,7 @@ class InsertCommand extends Command {
       card.addEventListener('click', () => {
         this._closeModal()
         this._onBlockSelected(name)
-      })
+      }, modalListenerOptions)
 
       grid.appendChild(card)
     })
@@ -124,8 +165,8 @@ class InsertCommand extends Command {
     cancelBtn.addEventListener('click', () => {
       this._closeModal()
       this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
-      this.cleanup()
-    })
+      this.cancel()
+    }, modalListenerOptions)
     btnRow.appendChild(cancelBtn)
     dialog.appendChild(btnRow)
 
@@ -137,9 +178,9 @@ class InsertCommand extends Command {
       if (e.target === overlay) {
         this._closeModal()
         this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
-        this.cleanup()
+        this.cancel()
       }
-    })
+    }, modalListenerOptions)
 
     // Close on Escape
     this._modalEscHandler = (e) => {
@@ -147,13 +188,20 @@ class InsertCommand extends Command {
         e.stopPropagation()
         this._closeModal()
         this.editor.signals.terminalLogged.dispatch({ msg: 'Command cancelled.' })
-        this.cleanup()
+        this.cancel()
       }
     }
-    document.addEventListener('keydown', this._modalEscHandler, true)
+    document.addEventListener('keydown', this._modalEscHandler, {
+      capture: true,
+      signal: this._modalAbortController.signal,
+    })
   }
 
   _closeModal() {
+    if (this._modalAbortController) {
+      this._modalAbortController.abort()
+      this._modalAbortController = null
+    }
     if (this._overlay) {
       this._overlay.remove()
       this._overlay = null
@@ -165,6 +213,11 @@ class InsertCommand extends Command {
   }
 
   _onBlockSelected(name) {
+    if (!getBlockDefinition(this.editor, name)) {
+      this.editor.signals.terminalLogged.dispatch({ msg: `Block "${name}" is no longer available.` })
+      this.cancel()
+      return
+    }
     this.blockName = name
     this.editor.signals.terminalLogged.dispatch({ msg: `Inserting block "${name}". Specify insertion point:` })
     this._spawnGhost()
@@ -178,8 +231,11 @@ class InsertCommand extends Command {
     const defEl = getBlockDefinition(this.editor, this.blockName)
     if (!defEl) return
 
-    const parent = this.editor.activeCollection
-    this._ghost = parent.use(defEl).attr('data-block-ghost', 'true').move(0, 0).opacity(0.4).addClass('ghostLine')
+    this._ghost = this.editor.overlays.use(defEl).attr({
+      'data-block-ghost': 'true',
+      'data-nanquim-transient': 'true',
+      'pointer-events': 'none',
+    }).move(0, 0).opacity(0.4).addClass('ghostLine')
 
     // Ghost follows cursor from origin — basePoint = (0,0) since the def is
     // already centered on its base point
@@ -200,15 +256,23 @@ class InsertCommand extends Command {
     // Stop ghosting and remove the preview
     this._removeGhost()
 
-    const parent = this.editor.activeCollection
-    const instance = insertBlockInstance(this.editor, this.blockName, point, parent)
+    const parent = this.editor.activeCollection || this.editor.drawing
+    const defElement = getBlockDefinition(this.editor, this.blockName)
+    const instance = defElement
+      ? this.editor.overlays.use(defElement).attr({
+        'data-block-instance': 'true',
+        'data-block-name': this.blockName,
+        'data-nanquim-transient': 'true',
+        'pointer-events': 'none',
+      }).move(point.x, point.y).opacity(0.55)
+      : null
 
     if (instance) {
       this.allInsertedInstances.push(instance)
+      this.insertionRecords.push({ element: instance, index: -1, parent })
       this.editor.signals.terminalLogged.dispatch({
         msg: `"${this.blockName}" inserted at ${point.x.toFixed(2)}, ${point.y.toFixed(2)}. Click for more or press Esc/Enter to finish.`,
       })
-      this.editor.signals.updatedOutliner.dispatch()
     }
 
     // Spawn a new ghost for the next placement
@@ -224,52 +288,138 @@ class InsertCommand extends Command {
 
   onInsertStop(event) {
     if (event.code === 'Space' || event.code === 'Enter' || event.code === 'NumpadEnter') {
-      this.cleanup()
+      this.finish()
     }
+  }
+
+  finish() {
+    if (this._cleanedUp) return
+    if (this.insertionRecords.length === 0) {
+      this._teardown({ discardPreviews: true })
+      this.editor.signals.terminalLogged.dispatch({ msg: 'No block instances placed. Command cancelled.' })
+      return
+    }
+
+    this._removeGhost()
+    this.interactiveExecutionDone = true
+    this._teardown({ discardPreviews: false })
+    try {
+      this.editor.execute(this)
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
+    } catch (error) {
+      this.insertionRecords.forEach(({ element }) => element.remove())
+      throw error
+    }
+  }
+
+  cancel() {
+    if (this._cleanedUp) return
+    this._teardown({ discardPreviews: true })
+    this.editor.signals.clearSelection.dispatch()
+    this.editor.selected = [...this.selectionBefore]
+    this.editor.signals.updatedSelection.dispatch()
   }
 
   cleanup() {
-    if (this._cleanedUp) return
+    this.cancel()
+  }
+
+  _teardown({ discardPreviews }) {
     this._cleanedUp = true
 
     this._removeGhost()
+    if (discardPreviews) this.insertionRecords.forEach(({ element }) => element.remove())
     this._closeModal()
     document.removeEventListener('keydown', this.boundOnInsertStop)
     this.editor.signals.pointCaptured.remove(this.onInsertionPoint, this)
-    this.editor.signals.commandCancelled.remove(this.cleanup, this)
-
-    // Commit all placed instances to undo history in one batch
-    if (this.allInsertedInstances.length > 0 && !this.interactiveExecutionDone) {
-      this.interactiveExecutionDone = true
-      this.editor.execute(this)
-      this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
-      this.editor.signals.updatedOutliner.dispatch()
-    }
-
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
+    this.editor.signals.commandCancelled.remove(this.cancel, this)
     this.editor.isInteracting = false
   }
 
+  _applyInitial() {
+    if (
+      this.insertionRecords.length === 0
+      || !this.blockName
+      || !getBlockDefinition(this.editor, this.blockName)
+    ) {
+      throw new TypeError('Insert requires placements for an available block definition.')
+    }
+
+    const startingElementIndex = this.editor.elementIndex
+    try {
+      this.insertionRecords.forEach((record) => {
+        const id = this.editor.elementIndex++
+        record.element.attr({
+          id,
+          name: this.blockName,
+          'data-nanquim-transient': null,
+          'pointer-events': null,
+        }).opacity(1)
+        record.parent.add(record.element)
+        record.index = childIndex(record.element)
+      })
+    } catch (error) {
+      this.insertionRecords.forEach((record) => {
+        record.element.attr({
+          id: null,
+          name: null,
+          'data-nanquim-transient': 'true',
+          'pointer-events': 'none',
+        }).opacity(0.55)
+        this.editor.overlays.add(record.element)
+        record.index = -1
+      })
+      this.editor.elementIndex = startingElementIndex
+      throw error
+    }
+
+    this._notify([], `${this.insertionRecords.length} block instance(s) inserted.`)
+  }
+
   undo() {
-    this.allInsertedInstances.forEach((el) => el.remove())
-    this.editor.spatialIndex.markDirty()
-    this.editor.fullSpatialIndex.markDirty()
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Undo: ${this.allInsertedInstances.length} block instance(s) removed.` })
+    try {
+      this.insertionRecords.forEach(({ element }) => element.remove())
+    } catch (error) {
+      const rollbackErrors = []
+      try {
+        restoreRecords(this.insertionRecords)
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      throw combinedError(
+        error,
+        rollbackErrors,
+        `${error.message} Restoring the inserted instances also failed.`,
+      )
+    }
+    this._notify(
+      this.selectionBefore,
+      `Undo: ${this.allInsertedInstances.length} block instance(s) removed.`,
+    )
   }
 
   redo() {
-    this.allInsertedInstances.forEach((el) => {
-      const parent = el.parent() || this.editor.activeCollection
-      parent.add(el)
-    })
+    const attached = []
+    try {
+      this.insertionRecords.forEach(({ element, index, parent }) => {
+        insertAt(parent, element, index)
+        attached.push(element)
+      })
+    } catch (error) {
+      attached.forEach((element) => element.remove())
+      throw error
+    }
+    this._notify([], `Redo: ${this.allInsertedInstances.length} block instance(s) restored.`)
+  }
+
+  _notify(selection, message) {
     this.editor.spatialIndex.markDirty()
     this.editor.fullSpatialIndex.markDirty()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Redo: ${this.allInsertedInstances.length} block instance(s) restored.` })
+    this.dispatchSignal('clearSelection')
+    this.editor.selected = [...selection]
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('terminalLogged', { msg: message })
   }
 }
 

@@ -374,6 +374,25 @@ function appendDefinitions(editor, root, targetDocument) {
   if (outputDefs.children.length > 0) root.appendChild(outputDefs)
 }
 
+function canonicalizeAttributeOrder(element, preferredNames) {
+  const preferred = new Map(preferredNames.map((name, index) => [name, index]))
+  const attributes = Array.from(element.attributes).map(attribute => ({
+    name: attribute.name,
+    namespaceURI: attribute.namespaceURI,
+    value: attribute.value,
+  }))
+  attributes.sort((left, right) => {
+    const leftIndex = preferred.get(left.name) ?? preferred.size
+    const rightIndex = preferred.get(right.name) ?? preferred.size
+    return leftIndex - rightIndex || left.name.localeCompare(right.name)
+  })
+  Array.from(element.attributes).forEach(attribute => element.removeAttributeNode(attribute))
+  attributes.forEach(({ name, namespaceURI, value }) => {
+    if (namespaceURI) element.setAttributeNS(namespaceURI, name, value)
+    else element.setAttribute(name, value)
+  })
+}
+
 function createPaperAnnotations(editor, targetDocument) {
   const source = domNode(editor.paperAnnotations)
   let annotations = source && source.nodeType === 1
@@ -397,6 +416,14 @@ function createPaperAnnotations(editor, targetDocument) {
   const collectionSource = source || annotations
   applyCollectionState(editor, collectionSource, annotations)
   if (!annotations.hasAttribute('data-locked')) annotations.setAttribute('data-locked', 'false')
+  canonicalizeAttributeOrder(annotations, [
+    'id',
+    'name',
+    'data-nanquim-paper-annotations',
+    'data-collection',
+    'data-locked',
+    'style',
+  ])
   return annotations
 }
 

@@ -1,6 +1,9 @@
 import { Command } from '../Command'
 import { getLineIntersection, getLineEquation } from '../utils/intersection'
 import { applyCollectionStyleToElement } from '../Collection'
+import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
+
+const TRANSFORMED_FILLET_DIAGNOSTIC = 'FILLET does not support transformed lines.'
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -9,7 +12,13 @@ class FilletCommand extends Command {
     this.name = 'Fillet'
     this.selectedElements = []
     this.originalStates = [] // Store original line states for undo
+    this.finalStates = [] // Store committed line states for deterministic redo
     this.createdElements = [] // Store created arc elements for undo
+    this.createdParents = []
+    this.createdPlacements = []
+    this.radius = 0
+    this._mutationPrepared = false
+    this._sessionActive = false
 
     // Bind handlers
     this.boundOnKeyDown = this.onKeyDown.bind(this)
@@ -17,6 +26,13 @@ class FilletCommand extends Command {
   }
 
   execute() {
+    if (this._mutationPrepared) {
+      this.applyMutation()
+      return
+    }
+    if (this._sessionActive) return
+
+    this._sessionActive = true
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
@@ -30,14 +46,24 @@ class FilletCommand extends Command {
   }
 
   onRadiusParam(input) {
-    this.editor.signals.terminalLogged.dispatch({ msg: `Enter fillet radius` })
-    this.editor.signals.inputValue.addOnce(this.onRadiusInput, this)
+    if (String(input).trim().toLowerCase() === 'r') {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Enter fillet radius:' })
+      this.editor.signals.inputValue.addOnce(this.onRadiusInput, this)
+      return
+    }
+    this.onRadiusInput(input)
   }
 
   onRadiusInput(input) {
-    this.editor.signals.terminalLogged.dispatch({ msg: `Radius set to ` + input })
-    this.editor.cmdParams.filletRadius = input
-    this.execute()
+    const radius = Number(input)
+    if (!Number.isFinite(radius) || radius < 0) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet radius must be a finite number greater than or equal to zero.' })
+      this.cleanup()
+      return
+    }
+
+    this.editor.cmdParams.filletRadius = radius
+    this.editor.signals.terminalLogged.dispatch({ msg: `Radius set to ${radius}. Select two lines.` })
   }
 
   startSelection() {
@@ -48,7 +74,16 @@ class FilletCommand extends Command {
 
   onElementSelected(el) {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
-    if (!el) return
+    if (!el) {
+      this.startSelection()
+      return
+    }
+    if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+      el.removeClass('elementSelected')
+      this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_FILLET_DIAGNOSTIC })
+      this.startSelection()
+      return
+    }
     this.selectedElements.push([el, this.editor.lastClick])
     if (this.selectedElements.length < 2) {
       this.startSelection()
@@ -60,7 +95,10 @@ class FilletCommand extends Command {
   // Store original state before modification
   storeOriginalStates() {
     this.originalStates = []
+    this.finalStates = []
     this.createdElements = []
+    this.createdParents = []
+    this.createdPlacements = []
 
     for (let i = 0; i < this.selectedElements.length; i++) {
       const [line, click] = this.selectedElements[i]
@@ -85,6 +123,13 @@ class FilletCommand extends Command {
     const line1 = line1Data[0]
     const line2 = line2Data[0]
 
+    if (hasUnsupportedGeometryTransform(line1, this.editor.drawing)
+      || hasUnsupportedGeometryTransform(line2, this.editor.drawing)) {
+      this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_FILLET_DIAGNOSTIC })
+      this.cleanup()
+      return
+    }
+
     // Verify both elements are lines
     if (line1.type !== 'line' || line2.type !== 'line') {
       this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet only works with line elements.' })
@@ -92,33 +137,212 @@ class FilletCommand extends Command {
       return
     }
 
-    // Store original states before modification
-    this.storeOriginalStates()
+    const radius = Number(this.editor.cmdParams.filletRadius)
+    if (!Number.isFinite(radius) || radius < 0) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet radius must be a finite number greater than or equal to zero.' })
+      this.cleanup()
+      return
+    }
 
-    const radius = parseFloat(this.editor.cmdParams.filletRadius) || 0
+    const click1 = line1Data[1]
+    const click2 = line2Data[1]
+    const intersection = getLineIntersection(line1, line2)
+    if (!click1 || !click2) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet requires a pick point on each line.' })
+      this.cleanup()
+      return
+    }
+    if (!intersection) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet requires two non-parallel lines.' })
+      this.cleanup()
+      return
+    }
+
+    // Freeze all mutation inputs before the command enters History.
+    this.storeOriginalStates()
+    this.radius = radius
+    this._mutationPrepared = true
+    const initialElementIndex = this.editor.elementIndex
 
     try {
-      if (radius === 0) {
-        this.extendLinesToIntersection(line1Data, line2Data)
-      } else {
-        this.createFilletArc(line1Data, line2Data, radius)
+      this.editor.execute(this)
+      this.dispatchSignal('terminalLogged', { msg: `Fillet completed with radius ${radius}.` })
+    } catch (error) {
+      this.dispatchSignal('terminalLogged', { msg: `Fillet failed: ${error.message}` })
+      this.undo()
+      this.editor.elementIndex = initialElementIndex
+      this._mutationPrepared = false
+    }
+    this.cleanup()
+  }
+
+  applyMutation() {
+    const boundary = this.captureMutationBoundary()
+
+    try {
+      if (this.finalStates.length > 0) {
+        this.finalStates.forEach((state) => {
+          state.element.attr({
+            x1: state.x1,
+            y1: state.y1,
+            x2: state.x2,
+            y2: state.y2,
+          })
+        })
+        this.createdElements.forEach((element, index) => {
+          if (!element.node.parentNode) {
+            this.editor.addElement(element, this.createdParents[index])
+          }
+          this.restoreElementPlacement(element, this.createdPlacements[index])
+        })
+        this.invalidateGeometry()
+        return
       }
 
-      this.editor.signals.terminalLogged.dispatch({ msg: `Fillet completed with radius ${radius}. Select next elements or press Esc to finish.` })
-      this.editor.signals.updatedOutliner.dispatch()
+      if (this.radius === 0) {
+        this.extendLinesToIntersection(this.selectedElements[0], this.selectedElements[1])
+      } else {
+        this.createFilletArc(this.selectedElements[0], this.selectedElements[1], this.radius)
+      }
+      this.finalStates = this.selectedElements.map(([element]) => ({
+        element,
+        x1: element.attr('x1'),
+        y1: element.attr('y1'),
+        x2: element.attr('x2'),
+        y2: element.attr('y2'),
+      }))
+      this.createdParents = this.createdElements.map((element) => element.parent())
+      this.createdPlacements = this.createdElements.map((element, index) => (
+        this.captureElementPlacement(element, this.createdParents[index])
+      ))
+      this.invalidateGeometry()
     } catch (error) {
-      this.editor.signals.terminalLogged.dispatch({ msg: `Fillet failed: ${error.message}` })
-      // Restore original states on error
-      this.undo()
+      this.rollbackMutationBoundary(
+        boundary,
+        error,
+        'Fillet failed and its previous geometry could not be fully restored.',
+      )
     }
-    this.editor.execute(this)
-    this.editor.lastCommand = this
+  }
 
-    // Continue: reset selection and loop back for more fillets
-    this.selectedElements = []
-    this.originalStates = []
-    this.createdElements = []
-    this.startSelection()
+  captureElementState(element) {
+    return {
+      attributes: [...element.node.attributes].map((attribute) => [attribute.name, attribute.value]),
+      element,
+    }
+  }
+
+  restoreElementState(state) {
+    const { node } = state.element
+    ;[...node.attributes].forEach((attribute) => node.removeAttribute(attribute.name))
+    state.attributes.forEach(([name, value]) => node.setAttribute(name, value))
+  }
+
+  captureElementPlacement(element, fallbackParent = null) {
+    const parentNode = element.node.parentNode
+    return {
+      nextSibling: parentNode ? element.node.nextSibling : null,
+      parent: parentNode ? element.parent() : fallbackParent,
+      parentNode,
+    }
+  }
+
+  restoreElementPlacement(element, placement) {
+    if (!placement?.parentNode) {
+      if (element.node.parentNode) element.node.parentNode.removeChild(element.node)
+      return
+    }
+
+    const nextSibling = placement.nextSibling?.parentNode === placement.parentNode
+      ? placement.nextSibling
+      : null
+    if (element.node.parentNode !== placement.parentNode || element.node.nextSibling !== nextSibling) {
+      placement.parentNode.insertBefore(element.node, nextSibling)
+    }
+  }
+
+  captureMutationBoundary() {
+    const lineElements = [...new Set([
+      ...this.originalStates.map((state) => state.element),
+      ...this.finalStates.map((state) => state.element),
+    ])]
+    const createdElements = this.createdElements.slice()
+
+    return {
+      createdElements,
+      createdParents: this.createdParents.slice(),
+      createdPlacements: this.createdPlacements.slice(),
+      elementIndex: this.editor.elementIndex,
+      elementStates: [
+        ...lineElements.map((element) => this.captureElementState(element)),
+        ...createdElements.map((element) => this.captureElementState(element)),
+      ],
+      finalStates: this.finalStates.slice(),
+      placements: createdElements.map((element, index) => (
+        this.captureElementPlacement(element, this.createdParents[index])
+      )),
+      selected: this.editor.selected,
+      selectedElements: this.editor.selected.slice(),
+    }
+  }
+
+  restoreMutationBoundary(boundary) {
+    const rollbackErrors = []
+    const boundaryElements = new Set(boundary.createdElements)
+
+    this.createdElements.forEach((element) => {
+      if (boundaryElements.has(element) || !element.node.parentNode) return
+      try {
+        element.node.parentNode.removeChild(element.node)
+      } catch (error) {
+        rollbackErrors.push(error)
+      }
+    })
+
+    boundary.elementStates.forEach((state) => {
+      try {
+        this.restoreElementState(state)
+      } catch (error) {
+        rollbackErrors.push(error)
+      }
+    })
+    boundary.createdElements.forEach((element, index) => {
+      try {
+        this.restoreElementPlacement(element, boundary.placements[index])
+      } catch (error) {
+        rollbackErrors.push(error)
+      }
+    })
+
+    this.createdElements = boundary.createdElements.slice()
+    this.createdParents = boundary.createdParents.slice()
+    this.createdPlacements = boundary.createdPlacements.slice()
+    this.finalStates = boundary.finalStates.slice()
+    this.editor.elementIndex = boundary.elementIndex
+    boundary.selected.splice(0, boundary.selected.length, ...boundary.selectedElements)
+    this.editor.selected = boundary.selected
+
+    return rollbackErrors
+  }
+
+  rollbackMutationBoundary(boundary, error, message) {
+    const rollbackErrors = this.restoreMutationBoundary(boundary)
+    try {
+      this.invalidateGeometry()
+    } catch (rollbackError) {
+      rollbackErrors.push(rollbackError)
+    }
+
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError([error, ...rollbackErrors], message, { cause: error })
+    }
+    throw error
+  }
+
+  invalidateGeometry() {
+    this.editor.spatialIndex?.markDirty()
+    this.editor.fullSpatialIndex?.markDirty()
+    this.dispatchSignal('updatedOutliner')
   }
 
   // Utility functions for line geometry
@@ -400,7 +624,7 @@ class FilletCommand extends Command {
     arcPath.fill('none')
     applyCollectionStyleToElement(this.editor, arcPath)
     arcPath
-    this.editor.signals.updatedOutliner.dispatch()
+    this.dispatchSignal('updatedOutliner')
 
     // Store created arc for undo
     this.createdElements.push(arcPath)
@@ -468,6 +692,7 @@ class FilletCommand extends Command {
     this.editor.signals.inputValue.remove(this.onRadiusParam, this)
     this.editor.signals.inputValue.remove(this.onRadiusInput, this)
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    this._sessionActive = false
     this.editor.isInteracting = false
     this.editor.selectSingleElement = false
     this.editor.distance = null
@@ -481,48 +706,47 @@ class FilletCommand extends Command {
     this.cleanup()
     this.selectedElements = []
     this.originalStates = []
+    this.finalStates = []
     this.createdElements = []
+    this.createdParents = []
+    this.createdPlacements = []
+    this._mutationPrepared = false
   }
 
   undo() {
-    // Restore original line states
-    for (let i = 0; i < this.originalStates.length; i++) {
-      const state = this.originalStates[i]
-      state.element.attr({
-        x1: state.x1,
-        y1: state.y1,
-        x2: state.x2,
-        y2: state.y2,
-      })
-    }
+    const boundary = this.captureMutationBoundary()
 
-    // Remove any created arc elements
-    for (let i = 0; i < this.createdElements.length; i++) {
-      this.createdElements[i].remove()
+    try {
+      // Restore original line states
+      for (let i = 0; i < this.originalStates.length; i++) {
+        const state = this.originalStates[i]
+        state.element.attr({
+          x1: state.x1,
+          y1: state.y1,
+          x2: state.x2,
+          y2: state.y2,
+        })
+      }
+
+      // Remove any created arc elements
+      for (let i = 0; i < this.createdElements.length; i++) {
+        this.createdElements[i].remove()
+      }
+      this.createdParents = boundary.placements.map((placement) => placement.parent)
+      this.createdPlacements = boundary.placements
+      this.invalidateGeometry()
+    } catch (error) {
+      this.rollbackMutationBoundary(
+        boundary,
+        error,
+        'Fillet Undo failed and its applied geometry could not be fully restored.',
+      )
     }
   }
 
   redo() {
-    // Re-execute the fillet operation
-    if (this.originalStates.length > 0 && this.selectedElements.length === 2) {
-      const radius = parseFloat(this.editor.cmdParams.filletRadius) || 0
-
-      // Clear the createdElements array for redo
-      this.createdElements = []
-
-      try {
-        if (radius === 0) {
-          // selectedElements is already in the format [[element, click], [element, click]]
-          this.extendLinesToIntersection(this.selectedElements[0], this.selectedElements[1])
-        } else {
-          this.createFilletArc(this.selectedElements[0], this.selectedElements[1], radius)
-        }
-      } catch (error) {
-        console.error('Error in redo:', error)
-        // If redo fails, restore original state again
-        this.undo()
-      }
-    }
+    if (this.originalStates.length === 0 || this.selectedElements.length !== 2) return
+    this.applyMutation()
   }
 }
 
@@ -531,4 +755,4 @@ function filletCommand(editor) {
   filletCmd.execute()
 }
 
-export { filletCommand }
+export { filletCommand, FilletCommand }

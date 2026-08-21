@@ -1,9 +1,212 @@
 import { Command } from '../Command'
 import {
   createBlockDefinition,
-  insertBlockInstance,
   validateBlockDisplayName,
 } from '../BlockManager'
+
+const MAX_BLOCK_PREFLIGHT_NODES = 100000
+const BLOCK_MIXED_PARENT_DIAGNOSTIC = 'BLOCK requires selected elements to share the same parent.'
+const BLOCK_TRANSFORM_DIAGNOSTIC = 'BLOCK does not support transformed selections, ancestors, or descendants.'
+const BLOCK_COMPLEXITY_DIAGNOSTIC = 'BLOCK selection is too complex to validate safely.'
+const BLOCK_DRAWING_DIAGNOSTIC = 'BLOCK requires elements from the active drawing.'
+const MATRIX_EPSILON = 1e-9
+
+function childIndex(element) {
+  const parent = element.parent()
+  return parent ? Array.from(parent.node.children).indexOf(element.node) : -1
+}
+
+function sortBySiblingOrder(elements) {
+  const parentNode = elements[0]?.node?.parentNode
+  if (!parentNode) return elements.slice()
+
+  const indexes = new Map(
+    Array.from(parentNode.children, (node, index) => [node, index]),
+  )
+  return elements.slice().sort((left, right) => (
+    (indexes.get(left.node) ?? Number.MAX_SAFE_INTEGER)
+    - (indexes.get(right.node) ?? Number.MAX_SAFE_INTEGER)
+  ))
+}
+
+function insertAt(parent, element, index) {
+  const reference = index >= 0 ? parent.node.children[index] || null : null
+  parent.node.insertBefore(element.node, reference)
+}
+
+function restorePlacements(placements) {
+  const byParent = new Map()
+  placements.forEach((placement) => {
+    if (!byParent.has(placement.parent)) byParent.set(placement.parent, [])
+    byParent.get(placement.parent).push(placement)
+  })
+  byParent.forEach((entries) => {
+    entries
+      .sort((left, right) => left.index - right.index)
+      .forEach(({ element, index, parent }) => insertAt(parent, element, index))
+  })
+}
+
+function multiplyMatrices(left, right) {
+  return [
+    left[0] * right[0] + left[2] * right[1],
+    left[1] * right[0] + left[3] * right[1],
+    left[0] * right[2] + left[2] * right[3],
+    left[1] * right[2] + left[3] * right[3],
+    left[0] * right[4] + left[2] * right[5] + left[4],
+    left[1] * right[4] + left[3] * right[5] + left[5],
+  ]
+}
+
+function transformFunctionMatrix(name, values) {
+  if (name === 'matrix' && values.length === 6) return values
+  if (name === 'translate' && (values.length === 1 || values.length === 2)) {
+    return [1, 0, 0, 1, values[0], values[1] || 0]
+  }
+  if (name === 'scale' && (values.length === 1 || values.length === 2)) {
+    return [values[0], 0, 0, values[1] ?? values[0], 0, 0]
+  }
+  if (name === 'rotate' && (values.length === 1 || values.length === 3)) {
+    const radians = values[0] * Math.PI / 180
+    const cosine = Math.cos(radians)
+    const sine = Math.sin(radians)
+    const cx = values[1] || 0
+    const cy = values[2] || 0
+    return [
+      cosine,
+      sine,
+      -sine,
+      cosine,
+      cx - cosine * cx + sine * cy,
+      cy - sine * cx - cosine * cy,
+    ]
+  }
+  if (name === 'skewx' && values.length === 1) {
+    return [1, 0, Math.tan(values[0] * Math.PI / 180), 1, 0, 0]
+  }
+  if (name === 'skewy' && values.length === 1) {
+    return [1, Math.tan(values[0] * Math.PI / 180), 0, 1, 0, 0]
+  }
+  return null
+}
+
+function parseTransformMatrix(value) {
+  if (!value || value.trim() === '' || value.trim() === 'none') {
+    return [1, 0, 0, 1, 0, 0]
+  }
+  if (value.length > 4096) return null
+
+  const functionPattern = /([a-zA-Z]+)\s*\(([^)]*)\)/g
+  let matrix = [1, 0, 0, 1, 0, 0]
+  let cursor = 0
+  let matched = false
+  let match = functionPattern.exec(value)
+  while (match) {
+    if (!/^[\s,]*$/.test(value.slice(cursor, match.index))) return null
+    const rawValues = match[2].trim()
+    const values = rawValues === ''
+      ? []
+      : rawValues.split(/[\s,]+/).map(Number)
+    if (values.some((number) => !Number.isFinite(number))) return null
+    const transform = transformFunctionMatrix(match[1].toLowerCase(), values)
+    if (!transform) return null
+    matrix = multiplyMatrices(matrix, transform)
+    cursor = functionPattern.lastIndex
+    matched = true
+    match = functionPattern.exec(value)
+  }
+
+  if (!matched || !/^[\s,]*$/.test(value.slice(cursor))) return null
+  return matrix
+}
+
+function isIdentityMatrix(matrix) {
+  if (!matrix) return false
+  return matrix.every((value, index) => (
+    Math.abs(value - [1, 0, 0, 1, 0, 0][index]) <= MATRIX_EPSILON
+  ))
+}
+
+function hasNonIdentityTransform(node) {
+  const attribute = node.getAttribute?.('transform')
+  if (attribute && !isIdentityMatrix(parseTransformMatrix(attribute))) return true
+
+  const inlineTransform = node.style?.transform
+  if (
+    inlineTransform
+    && inlineTransform !== 'none'
+    && !isIdentityMatrix(parseTransformMatrix(inlineTransform))
+  ) return true
+
+  const view = node.ownerDocument?.defaultView
+  let computedTransform = ''
+  try {
+    computedTransform = view?.getComputedStyle?.(node)?.transform || ''
+  } catch (_error) {
+    return true
+  }
+  return Boolean(
+    computedTransform
+    && computedTransform !== 'none'
+    && !isIdentityMatrix(parseTransformMatrix(computedTransform)),
+  )
+}
+
+function qualifyBlockSelection(elements, drawing) {
+  if (!Array.isArray(elements) || elements.length === 0) return null
+  if (elements.length > MAX_BLOCK_PREFLIGHT_NODES) return BLOCK_COMPLEXITY_DIAGNOSTIC
+  if (elements.some((element) => !element?.node)) return BLOCK_DRAWING_DIAGNOSTIC
+
+  const parent = elements[0]?.parent() || null
+  if (!parent || elements.some((element) => element.parent()?.node !== parent.node)) {
+    return BLOCK_MIXED_PARENT_DIAGNOSTIC
+  }
+
+  const boundary = drawing?.node || null
+  const inspected = new Set()
+  const inspect = (node) => {
+    if (inspected.has(node)) return null
+    if (inspected.size >= MAX_BLOCK_PREFLIGHT_NODES) return BLOCK_COMPLEXITY_DIAGNOSTIC
+    inspected.add(node)
+    return hasNonIdentityTransform(node) ? BLOCK_TRANSFORM_DIAGNOSTIC : null
+  }
+
+  for (const element of elements) {
+    let ancestor = element.node
+    while (ancestor && ancestor !== boundary) {
+      const diagnostic = inspect(ancestor)
+      if (diagnostic) return diagnostic
+      ancestor = ancestor.parentNode
+    }
+    if (ancestor !== boundary) return BLOCK_DRAWING_DIAGNOSTIC
+
+    const descendants = []
+    if (element.node.firstElementChild) descendants.push(element.node.firstElementChild)
+    while (descendants.length > 0) {
+      const descendant = descendants.pop()
+      const diagnostic = inspect(descendant)
+      if (diagnostic) return diagnostic
+      if (descendant.nextElementSibling) descendants.push(descendant.nextElementSibling)
+      if (descendant.firstElementChild) descendants.push(descendant.firstElementChild)
+    }
+  }
+
+  return null
+}
+
+function isAtPlacement(parent, element, index) {
+  return element.node.parentNode === parent.node
+    && Array.from(parent.node.children).indexOf(element.node) === index
+}
+
+function ensurePlacement(parent, element, index) {
+  if (!isAtPlacement(parent, element, index)) insertAt(parent, element, index)
+}
+
+function throwWithRollbackErrors(error, rollbackErrors) {
+  if (rollbackErrors.length === 0) throw error
+  throw new AggregateError([error, ...rollbackErrors], error.message)
+}
 
 class BlockCommand extends Command {
   constructor(editor) {
@@ -16,16 +219,26 @@ class BlockCommand extends Command {
     // Stored for undo/redo
     this.originalElements = []
     this.originalParents = []
+    this.originalPlacements = []
+    this.selectionBefore = []
     this.blockName = null
+    this.basePoint = null
     this.instance = null
     this.defGroup = null
+    this.blockMetadata = null
+    this.defIndex = -1
+    this.instanceIndex = -1
+    this.instanceParent = null
 
     // Modal DOM refs
     this._overlay = null
   }
 
   execute() {
-    if (this.interactiveExecutionDone) return
+    if (this.interactiveExecutionDone) {
+      this._applyInitial()
+      return
+    }
 
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'BLOCK ' })
     this.editor.signals.terminalLogged.dispatch({
@@ -57,8 +270,21 @@ class BlockCommand extends Command {
       return
     }
 
-    this.originalElements = selected.slice()
-    this.originalParents = selected.map(el => el.parent())
+    const diagnostic = qualifyBlockSelection(selected, this.editor.drawing)
+    if (diagnostic) {
+      this.editor.signals.terminalLogged.dispatch({ msg: diagnostic })
+      this.cleanup()
+      return
+    }
+
+    this.selectionBefore = selected.slice()
+    this.originalElements = sortBySiblingOrder(selected)
+    this.originalParents = this.originalElements.map(el => el.parent())
+    this.originalPlacements = this.originalElements.map((element) => ({
+      element,
+      index: childIndex(element),
+      parent: element.parent(),
+    }))
 
     this._showModal()
   }
@@ -198,12 +424,13 @@ class BlockCommand extends Command {
       overlay.style.display = 'none'
       this.editor.signals.terminalLogged.dispatch({ msg: 'Click to set block base point…' })
 
-      this.editor.signals.pointCaptured.addOnce((point) => {
+      this._basePointListener = (point) => {
         basePoint = point
         bpValue.textContent = `${point.x.toFixed(2)}, ${point.y.toFixed(2)}`
         overlay.style.display = 'flex'
         validate()
-      }, this)
+      }
+      this.editor.signals.pointCaptured.addOnce(this._basePointListener, this)
     })
 
     // Cancel
@@ -267,31 +494,88 @@ class BlockCommand extends Command {
   // ── Block creation logic ──────────────────────────────────────────────────
 
   _finalize(point) {
-    const editor = this.editor
-
-    // Create the block definition from the selected elements
-    this.defGroup = createBlockDefinition(editor, this.blockName, this.originalElements, point)
-
-    // Remove original elements from the drawing
-    this.originalElements.forEach(el => el.remove())
-
-    // Insert a block instance at the same position (where the base point was)
-    const parent = this.originalParents[0] || editor.activeCollection
-    this.instance = insertBlockInstance(editor, this.blockName, point, parent)
-
-    // Commit to history
+    this.basePoint = { x: point.x, y: point.y }
     this.interactiveExecutionDone = true
-    editor.execute(this)
-
-    editor.signals.clearSelection.dispatch()
-    editor.selected = [this.instance]
-    editor.signals.updatedSelection.dispatch()
-    editor.signals.updatedOutliner.dispatch()
-    editor.signals.terminalLogged.dispatch({
-      msg: `Block "${this.blockName}" created with ${this.originalElements.length} elements.`,
-    })
-
     this.cleanup()
+    return this.editor.execute(this)
+  }
+
+  _applyInitial() {
+    const editor = this.editor
+    const selectionDiagnostic = qualifyBlockSelection(this.originalElements, editor.drawing)
+    if (
+      this.originalElements.length === 0
+      || selectionDiagnostic
+      || !validateBlockDisplayName(this.blockName)
+      || !Number.isFinite(this.basePoint?.x)
+      || !Number.isFinite(this.basePoint?.y)
+      || editor.blockDefinitions.has(this.blockName)
+    ) {
+      throw new TypeError(selectionDiagnostic || 'Block creation requires selected elements, a unique name, and a finite base point.')
+    }
+
+    if (this.selectionBefore.length === 0) {
+      this.selectionBefore = this.originalElements.slice()
+    }
+    this.originalElements = sortBySiblingOrder(this.originalElements)
+    this.originalParents = this.originalElements.map((element) => element.parent())
+    this.originalPlacements = this.originalElements.map((element) => ({
+      element,
+      index: childIndex(element),
+      parent: element.parent(),
+    }))
+    const earliestSelectedIndex = Math.min(
+      ...this.originalPlacements.map(({ index }) => index),
+    )
+
+    const startingElementIndex = editor.elementIndex
+    const defs = editor.svg.defs()
+    const defsBefore = new Set(Array.from(defs.node.children))
+    try {
+      this.defGroup = createBlockDefinition(
+        editor,
+        this.blockName,
+        this.originalElements,
+        this.basePoint,
+      )
+      this.defIndex = childIndex(this.defGroup)
+      this.blockMetadata = {
+        ...editor.blockDefinitions.get(this.blockName),
+        basePoint: { ...editor.blockDefinitions.get(this.blockName).basePoint },
+      }
+
+      this.originalElements.forEach((element) => element.remove())
+      this.instanceParent = this.originalParents[0] || editor.activeCollection || editor.drawing
+      const instanceId = editor.elementIndex++
+      this.instance = this.instanceParent.use(this.defGroup)
+      this.instance.attr({
+        id: instanceId,
+        name: this.blockName,
+        'data-block-instance': 'true',
+        'data-block-name': this.blockName,
+      }).move(this.basePoint.x, this.basePoint.y)
+      insertAt(this.instanceParent, this.instance, earliestSelectedIndex)
+      this.instanceIndex = earliestSelectedIndex
+    } catch (error) {
+      this.instance?.remove()
+      Array.from(defs.node.children).forEach((node) => {
+        if (!defsBefore.has(node)) node.remove()
+      })
+      editor.blockDefinitions.delete(this.blockName)
+      restorePlacements(this.originalPlacements)
+      editor.elementIndex = startingElementIndex
+      this.instance = null
+      this.defGroup = null
+      this.blockMetadata = null
+      this.defIndex = -1
+      this.instanceIndex = -1
+      throw error
+    }
+
+    this._notify(
+      [this.instance],
+      `Block "${this.blockName}" created with ${this.originalElements.length} elements.`,
+    )
   }
 
   cleanup() {
@@ -300,6 +584,10 @@ class BlockCommand extends Command {
 
     this._closeModal()
     document.removeEventListener('keydown', this.boundOnKeyDown)
+    if (this._basePointListener) {
+      this.editor.signals.pointCaptured.remove(this._basePointListener, this)
+      this._basePointListener = null
+    }
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
 
     this.editor.isInteracting = false
@@ -308,55 +596,83 @@ class BlockCommand extends Command {
   }
 
   undo() {
-    // Remove the instance
-    if (this.instance) this.instance.remove()
+    const editor = this.editor
+    const definitions = editor.blockDefinitions
+    const hadMetadata = definitions.has(this.blockName)
+    const metadataBefore = definitions.get(this.blockName)
+    const elementIndexBefore = editor.elementIndex
 
-    // Remove the definition from <defs>
-    if (this.defGroup) this.defGroup.remove()
+    try {
+      this.instance.remove()
+      this.defGroup.remove()
+      definitions.delete(this.blockName)
+      restorePlacements(this.originalPlacements)
+    } catch (error) {
+      const rollbackErrors = []
+      const rollback = (operation) => {
+        try {
+          operation()
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
 
-    // Remove from block definitions map
-    this.editor.blockDefinitions.delete(this.blockName)
+      this.originalElements.forEach((element) => {
+        if (element.node.parentNode) rollback(() => element.remove())
+      })
+      rollback(() => ensurePlacement(editor.svg.defs(), this.defGroup, this.defIndex))
+      rollback(() => {
+        if (hadMetadata) {
+          if (definitions.get(this.blockName) !== metadataBefore) {
+            definitions.set(this.blockName, metadataBefore)
+          }
+        } else if (definitions.has(this.blockName)) {
+          definitions.delete(this.blockName)
+        }
+      })
+      rollback(() => ensurePlacement(this.instanceParent, this.instance, this.instanceIndex))
+      editor.elementIndex = elementIndexBefore
+      throwWithRollbackErrors(error, rollbackErrors)
+    }
 
-    // Re-insert original elements
-    this.originalElements.forEach((el, i) => {
-      const parent = this.originalParents[i] || this.editor.activeCollection
-      parent.add(el)
-    })
-
-    this.editor.spatialIndex.markDirty()
-    this.editor.fullSpatialIndex.markDirty()
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = this.originalElements.slice()
-    this.editor.signals.updatedSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Undo: Block "${this.blockName}" removed.` })
+    this._notify(this.selectionBefore, `Undo: Block "${this.blockName}" removed.`)
   }
 
   redo() {
-    // Remove original elements
-    this.originalElements.forEach(el => el.remove())
+    try {
+      this.originalElements.forEach((element) => element.remove())
+      insertAt(this.editor.svg.defs(), this.defGroup, this.defIndex)
+      this.editor.blockDefinitions.set(this.blockName, {
+        ...this.blockMetadata,
+        basePoint: { ...this.blockMetadata.basePoint },
+      })
+      insertAt(this.instanceParent, this.instance, this.instanceIndex)
+    } catch (error) {
+      const rollbackErrors = []
+      const rollback = (operation) => {
+        try {
+          operation()
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+      if (this.instance.node.parentNode) rollback(() => this.instance.remove())
+      if (this.defGroup.node.parentNode) rollback(() => this.defGroup.remove())
+      rollback(() => this.editor.blockDefinitions.delete(this.blockName))
+      rollback(() => restorePlacements(this.originalPlacements))
+      throwWithRollbackErrors(error, rollbackErrors)
+    }
+    this._notify([this.instance], `Redo: Block "${this.blockName}" restored.`)
+  }
 
-    // Re-add the definition to <defs>
-    this.editor.svg.defs().add(this.defGroup)
-
-    // Re-add to block definitions map
-    this.editor.blockDefinitions.set(this.blockName, {
-      defId: this.defGroup.attr('id'),
-      basePoint: JSON.parse(this.defGroup.attr('data-base-point')),
-      elementCount: this.originalElements.length,
-    })
-
-    // Re-add the instance
-    const parent = this.originalParents[0] || this.editor.activeCollection
-    parent.add(this.instance)
-
+  _notify(selection, message) {
     this.editor.spatialIndex.markDirty()
     this.editor.fullSpatialIndex.markDirty()
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = [this.instance]
-    this.editor.signals.updatedSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Redo: Block "${this.blockName}" restored.` })
+    this.dispatchSignal('clearSelection')
+    this.editor.selected = [...selection]
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('terminalLogged', { msg: message })
   }
 }
 

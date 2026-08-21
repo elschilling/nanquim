@@ -70,8 +70,7 @@ function sampleCatmullRomSpline(points, samplesPerSeg) {
  * Each segment: { type: 'line'|'arc', x1, y1, x2, y2, element, ... }
  * Arc segments also carry: cx, cy, r, startAngle, endAngle, ccw
  */
-export function extractSegments(editor) {
-    const elements = getDrawableElements(editor)
+export function extractSegments(editor, elements = getDrawableElements(editor)) {
     const segments = []
 
     for (const el of elements) {
@@ -911,8 +910,7 @@ function getClosedElementInfo(el) {
  * Find the enclosing boundary for a hatch, given a click point.
  * Returns an array of edges: [{ from, to, segIdx }] or null.
  */
-export function findEnclosingBoundary(editor, clickPoint) {
-    const segments = extractSegments(editor)
+export function findEnclosingBoundary(editor, clickPoint, segments = extractSegments(editor)) {
     if (segments.length === 0) return null
 
     const testHits = castRays(clickPoint, segments, 8)
@@ -968,7 +966,13 @@ export function boundaryToPathD(boundaryEdges, segments) {
  * Find closed elements (islands) inside the outer boundary that should
  * become holes in the hatch. Returns an array of SVG sub-path strings.
  */
-export function findIslands(editor, outerBoundary, segments, clickPoint) {
+export function findIslands(
+    editor,
+    outerBoundary,
+    segments,
+    clickPoint,
+    elements = getDrawableElements(editor),
+) {
     const outerPoly = sampleBoundary(outerBoundary, segments)
     if (outerPoly.length < 3) return []
 
@@ -979,8 +983,6 @@ export function findIslands(editor, outerBoundary, segments, clickPoint) {
     }
 
     const islands = []
-    const elements = getDrawableElements(editor)
-
     for (const el of elements) {
         if (el.hasClass('grid') || el.hasClass('axis') || el.hasClass('ghostLine')) continue
         if (el.hasClass('hatch-fill')) continue

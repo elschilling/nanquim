@@ -1,5 +1,6 @@
 
 import { Command } from '../Command.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditCircleCommand extends Command {
     constructor(editor, element, oldValues, newValues) {
@@ -12,13 +13,17 @@ class EditCircleCommand extends Command {
     }
 
     execute() {
-        this.element.center(this.newValues.cx, this.newValues.cy)
-        this.element.radius(this.newValues.r)
+        this.applyValues(this.newValues)
     }
 
     undo() {
-        this.element.center(this.oldValues.cx, this.oldValues.cy)
-        this.element.radius(this.oldValues.r)
+        this.applyValues(this.oldValues)
+    }
+
+    applyValues(values) {
+        this.element.center(values.cx, values.cy)
+        this.element.radius(values.r)
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

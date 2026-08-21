@@ -2,6 +2,17 @@ import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { applyCollectionStyleToElement } from '../Collection'
 import { renderEllipseArc } from '../utils/ellipseArcUtils'
+import { remapSvgIds } from '../utils/sanitizeSvg'
+import {
+    hasOwnGeometryTransform,
+    hasUnsupportedAncestorTransform,
+} from '../utils/geometryTransformQualification'
+
+const TRANSFORMED_MIRROR_DIAGNOSTIC = 'MIRROR does not support transformed geometry or geometry inside transformed groups.'
+
+function hasUnsupportedMirrorTransform(element, drawing) {
+    return hasUnsupportedAncestorTransform(element, drawing) || hasOwnGeometryTransform(element)
+}
 
 function reflectPoint(p, p1, p2) {
     const dx = p2.x - p1.x
@@ -87,12 +98,20 @@ class MirrorCommand extends Command {
         this.name = 'Mirror'
         this.boundOnKeyDown = this.onKeyDown.bind(this)
         this.copiedElements = []
+        this.copiedParents = []
+        this.copiedNextSiblings = []
+        this.originalParents = []
+        this.originalNextSiblings = []
+        this.idsRemapped = false
         this.interactiveExecutionDone = false
         this.ghostLine = null
     }
 
     execute() {
-        if (this.interactiveExecutionDone) return
+        if (this.interactiveExecutionDone) {
+            this.applyMutation()
+            return
+        }
 
         this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
         this.editor.signals.terminalLogged.dispatch({
@@ -100,6 +119,7 @@ class MirrorCommand extends Command {
             msg: `Select elements to mirror and press Enter to confirm.`,
         })
         document.addEventListener('keydown', this.boundOnKeyDown)
+        this.editor.signals.commandCancelled.addOnce(this.cancelCommand, this)
         this.editor.suppressHandlers = true
         this.editor.handlers.clear()
     }
@@ -140,9 +160,21 @@ class MirrorCommand extends Command {
             this.cleanup()
             return
         }
+        if (selectedElements.some((element) => (
+            hasUnsupportedMirrorTransform(element, this.editor.drawing)
+        ))) {
+            this.editor.signals.terminalLogged.dispatch({
+                msg: TRANSFORMED_MIRROR_DIAGNOSTIC,
+                type: 'error',
+            })
+            this.cleanup()
+            return
+        }
 
         this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
         this.originalSelection = this.editor.selected.slice()
+        this.originalParents = this.originalSelection.map((element) => element.parent() || this.editor.activeCollection)
+        this.originalNextSiblings = this.originalSelection.map((element) => element.node.nextSibling)
 
         this.editor.selectSingleElement = true
 
@@ -172,10 +204,11 @@ class MirrorCommand extends Command {
         this.copiedElements = this.originalSelection.map((el, index) => {
             const originalPos = this.originalPositions[index]
             const parent = el.parent() || this.editor.activeCollection
+            this.copiedParents[index] = parent
 
             if (originalPos.type === 'rect') {
                 // Convert rect to polygon so it can represent rotated reflections
-                const poly = this.editor.drawing.polygon([
+                const poly = parent.polygon([
                     [originalPos.x, originalPos.y],
                     [originalPos.x + originalPos.width, originalPos.y],
                     [originalPos.x + originalPos.width, originalPos.y + originalPos.height],
@@ -194,12 +227,12 @@ class MirrorCommand extends Command {
                 })
                 poly.fill(fillColor)
                 poly.attr('name', el.attr('name') || 'Rectangle')
-                poly.attr('id', this.editor.elementIndex++)
-                parent.add(poly)
+                poly.attr('data-nanquim-transient', 'true')
                 poly.attr('opacity', 0.5)
                 return poly
             } else {
                 const clone = el.clone()
+                clone.attr('data-nanquim-transient', 'true')
                 parent.add(clone)
                 clone.attr('opacity', 0.5)
                 // Remove interactive classes from the mirror clone
@@ -245,7 +278,10 @@ class MirrorCommand extends Command {
         }
 
         this.ghostLine.plot(this.basePoint.x, this.basePoint.y, p2.x, p2.y)
+        this.updateMirroredGeometry(p2)
+    }
 
+    updateMirroredGeometry(p2) {
         // Update ghost clones positions based on reflection math
         this.copiedElements.forEach((clone, index) => {
             const originalPos = this.originalPositions[index]
@@ -313,6 +349,17 @@ class MirrorCommand extends Command {
             }
         }
 
+        if (
+            this.secondPoint.x === this.basePoint.x
+            && this.secondPoint.y === this.basePoint.y
+        ) {
+            this.editor.signals.terminalLogged.dispatch({ msg: 'Mirror axis requires two different points.', type: 'error' })
+            this.cancelCommand()
+            return
+        }
+
+        this.updateMirroredGeometry(this.secondPoint)
+
         if (this.ghostLine) {
             this.ghostLine.remove()
             this.ghostLine = null
@@ -335,10 +382,6 @@ class MirrorCommand extends Command {
         this.boundOnInput = (value) => {
             const val = value.trim().toLowerCase()
             if (val === 'y' || val === 'yes') {
-                // Delete original selection
-                this.originalSelection.forEach((el) => {
-                    if (el && el.node) el.remove()
-                })
                 this.deletedSource = true
                 this.editor.signals.terminalLogged.dispatch({ msg: 'Source objects deleted.' })
             } else {
@@ -348,20 +391,27 @@ class MirrorCommand extends Command {
             this.finishCommand()
         }
 
-        this.editor.signals.inputValue.addOnce(this.boundOnInput)
+        this.editor.signals.inputValue.addOnce(this.boundOnInput, this)
     }
 
     finishCommand() {
-        this.editor.isInteracting = false
-        this.editor.suppressHandlers = false
+        this.cleanup()
         this.editor.selectSingleElement = false
-        this.editor.signals.clearSelection.dispatch()
-        this.editor.selected = []
-        this.editor.signals.updatedOutliner.dispatch()
+
+        // The reflected elements were live, transient previews. Detach them
+        // before recording so History.execute performs the persistent change.
+        this.copiedElements.forEach((element) => element.remove())
 
         this.interactiveExecutionDone = true
-        this.editor.execute(this)
-        this.editor.lastCommand = new MirrorCommand(this.editor)
+        try {
+            this.editor.execute(this)
+            this.dispatchSignal('clearSelection')
+            this.editor.selected = []
+        } catch (error) {
+            this.editor.selected = this.originalSelection.slice()
+            this.dispatchSignal('updatedSelection')
+            throw error
+        }
     }
 
     updateArcData(element, originalPos, p1, p2) {
@@ -451,52 +501,184 @@ class MirrorCommand extends Command {
     }
 
     cleanup() {
+        document.removeEventListener('keydown', this.boundOnKeyDown)
+        if (this.boundOnEsc) document.removeEventListener('keydown', this.boundOnEsc)
+        if (this.boundOnMouseMove) document.removeEventListener('mousemove', this.boundOnMouseMove)
+        this.editor.signals.commandCancelled.remove(this.cancelCommand, this)
+        this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
+        this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)
+        if (this.boundOnInput) this.editor.signals.inputValue.remove(this.boundOnInput, this)
         this.editor.isInteracting = false
         this.editor.suppressHandlers = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
     }
 
     undo() {
-        // Revert what we did: remove clones
-        this.copiedElements.forEach((element) => {
-            element.remove()
-        })
-
-        // If we deleted source, restore them
-        if (this.deletedSource) {
-            this.originalSelection.forEach((element) => {
-                const parent = element.parent() || this.editor.activeCollection || this.editor.drawing
-                if (parent) parent.add(element)
+        const transientAttributes = this.copiedElements.map((element) => (
+            element.attr('data-nanquim-transient')
+        ))
+        try {
+            this.copiedElements.forEach((element) => {
+                element.remove()
             })
-            this.editor.selected = this.originalSelection.slice()
-        } else {
-            this.editor.selected = this.originalSelection.slice()
+
+            if (this.deletedSource) this.restoreOriginalElements()
+        } catch (error) {
+            const rollbackErrors = []
+            if (this.deletedSource) {
+                this.originalSelection.forEach((element) => {
+                    try {
+                        if (element.node.parentNode) {
+                            element.node.parentNode.removeChild(element.node)
+                        }
+                    } catch (rollbackError) {
+                        rollbackErrors.push(rollbackError)
+                    }
+                })
+            }
+            try {
+                this.restoreCopiedElements()
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError)
+            }
+            this.copiedElements.forEach((element, index) => {
+                try {
+                    this.restoreTransientAttribute(element, transientAttributes[index])
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError)
+                }
+            })
+            this.invalidateGeometry()
+            if (rollbackErrors.length > 0) {
+                throw new AggregateError(
+                    [error, ...rollbackErrors],
+                    'Mirror Undo failed and the applied geometry could not be fully restored.',
+                    { cause: error },
+                )
+            }
+            throw error
         }
 
-        this.editor.signals.updatedSelection.dispatch()
-        this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Mirror undone.' })
+        this.editor.selected = this.originalSelection.slice()
+        this.invalidateGeometry()
+        this.dispatchSignal('updatedSelection')
+        this.dispatchSignal('terminalLogged', { msg: 'Undo: Mirror undone.' })
     }
 
     redo() {
-        // Redo what we did: add clones back
-        this.copiedElements.forEach((element) => {
-            const parent = element.parent() || this.editor.activeCollection || this.editor.drawing
-            if (parent) parent.add(element)
-        })
+        this.applyMutation()
+        this.editor.selected = this.copiedElements.slice()
+        this.dispatchSignal('updatedSelection')
 
-        // If we deleted source, remove them again
-        if (this.deletedSource) {
-            this.originalSelection.forEach((element) => {
-                element.remove()
+        this.dispatchSignal('terminalLogged', { msg: 'Redo: Mirror reapplied.' })
+    }
+
+    applyMutation() {
+        const initialElementIndex = this.editor.elementIndex
+        const hadRemappedIds = this.idsRemapped
+        const transientAttributes = this.copiedElements.map((element) => (
+            element.attr('data-nanquim-transient')
+        ))
+        try {
+            this.remapCopiedIds()
+            this.copiedElements.forEach((element, index) => {
+                const parent = this.copiedParents[index]
+                if (parent) parent.add(element)
+                element.attr('data-nanquim-transient', null)
             })
+
+            if (this.deletedSource) {
+                this.originalSelection.forEach((element) => element.remove())
+            }
+
+            this.copiedElements.forEach((element, index) => {
+                this.copiedNextSiblings[index] = element.node.nextSibling
+            })
+        } catch (error) {
+            const rollbackErrors = []
+            this.copiedElements.forEach((element, index) => {
+                try {
+                    if (element.node.parentNode) {
+                        element.node.parentNode.removeChild(element.node)
+                    }
+                    this.restoreTransientAttribute(element, transientAttributes[index])
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError)
+                }
+            })
+            if (this.deletedSource) {
+                try {
+                    this.restoreOriginalElements()
+                } catch (rollbackError) {
+                    rollbackErrors.push(rollbackError)
+                }
+            }
+            if (!hadRemappedIds) {
+                this.editor.elementIndex = initialElementIndex
+                this.idsRemapped = false
+            }
+            this.invalidateGeometry()
+            if (rollbackErrors.length > 0) {
+                throw new AggregateError(
+                    [error, ...rollbackErrors],
+                    'Mirror failed and its original geometry could not be fully restored.',
+                    { cause: error },
+                )
+            }
+            throw error
         }
 
-        this.editor.selected = this.copiedElements.slice()
-        this.editor.signals.updatedSelection.dispatch()
+        this.invalidateGeometry()
+    }
 
-        this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Mirror reapplied.' })
+    restoreOriginalElements() {
+        for (let index = this.originalSelection.length - 1; index >= 0; index -= 1) {
+            const element = this.originalSelection[index]
+            const parent = this.originalParents[index]
+            if (!parent) continue
+            const nextSibling = this.originalNextSiblings[index]
+            const reference = nextSibling?.parentNode === parent.node ? nextSibling : null
+            parent.node.insertBefore(element.node, reference)
+        }
+    }
+
+    restoreCopiedElements() {
+        for (let index = this.copiedElements.length - 1; index >= 0; index -= 1) {
+            const element = this.copiedElements[index]
+            const parent = this.copiedParents[index]
+            if (!parent || element.node.parentNode === parent.node) continue
+            const nextSibling = this.copiedNextSiblings[index]
+            const reference = nextSibling?.parentNode === parent.node ? nextSibling : null
+            parent.node.insertBefore(element.node, reference)
+        }
+    }
+
+    restoreTransientAttribute(element, value) {
+        if (value == null) element.attr('data-nanquim-transient', null)
+        else element.attr('data-nanquim-transient', value)
+    }
+
+    invalidateGeometry() {
+        this.editor.spatialIndex.markDirty()
+        this.editor.fullSpatialIndex.markDirty()
+        this.dispatchSignal('updatedOutliner')
+        this.dispatchSignal('updatedProperties')
+    }
+
+    remapCopiedIds() {
+        if (this.idsRemapped) return
+        const initialElementIndex = this.editor.elementIndex
+        try {
+            this.copiedElements.forEach((element) => {
+                remapSvgIds([element.node], () => this.editor.elementIndex++)
+            })
+            this.idsRemapped = true
+        } catch (error) {
+            this.editor.elementIndex = initialElementIndex
+            throw error
+        }
     }
 }
 
@@ -534,3 +716,5 @@ export function mirrorCommand(editor) {
     const cmd = new MirrorCommand(editor)
     cmd.execute()
 }
+
+export { MirrorCommand }

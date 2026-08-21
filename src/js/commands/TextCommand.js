@@ -41,6 +41,7 @@ class TextCommand extends Command {
         if (this.boundOnCoordinateInput) {
             this.editor.signals.coordinateInput.remove(this.boundOnCoordinateInput, this)
         }
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
 
         this.insertionPoint = point
         this.editor.signals.terminalLogged.dispatch({
@@ -52,6 +53,7 @@ class TextCommand extends Command {
         const tsp = activeTextStyle.properties
 
         let textElement = this.drawing.text('')
+            .attr('data-nanquim-transient', 'true')
         this.textElement = textElement
         textElement.font({ size: tsp.fontSize, family: tsp.fontFamily, weight: tsp.fontWeight, style: tsp.fontStyle }) // setup font BEFORE move to fix bbox calcs
         textElement.attr({
@@ -92,7 +94,8 @@ class TextCommand extends Command {
         this.editor.signals.inputValue.addOnce(this.boundTextListener, this)
         
         // Add pointCaptured to finish editing when clicking outside
-        setTimeout(() => {
+        this._pointCaptureTimer = this.deferSessionTask(() => {
+            this._pointCaptureTimer = null
             this.boundOnPointCaptured = (point) => {
                 if (terminalInput) {
                     this.onTextInput(terminalInput.value)
@@ -119,11 +122,9 @@ class TextCommand extends Command {
         }
 
         this.textElement.text(textValue)
-        this.textElement.attr('id', this.editor.elementIndex++)
         this.textElement.attr('name', 'Text')
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, this.textElement))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, this.textElement))
         if (this.editor.signals.updatedOutliner) {
             this.editor.signals.updatedOutliner.dispatch()
         }
@@ -136,6 +137,12 @@ class TextCommand extends Command {
     }
 
     cleanup() {
+        this.editor.signals.commandCancelled.remove(this.cleanup, this)
+        this.editor.signals.pointCaptured.remove(this.onInsertionPoint, this)
+        if (this._pointCaptureTimer !== null && this._pointCaptureTimer !== undefined) {
+            clearTimeout(this._pointCaptureTimer)
+            this._pointCaptureTimer = null
+        }
         if (this.boundOnPointCaptured) {
             this.editor.signals.pointCaptured.remove(this.boundOnPointCaptured, this)
         }
@@ -154,7 +161,7 @@ class TextCommand extends Command {
         this.editor.signals.commandCancelled.remove(this.boundCancelCommand, this)
         this.editor.isInteracting = false
         this.editor.isTypingText = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
     }

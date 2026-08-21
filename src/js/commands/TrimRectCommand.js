@@ -1,86 +1,137 @@
 import { Command } from '../Command'
+import {
+  allocateTrimIdentity,
+  captureTrimPlacement,
+  copyTrimSemantics,
+  createAndReplaceTrimSource,
+  notifyTrimMutation,
+  replaceTrimSource,
+  restoreTrimSource,
+} from './TrimTransaction'
 
 class TrimRectCommand extends Command {
-    constructor(editor, element, trimData) {
-        super(editor)
-        this.type = 'TrimRectCommand'
-        this.name = 'Trim Rectangle'
-        this.element = element // the original rect
-        this.trimData = trimData // { action, closestLineIndex, lines }
-        this.parent = window.SVG(element.node.parentNode) || this.editor.activeCollection
+  constructor(editor, element, trimData) {
+    super(editor)
+    this.type = 'TrimRectCommand'
+    this.name = 'Trim Rectangle'
+    this.element = element
+    this.trimData = trimData
+    this.parent = element.parent() || this.editor.activeCollection
+    this.sourcePlacement = captureTrimPlacement(this.parent, element)
+    this.intactLines = []
+    this.trimmedLines = []
+    this.replacementLines = []
+    this.hasExecutedBefore = false
+  }
 
-        this.intactLines = []
-        this.trimmedLines = []
-        this.hasExecutedBefore = false
+  execute() {
+    if (this.hasExecutedBefore) {
+      replaceTrimSource(
+        this.parent,
+        this.element,
+        this.replacementLines,
+        this.sourcePlacement,
+      )
+      notifyTrimMutation(this)
+      return
     }
 
-    copyStyles(source, target) {
-        // Securely copy explicit styles (stroke color, width, etc from original)
-        // We use raw DOM methods to avoid reading transient CSS/computed styles like hover effects
-        const copyDOMStyles = (src, dest) => {
-            ['stroke', 'stroke-width', 'opacity', 'stroke-dasharray', 'stroke-linecap'].forEach(prop => {
-                const attrVal = src.getAttribute(prop)
-                if (attrVal !== null) dest.setAttribute(prop, attrVal)
-
-                const styleVal = src.style[prop]
-                if (styleVal) dest.style[prop] = styleVal
-            })
-            const overrides = src.getAttribute('data-style-overrides')
-            if (overrides) dest.setAttribute('data-style-overrides', overrides)
-        }
-
-        copyDOMStyles(source.node, target.node)
-        target
+    const buckets = { intact: [], trimmed: [] }
+    try {
+      this.replacementLines = createAndReplaceTrimSource({
+        createReplacements: () => this._createReplacements(buckets),
+        editor: this.editor,
+        parent: this.parent,
+        source: this.element,
+        sourcePlacement: this.sourcePlacement,
+      })
+    } catch (error) {
+      this.intactLines = []
+      this.trimmedLines = []
+      this.replacementLines = []
+      this.hasExecutedBefore = false
+      throw error
     }
 
-    execute() {
-        this.editor.removeElement(this.element)
+    this.intactLines = buckets.intact
+    this.trimmedLines = buckets.trimmed
+    this.hasExecutedBefore = true
+    notifyTrimMutation(this)
+  }
 
-        if (!this.hasExecutedBefore) {
-            this.hasExecutedBefore = true
+  undo() {
+    restoreTrimSource(
+      this.parent,
+      this.element,
+      this.replacementLines,
+      this.sourcePlacement,
+    )
+    notifyTrimMutation(this)
+  }
 
-            // Create the intact lines
-            for (let i = 0; i < 4; i++) {
-                if (i !== this.trimData.closestLineIndex) {
-                    const l = this.trimData.lines[i]
-                    const newLine = this.parent.line(l.x1, l.y1, l.x2, l.y2)
-                    this.copyStyles(this.element, newLine)
-                    this.intactLines.push(newLine)
-                }
-            }
+  redo() {
+    replaceTrimSource(
+      this.parent,
+      this.element,
+      this.replacementLines,
+      this.sourcePlacement,
+    )
+    notifyTrimMutation(this)
+  }
 
-            // Create the trimmed line(s)
-            const action = this.trimData.action
-            const targetLine = this.trimData.lines[this.trimData.closestLineIndex]
-
-            if (action.type === 'shorten') {
-                let newLine
-                if (action.keep === 'start') {
-                    newLine = this.parent.line(targetLine.x1, targetLine.y1, action.newX, action.newY)
-                } else {
-                    newLine = this.parent.line(action.newX, action.newY, targetLine.x2, targetLine.y2)
-                }
-                this.copyStyles(this.element, newLine)
-                this.trimmedLines.push(newLine)
-            } else if (action.type === 'split') {
-                const line1 = this.parent.line(targetLine.x1, targetLine.y1, action.splitX1, action.splitY1)
-                const line2 = this.parent.line(action.splitX2, action.splitY2, targetLine.x2, targetLine.y2)
-                this.copyStyles(this.element, line1)
-                this.copyStyles(this.element, line2)
-                this.trimmedLines.push(line1, line2)
-            }
-            this.editor.signals.updatedOutliner.dispatch()
-        } else {
-            this.intactLines.forEach(l => this.editor.addElement(l, this.parent))
-            this.trimmedLines.forEach(l => this.editor.addElement(l, this.parent))
-        }
+  _createReplacements(buckets) {
+    const { action, closestLineIndex, lines } = this.trimData
+    if (!Array.isArray(lines) || lines.length !== 4
+      || !Number.isInteger(closestLineIndex)
+      || closestLineIndex < 0
+      || closestLineIndex >= lines.length) {
+      throw new TypeError('Trim rectangle requires four edges and a target edge')
+    }
+    if (!action || !['remove', 'shorten', 'split'].includes(action.type)) {
+      throw new TypeError('Trim rectangle action must be remove, shorten, or split')
     }
 
-    undo() {
-        this.intactLines.forEach(l => this.editor.removeElement(l))
-        this.trimmedLines.forEach(l => this.editor.removeElement(l))
-        this.editor.addElement(this.element, this.parent)
+    const replacements = []
+    lines.forEach((line, index) => {
+      if (index !== closestLineIndex) {
+        const intact = this._createLine(line)
+        buckets.intact.push(intact)
+        replacements.push(intact)
+        return
+      }
+
+      this._targetSegments(line, action).forEach((segment) => {
+        const trimmed = this._createLine(segment)
+        buckets.trimmed.push(trimmed)
+        replacements.push(trimmed)
+      })
+    })
+    return replacements
+  }
+
+  _targetSegments(line, action) {
+    if (action.type === 'remove') return []
+    if (action.type === 'shorten') {
+      if (action.keep === 'start') {
+        return [{ ...line, x2: action.newX, y2: action.newY }]
+      }
+      if (action.keep === 'end') {
+        return [{ ...line, x1: action.newX, y1: action.newY }]
+      }
+      throw new TypeError('Trim rectangle shorten action requires a retained end')
     }
+    return [
+      { ...line, x2: action.splitX1, y2: action.splitY1 },
+      { ...line, x1: action.splitX2, y1: action.splitY2 },
+    ]
+  }
+
+  _createLine({ x1, y1, x2, y2 }) {
+    const line = this.parent.line(x1, y1, x2, y2)
+    copyTrimSemantics(this.element, line)
+    allocateTrimIdentity(this.editor, line, 'Line')
+    return line
+  }
 }
 
 export { TrimRectCommand }

@@ -1,5 +1,6 @@
 import { Command } from '../Command.js'
 import { renderEllipseArc } from '../utils/ellipseArcUtils.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditEllipseArcCommand extends Command {
   constructor(editor, element, oldData, newData) {
@@ -12,11 +13,16 @@ class EditEllipseArcCommand extends Command {
   }
 
   execute() {
-    renderEllipseArc(this.element, this.newData)
+    this.applyData(this.newData)
   }
 
   undo() {
-    renderEllipseArc(this.element, this.oldData)
+    this.applyData(this.oldData)
+  }
+
+  applyData(data) {
+    renderEllipseArc(this.element, data)
+    invalidateSpatialIndexes(this.editor)
   }
 }
 

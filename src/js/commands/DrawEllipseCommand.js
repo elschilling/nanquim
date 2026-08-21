@@ -32,6 +32,7 @@ class DrawEllipseCommand extends Command {
     createGhost(cx, cy, rx, ry) {
         this.ghost = this.drawing
             .ellipse(rx * 2, ry * 2)
+            .attr('data-nanquim-transient', 'true')
             .center(cx, cy)
         applyCollectionStyleToElement(this.editor, this.ghost)
     }
@@ -60,6 +61,7 @@ class DrawEllipseCommand extends Command {
             if (centerHandled) return
             centerHandled = true
             this.editor.signals.coordinateInput.remove(onCoord, this)
+            this.editor.signals.commandCancelled.remove(onCancel, this)
             this.setRx(point)
         }
 
@@ -67,10 +69,13 @@ class DrawEllipseCommand extends Command {
             if (centerHandled) return
             centerHandled = true
             this.editor.signals.pointCaptured.remove(onPoint, this)
+            this.editor.signals.commandCancelled.remove(onCancel, this)
             this.setRx(resolveInputCoordinate(this.editor))
         }
 
         const onCancel = () => {
+            this.editor.signals.pointCaptured.remove(onPoint, this)
+            this.editor.signals.coordinateInput.remove(onCoord, this)
             this.cleanup()
         }
 
@@ -202,15 +207,14 @@ class DrawEllipseCommand extends Command {
 
         const el = this.drawing
             .ellipse(rx * 2, ry * 2)
+            .attr('data-nanquim-transient', 'true')
             .center(center.x, center.y)
             .fill('none')
 
         applyCollectionStyleToElement(this.editor, el)
-        el.attr('id', this.editor.elementIndex++)
         el.attr('name', 'Ellipse')
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, el))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, el))
         this.updatedOutliner()
 
         this.editor.signals.terminalLogged.dispatch({

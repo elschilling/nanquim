@@ -1,5 +1,6 @@
 import { getArcGeometry } from '../utils/arcUtils.js'
 import { Command } from '../Command.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditArcCommand extends Command {
     constructor(editor, element, oldValues, newValues) {
@@ -37,10 +38,12 @@ class EditArcCommand extends Command {
         // If points are collinear (or very close), draw a straight line
         if (!geo) {
             this.element.plot(`M ${p1.x} ${p1.y} L ${p3.x} ${p3.y}`)
+            invalidateSpatialIndexes(this.editor)
             return
         }
 
         this.element.plot(`M ${p1.x} ${p1.y} A ${geo.radius} ${geo.radius} 0 ${geo.largeArcFlag} ${geo.sweepFlag} ${p3.x} ${p3.y}`)
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

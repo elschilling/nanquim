@@ -1,4 +1,5 @@
 import { Command } from '../Command.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditPolylineCommand extends Command {
   constructor(editor, element, oldPoints, newPoints) {
@@ -11,11 +12,16 @@ class EditPolylineCommand extends Command {
   }
 
   execute() {
-    this.element.plot(this.newPoints)
+    this.applyPoints(this.newPoints)
   }
 
   undo() {
-    this.element.plot(this.oldPoints)
+    this.applyPoints(this.oldPoints)
+  }
+
+  applyPoints(points) {
+    this.element.plot(points)
+    invalidateSpatialIndexes(this.editor)
   }
 }
 

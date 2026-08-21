@@ -27,6 +27,7 @@ class DrawRectangleCommand extends Command {
     this._previewPositionHandler = null
     this._pointPlacementHandler = null
     this._coordinatePlacementHandler = null
+    this._pointerCancelHandler = this._cancelPointerMode.bind(this)
   }
 
   execute() {
@@ -36,14 +37,17 @@ class DrawRectangleCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     this.editor.setIsDrawing(true)
+    this.editor.signals.commandCancelled.addOnce(this._pointerCancelHandler, this)
     this.draw()
   }
 
   draw() {
     const rect = this.drawing
-      .rect()
+      .rect(0, 0)
       .fill('none')
-      .attr('id', this.editor.elementIndex++)
+      .attr({
+        'data-nanquim-transient': 'true',
+      })
     applyCollectionStyleToElement(this.editor, rect)
     this._rect = rect
 
@@ -62,8 +66,12 @@ class DrawRectangleCommand extends Command {
       .on('drawstop', () => {
         document.removeEventListener('keydown', this.boundOnDimensionKey)
         if (!this._dimensionModeActive) {
+          rect.attr('name', 'Rectangle')
+          this.editor.execute(new AddElementCommand(this.editor, rect))
           this.updatedOutliner()
           this.editor.setIsDrawing(false)
+          this.editor.signals.commandCancelled.remove(this._pointerCancelHandler, this)
+          this._rect = null
         }
       })
   }
@@ -72,8 +80,19 @@ class DrawRectangleCommand extends Command {
     if (e.key === 'd' || e.key === 'D') {
       e.preventDefault()
       document.removeEventListener('keydown', this.boundOnDimensionKey)
+      this.editor.signals.commandCancelled.remove(this._pointerCancelHandler, this)
       this._enterDimensionMode()
     }
+  }
+
+  _cancelPointerMode() {
+    document.removeEventListener('keydown', this.boundOnDimensionKey)
+    this.editor.signals.commandCancelled.remove(this._pointerCancelHandler, this)
+    if (this._rect) {
+      try { this._rect.draw('cancel') } catch (_) { this._rect.remove() }
+      this._rect = null
+    }
+    this.editor.setIsDrawing(false)
   }
 
   _enterDimensionMode() {
@@ -175,13 +194,11 @@ class DrawRectangleCommand extends Command {
         .move(x, y)
         .fill('none')
         .attr({
-          id: this.editor.elementIndex++,
           name: 'Rectangle',
         })
       applyCollectionStyleToElement(this.editor, newRect)
 
-      this.editor.history.undos.push(new AddElementCommand(this.editor, newRect))
-      this.editor.lastCommand = this
+      this.editor.execute(new AddElementCommand(this.editor, newRect))
       this.editor.signals.terminalLogged.dispatch({ msg: `Rectangle ${w} × ${h} placed.` })
       this.updatedOutliner()
     }
@@ -236,7 +253,7 @@ class DrawRectangleCommand extends Command {
     this.editor.setIsDrawing(false)
 
     const resetSelectionMode = () => { this.editor.selectSingleElement = false }
-    if (deferSelectionReset) setTimeout(resetSelectionMode, 0)
+    if (deferSelectionReset) this.deferSessionTask(resetSelectionMode, 0)
     else resetSelectionMode()
   }
 }

@@ -1,66 +1,78 @@
 import { Command } from '../Command'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
+import {
+  allocateTrimIdentity,
+  captureTrimPlacement,
+  createAndReplaceTrimSource,
+  notifyTrimMutation,
+  prepareTrimClone,
+  replaceTrimSource,
+  restoreTrimSource,
+} from './TrimTransaction'
 
 class TrimSplineCommand extends Command {
-    constructor(editor, element, action) {
-        super(editor)
-        this.type = 'TrimSplineCommand'
-        this.name = 'Trim Spline'
-        this.element = element
-        this.action = action
-        this.parent = window.SVG(element.node.parentNode) || this.editor.activeCollection
-        this.newSplines = []
-        this.hasExecutedBefore = false
+  constructor(editor, element, action) {
+    super(editor)
+    this.type = 'TrimSplineCommand'
+    this.name = 'Trim Spline'
+    this.element = element
+    this.action = action
+    this.parent = element.parent() || this.editor.activeCollection
+    this.sourcePlacement = captureTrimPlacement(this.parent, element)
+    this.newSplines = []
+    this.hasExecutedBefore = false
+  }
+
+  execute() {
+    if (this.hasExecutedBefore) {
+      replaceTrimSource(this.parent, this.element, this.newSplines, this.sourcePlacement)
+      notifyTrimMutation(this)
+      return
     }
 
-    copyStyles(source, target) {
-        const copyDOMStyles = (src, dest) => {
-            ['stroke', 'stroke-width', 'opacity', 'stroke-dasharray', 'stroke-linecap'].forEach(prop => {
-                const attrVal = src.getAttribute(prop)
-                if (attrVal !== null) dest.setAttribute(prop, attrVal)
+    this.newSplines = createAndReplaceTrimSource({
+      createReplacements: () => this._createReplacements(),
+      editor: this.editor,
+      parent: this.parent,
+      source: this.element,
+      sourcePlacement: this.sourcePlacement,
+    })
+    this.hasExecutedBefore = true
+    notifyTrimMutation(this)
+  }
 
-                const styleVal = src.style[prop]
-                if (styleVal) dest.style[prop] = styleVal
-            })
-            const overrides = src.getAttribute('data-style-overrides')
-            if (overrides) dest.setAttribute('data-style-overrides', overrides)
-        }
+  undo() {
+    restoreTrimSource(
+      this.parent,
+      this.element,
+      this.newSplines,
+      this.sourcePlacement,
+    )
+    notifyTrimMutation(this)
+  }
 
-        copyDOMStyles(source.node, target.node)
-        target.attr('fill', 'none')
+  redo() {
+    replaceTrimSource(this.parent, this.element, this.newSplines, this.sourcePlacement)
+    notifyTrimMutation(this)
+  }
+
+  _createReplacements() {
+    if (this.action.type === 'remove') return []
+    if (this.action.type !== 'splines' || !Array.isArray(this.action.splines)) {
+      throw new TypeError('Trim spline action must be remove or include a splines array')
     }
-
-    execute() {
-        this.editor.removeElement(this.element)
-
-        if (this.action.type === 'remove') {
-            return
-        }
-
-        if (this.hasExecutedBefore) {
-            this.newSplines.forEach(s => this.editor.addElement(s, this.parent))
-        } else {
-            this.hasExecutedBefore = true
-
-            this.action.splines.forEach(points => {
-                const d = catmullRomToBezierPath(points)
-                const newSpline = this.parent.path(d)
-                newSpline.data('splineData', { points: points.map(p => ({ x: p.x, y: p.y })) })
-                this.copyStyles(this.element, newSpline)
-                newSpline.attr('name', 'Spline')
-                this.newSplines.push(newSpline)
-            })
-
-            this.editor.signals.updatedOutliner.dispatch()
-        }
-    }
-
-    undo() {
-        if (this.action.type !== 'remove') {
-            this.newSplines.forEach(s => this.editor.removeElement(s))
-        }
-        this.editor.addElement(this.element, this.parent)
-    }
+    return this.action.splines.map((points) => {
+      if (!Array.isArray(points) || points.length < 2) {
+        throw new TypeError('Trim spline replacements require at least two points')
+      }
+      const newSpline = prepareTrimClone(this.element)
+      const splinePoints = points.map((point) => ({ x: point.x, y: point.y }))
+      newSpline.plot(catmullRomToBezierPath(splinePoints))
+      newSpline.data('splineData', { points: splinePoints })
+      allocateTrimIdentity(this.editor, newSpline, 'Spline')
+      return newSpline
+    })
+  }
 }
 
 export { TrimSplineCommand }

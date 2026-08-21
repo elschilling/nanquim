@@ -5,6 +5,8 @@ import { SVG, registerWindow } from '@svgdotjs/svg.js'
 
 import { Command } from '../src/js/Command.js'
 import { History } from '../src/js/History.js'
+import { AddElementCommand } from '../src/js/commands/AddElementCommand.js'
+import { DocumentState } from '../src/js/document/DocumentState.js'
 import {
   applyCollectionStyleToElement,
   createCollection,
@@ -105,6 +107,140 @@ describe('History', () => {
     expect(modern.execute).toHaveBeenCalledOnce()
     expect(history.undos).toEqual([legacy, modern])
   })
+
+  test('does not record a command or discard redo when execute fails', () => {
+    const documentState = {
+      markChanged: vi.fn(),
+      runWithoutTracking: vi.fn((callback) => callback()),
+    }
+    const history = new History({ documentState })
+    const existing = { execute: vi.fn(), undo: vi.fn() }
+    const redo = { execute: vi.fn(), undo: vi.fn() }
+    const failure = new Error('mutation failed')
+    const broken = { execute: vi.fn(() => { throw failure }), undo: vi.fn() }
+
+    history.execute(existing)
+    history.redos.push(redo)
+    const undos = history.undos
+    const redos = history.redos
+    documentState.markChanged.mockClear()
+
+    expect(() => history.execute(broken)).toThrow(failure)
+    expect(history.undos).toBe(undos)
+    expect(history.redos).toBe(redos)
+    expect(history.undos).toEqual([existing])
+    expect(history.redos).toEqual([redo])
+    expect(history.idCounter).toBe(1)
+    expect(broken).not.toHaveProperty('id')
+    expect(documentState.markChanged).not.toHaveBeenCalled()
+
+    broken.id = 99
+    expect(() => history.execute(broken)).toThrow(failure)
+    expect(broken.id).toBe(99)
+    expect(history.idCounter).toBe(1)
+  })
+
+  test('rejects values that are not executable commands', () => {
+    const history = new History({})
+
+    expect(() => history.execute(null)).toThrow('History commands must implement execute() and undo()')
+    expect(() => history.execute({})).toThrow('History commands must implement execute() and undo()')
+    expect(() => history.execute({ execute: vi.fn() })).toThrow(
+      'History commands must implement execute() and undo()',
+    )
+    expect(history.undos).toEqual([])
+    expect(history.idCounter).toBe(0)
+  })
+
+  test('keeps commands on their original stack when undo or redo fails', () => {
+    const history = new History({})
+    const undoFailure = new Error('undo failed')
+    const redoFailure = new Error('redo failed')
+    const brokenUndo = {
+      execute: vi.fn(),
+      undo: vi.fn(() => { throw undoFailure }),
+    }
+    const brokenRedo = {
+      execute: vi.fn(),
+      undo: vi.fn(),
+      redo: vi.fn(() => { throw redoFailure }),
+    }
+
+    history.execute(brokenUndo)
+    expect(() => history.undo()).toThrow(undoFailure)
+    expect(history.undos).toEqual([brokenUndo])
+    expect(history.redos).toEqual([])
+
+    brokenUndo.undo.mockImplementation(() => {})
+    history.undo()
+    history.execute(brokenRedo)
+    history.undo()
+    expect(() => history.redo()).toThrow(redoFailure)
+    expect(history.undos).toEqual([])
+    expect(history.redos).toEqual([brokenRedo])
+  })
+
+  test('clear preserves stack identities for lifecycle observers', () => {
+    const history = new History({})
+    const undos = history.undos
+    const redos = history.redos
+
+    history.execute({ execute: vi.fn(), undo: vi.fn() })
+    history.redos.push({ execute: vi.fn(), undo: vi.fn() })
+    history.clear()
+
+    expect(history.undos).toBe(undos)
+    expect(history.redos).toBe(redos)
+    expect(history.undos).toEqual([])
+    expect(history.redos).toEqual([])
+    expect(history.idCounter).toBe(0)
+  })
+
+  test('commits a pre-attached element as one tracked mutation', () => {
+    document.body.replaceChildren()
+    registerWindow(window, document)
+    const svg = SVG().addTo(document.body)
+    const drawing = svg.group().attr('id', 'drawing')
+    const editor = {
+      drawing,
+      signals: {},
+      svg,
+      spatialIndex: { markDirty: vi.fn() },
+      fullSpatialIndex: { markDirty: vi.fn() },
+    }
+    editor.documentState = new DocumentState(editor)
+    editor.history = new History(editor)
+    editor.addElement = (element, parent) => {
+      editor.documentState.runWithoutTracking(() => element.putIn(parent))
+      editor.spatialIndex.markDirty()
+      editor.fullSpatialIndex.markDirty()
+      editor.documentState.markChanged('element-added')
+    }
+    editor.removeElement = (element) => {
+      editor.documentState.runWithoutTracking(() => element.remove())
+      editor.spatialIndex.markDirty()
+      editor.fullSpatialIndex.markDirty()
+      editor.documentState.markChanged('element-removed')
+    }
+
+    const rectangle = drawing.rect(20, 10)
+    const command = new AddElementCommand(editor, rectangle)
+    expect(rectangle.attr('data-nanquim-transient')).toBe('true')
+
+    editor.history.execute(command)
+    editor.documentState.flushObservedMutations()
+    expect(editor.documentState.revision).toBe(1)
+    expect(rectangle.attr('data-nanquim-transient')).toBeUndefined()
+    expect(editor.history.undos).toEqual([command])
+
+    editor.history.undo()
+    editor.history.redo()
+    expect(editor.documentState.revision).toBe(3)
+    expect(rectangle.node.isConnected).toBe(true)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(3)
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledTimes(3)
+    editor.documentState.disconnect()
+  })
 })
 
 describe('Command', () => {
@@ -178,8 +314,10 @@ describe('Collection document state', () => {
 
     toggleLock(editor, firstId)
     expect(editor.collections.get(firstId).locked).toBe(true)
+    expect(first.attr('data-locked')).toBe('true')
     toggleLock(editor, firstId)
     expect(editor.collections.get(firstId).locked).toBe(false)
+    expect(first.attr('data-locked')).toBe('false')
 
     deleteCollection(editor, firstId)
     expect(first.node.isConnected).toBe(false)
@@ -282,6 +420,19 @@ describe('Collection document state', () => {
     const lockedCollectionLeaf = lockedCollection.rect(3, 3).attr('id', 'locked-collection-leaf')
     toggleLock(editor, lockedCollection.attr('id'))
 
+    const paperAnnotations = editor.svg.group().attr({
+      id: 'paper-annotations',
+      'data-collection': 'true',
+      'data-nanquim-paper-annotations': 'true',
+    })
+    const paperLeaf = paperAnnotations.line(0, 0, 6, 6).attr('id', 'paper-leaf')
+    editor.paperAnnotations = paperAnnotations
+    editor.collections.set('paper-annotations', {
+      group: paperAnnotations,
+      locked: false,
+      visible: true,
+    })
+
     expect(elementIds(getDrawableElements(editor))).toEqual([
       'base',
       'locked-collection-leaf',
@@ -311,6 +462,7 @@ describe('Collection document state', () => {
 
     expect(nestedLeaf.parent()).toBe(nested)
     expect(sourceLeaf.attr('data-gn-source')).toBe('true')
+    expect(paperLeaf.parent()).toBe(paperAnnotations)
   })
 
   test('includes paper geometry and limits block editing to the edit group', () => {
@@ -319,15 +471,54 @@ describe('Collection document state', () => {
     editor.activeCollection.rect(10, 10).attr('id', 'model-element')
     editor.mode = 'paper'
     editor.paperViewportsGroup = editor.svg.group()
-    editor.paperAnnotations = editor.svg.group()
-    editor.paperViewportsGroup.rect(10, 10).attr('id', 'viewport-element')
+    const paperViewport = editor.paperViewportsGroup.group().attr('data-paper-viewport', 'true')
+    paperViewport.rect(10, 10).attr('id', 'viewport-element')
+    editor.paperAnnotations = editor.svg.group().attr('id', 'paper-annotations')
     editor.paperAnnotations.circle(5).attr('id', 'annotation-element')
+    const annotationsState = {
+      group: editor.paperAnnotations,
+      locked: false,
+      visible: true,
+    }
+    editor.collections.set('paper-annotations', annotationsState)
 
     expect(elementIds(getSelectableElements(editor))).toEqual([
       'annotation-element',
-      'model-element',
       'viewport-element',
     ])
+    expect(elementIds(getAllDrawingElements(editor))).toEqual([
+      'annotation-element',
+      'viewport-element',
+    ])
+
+    annotationsState.locked = true
+    expect(elementIds(getSelectableElements(editor))).toEqual(['viewport-element'])
+    expect(elementIds(getAllDrawingElements(editor))).toEqual([
+      'annotation-element',
+      'viewport-element',
+    ])
+
+    annotationsState.locked = false
+    annotationsState.visible = false
+    expect(elementIds(getSelectableElements(editor))).toEqual(['viewport-element'])
+    expect(elementIds(getAllDrawingElements(editor))).toEqual(['viewport-element'])
+
+    annotationsState.visible = true
+    paperViewport.attr('data-locked', 'true')
+    expect(elementIds(getSelectableElements(editor))).toEqual(['annotation-element'])
+    expect(elementIds(getAllDrawingElements(editor))).toEqual([
+      'annotation-element',
+      'viewport-element',
+    ])
+
+    paperViewport.attr({ 'data-hidden': 'true', 'data-locked': null })
+    expect(elementIds(getSelectableElements(editor))).toEqual(['annotation-element'])
+    expect(elementIds(getAllDrawingElements(editor))).toEqual(['annotation-element'])
+    paperViewport.attr('data-hidden', null)
+
+    editor.mode = 'model'
+    expect(elementIds(getSelectableElements(editor))).toEqual(['model-element'])
+    editor.mode = 'paper'
 
     const editGroup = editor.svg.group()
     editGroup.rect(3, 3).attr('id', 'edit-element')

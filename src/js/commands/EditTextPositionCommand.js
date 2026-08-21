@@ -1,4 +1,5 @@
 import { Command } from '../Command.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditTextPositionCommand extends Command {
     constructor(editor, element, oldValues, newValues) {
@@ -11,13 +12,17 @@ class EditTextPositionCommand extends Command {
     }
 
     execute() {
-        this.element.attr('x', this.newValues.x).attr('y', this.newValues.y)
-        this.element.rebuild()
+        this.applyValues(this.newValues)
     }
 
     undo() {
-        this.element.attr('x', this.oldValues.x).attr('y', this.oldValues.y)
+        this.applyValues(this.oldValues)
+    }
+
+    applyValues(values) {
+        this.element.attr('x', values.x).attr('y', values.y)
         this.element.rebuild()
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

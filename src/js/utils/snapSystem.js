@@ -35,6 +35,189 @@ function localPointToWorld(el, point, activeSvg, svgScreenCTM) {
   }
 }
 
+function worldPointToLocal(el, point, activeSvg, svgScreenCTM) {
+  const elementCTM = el.screenCTM()
+  const svgCTM = svgScreenCTM || activeSvg.screenCTM()
+  if (!elementCTM || !svgCTM) return point
+
+  const screenX = svgCTM.a * point.x + svgCTM.c * point.y + svgCTM.e
+  const screenY = svgCTM.b * point.x + svgCTM.d * point.y + svgCTM.f
+  const determinant = elementCTM.a * elementCTM.d - elementCTM.b * elementCTM.c
+  if (Math.abs(determinant) < 1e-10) return point
+
+  return {
+    x: (
+      elementCTM.d * (screenX - elementCTM.e)
+      - elementCTM.c * (screenY - elementCTM.f)
+    ) / determinant,
+    y: (
+      -elementCTM.b * (screenX - elementCTM.e)
+      + elementCTM.a * (screenY - elementCTM.f)
+    ) / determinant,
+  }
+}
+
+function getWorldSnapSegments(el, activeSvg, svgScreenCTM) {
+  return getSnapSegments(el).map(segment => ({
+    p1: localPointToWorld(el, segment.p1, activeSvg, svgScreenCTM),
+    p2: localPointToWorld(el, segment.p2, activeSvg, svgScreenCTM),
+  }))
+}
+
+function getWorldSnapCircles(el, activeSvg, svgScreenCTM) {
+  return getSnapCircles(el).flatMap(circle => {
+    const center = localPointToWorld(
+      el,
+      { x: circle.cx, y: circle.cy },
+      activeSvg,
+      svgScreenCTM,
+    )
+    const xRadiusPoint = localPointToWorld(
+      el,
+      { x: circle.cx + circle.r, y: circle.cy },
+      activeSvg,
+      svgScreenCTM,
+    )
+    const yRadiusPoint = localPointToWorld(
+      el,
+      { x: circle.cx, y: circle.cy + circle.r },
+      activeSvg,
+      svgScreenCTM,
+    )
+    const rx = Math.hypot(xRadiusPoint.x - center.x, xRadiusPoint.y - center.y)
+    const ry = Math.hypot(yRadiusPoint.x - center.x, yRadiusPoint.y - center.y)
+    const axisDot = (
+      (xRadiusPoint.x - center.x) * (yRadiusPoint.x - center.x)
+      + (xRadiusPoint.y - center.y) * (yRadiusPoint.y - center.y)
+    )
+
+    // A non-uniform transform turns a circle into an ellipse. The circle-only
+    // intersection and tangent solvers would return unsafe targets, so leave
+    // those advanced snaps disabled while direct endpoints remain available.
+    if (
+      Math.abs(rx - ry) > Math.max(rx, ry, 1) * 1e-6
+      || Math.abs(axisDot) > Math.max(rx * ry, 1) * 1e-6
+    ) return []
+    return [{ cx: center.x, cy: center.y, r: (rx + ry) / 2 }]
+  })
+}
+
+function getWorldArcSnapGeometry(el, activeSvg, svgScreenCTM) {
+  const arc = getArcSnapGeometry(el)
+  if (!arc) return null
+
+  const center = localPointToWorld(
+    el,
+    { x: arc.cx, y: arc.cy },
+    activeSvg,
+    svgScreenCTM,
+  )
+  const localStart = {
+    x: arc.cx + arc.r * Math.cos(arc.theta1),
+    y: arc.cy + arc.r * Math.sin(arc.theta1),
+  }
+  const localEnd = {
+    x: arc.cx + arc.r * Math.cos(arc.theta3),
+    y: arc.cy + arc.r * Math.sin(arc.theta3),
+  }
+  const start = localPointToWorld(el, localStart, activeSvg, svgScreenCTM)
+  const end = localPointToWorld(el, localEnd, activeSvg, svgScreenCTM)
+  const localXAxis = localPointToWorld(
+    el,
+    { x: arc.cx + arc.r, y: arc.cy },
+    activeSvg,
+    svgScreenCTM,
+  )
+  const localYAxis = localPointToWorld(
+    el,
+    { x: arc.cx, y: arc.cy + arc.r },
+    activeSvg,
+    svgScreenCTM,
+  )
+  const xVector = { x: localXAxis.x - center.x, y: localXAxis.y - center.y }
+  const yVector = { x: localYAxis.x - center.x, y: localYAxis.y - center.y }
+  const rx = Math.hypot(xVector.x, xVector.y)
+  const ry = Math.hypot(yVector.x, yVector.y)
+  const axisDot = xVector.x * yVector.x + xVector.y * yVector.y
+  if (
+    Math.abs(rx - ry) > Math.max(rx, ry, 1) * 1e-6
+    || Math.abs(axisDot) > Math.max(rx * ry, 1) * 1e-6
+  ) return null
+
+  const reversesOrientation = xVector.x * yVector.y - xVector.y * yVector.x < 0
+  return {
+    cx: center.x,
+    cy: center.y,
+    r: (rx + ry) / 2,
+    theta1: Math.atan2(start.y - center.y, start.x - center.x),
+    theta3: Math.atan2(end.y - center.y, end.x - center.x),
+    ccw: reversesOrientation ? !arc.ccw : arc.ccw,
+  }
+}
+
+function getWorldExtensionDirs(el, activeSvg, svgScreenCTM) {
+  return [...getLineExtensionDirs(el), ...getArcExtensionDirs(el)].flatMap(({ point, direction }) => {
+    const worldPoint = localPointToWorld(el, point, activeSvg, svgScreenCTM)
+    const worldDirectionPoint = localPointToWorld(
+      el,
+      { x: point.x + direction.x, y: point.y + direction.y },
+      activeSvg,
+      svgScreenCTM,
+    )
+    const dx = worldDirectionPoint.x - worldPoint.x
+    const dy = worldDirectionPoint.y - worldPoint.y
+    const length = Math.hypot(dx, dy)
+    if (length < 1e-10) return []
+    return [{
+      point: worldPoint,
+      direction: { x: dx / length, y: dy / length },
+    }]
+  })
+}
+
+function getBlockInstanceSnapPoints(el) {
+  const points = []
+  const x = Number(typeof el.x === 'function' ? el.x() : el.attr('x'))
+  const y = Number(typeof el.y === 'function' ? el.y() : el.attr('y'))
+  if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y })
+
+  try {
+    const bbox = el.node.getBBox()
+    if (bbox && [bbox.x, bbox.y, bbox.width, bbox.height].every(Number.isFinite)) {
+      points.push(
+        { x: bbox.x, y: bbox.y },
+        { x: bbox.x + bbox.width, y: bbox.y },
+        { x: bbox.x + bbox.width, y: bbox.y + bbox.height },
+        { x: bbox.x, y: bbox.y + bbox.height },
+      )
+    }
+  } catch (_) {
+    // A detached or unsupported <use> can lack a measurable shadow-tree bbox.
+    // Its explicit insertion point remains a safe snap target.
+  }
+
+  return points.filter((point, index) => points.findIndex(candidate => (
+    Math.abs(candidate.x - point.x) < 1e-10
+    && Math.abs(candidate.y - point.y) < 1e-10
+  )) === index)
+}
+
+const TRANSIENT_SNAP_SELECTOR = [
+  '[data-nanquim-transient="true"]',
+  '[data-block-ghost="true"]',
+  '.ghostLine',
+  '.measure-ghost',
+  '.measure-ghost-group',
+].join(',')
+
+function isTransientSnapCandidate(editor, el) {
+  const node = el?.node
+  if (!node) return true
+  if (editor.ghostNodes?.has(node)) return true
+  if (typeof node.matches === 'function' && node.matches(TRANSIENT_SNAP_SELECTOR)) return true
+  return typeof node.closest === 'function' && Boolean(node.closest(TRANSIENT_SNAP_SELECTOR))
+}
+
 // ---- Geometry extraction helpers ------------------------------------------------
 
 /** Extract line segments from an element (line, rect, polygon, polyline, path) */
@@ -204,7 +387,7 @@ function getArcSnapGeometry(el) {
   }
 }
 
-function getEditingVertexSnapBase(editor) {
+function getEditingVertexSnapBase(editor, activeSvg, svgScreenCTM) {
   if (!editor.isEditingVertex || !editor.editingVertices || editor.editingVertices.length === 0) return null
 
   const lineVertex = editor.editingVertices.find(v => v.element && v.element.type === 'line')
@@ -212,16 +395,26 @@ function getEditingVertexSnapBase(editor) {
 
   const line = lineVertex.element
   if (lineVertex.vertexIndex === 0) {
-    return { x: line.node.x2.baseVal.value, y: line.node.y2.baseVal.value }
+    return localPointToWorld(
+      line,
+      { x: line.node.x2.baseVal.value, y: line.node.y2.baseVal.value },
+      activeSvg,
+      svgScreenCTM,
+    )
   }
   if (lineVertex.vertexIndex === 1) {
-    return { x: line.node.x1.baseVal.value, y: line.node.y1.baseVal.value }
+    return localPointToWorld(
+      line,
+      { x: line.node.x1.baseVal.value, y: line.node.y1.baseVal.value },
+      activeSvg,
+      svgScreenCTM,
+    )
   }
   return null
 }
 
-function getSnapBasePoint(editor) {
-  return getEditingVertexSnapBase(editor) || editor.lastClick
+function getSnapBasePoint(editor, activeSvg, svgScreenCTM) {
+  return getEditingVertexSnapBase(editor, activeSvg, svgScreenCTM) || editor.lastClick
 }
 
 // ---- Extension snap helpers -----------------------------------------------------
@@ -304,7 +497,9 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     maxY: cursorWorld.y + snapWorldRadius,
   })
 
-  let snapCandidates = nearbyCandidates.map(item => item.element)
+  let snapCandidates = nearbyCandidates
+    .map(item => item.element)
+    .filter(el => !isTransientSnapCandidate(editor, el))
   if (editor.isDrawing) {
     snapCandidates = snapCandidates.filter(el =>
       (el.attr('id') !== undefined && el.attr('id') !== null) || el.data('ellipseArcData')
@@ -314,35 +509,38 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     const editingNodes = editor.editingVertices.map(v => v.element.node)
     snapCandidates = snapCandidates.filter(el => !editingNodes.includes(el.node))
   }
-  if (editor.isInteracting && editor.ghostNodes && editor.ghostNodes.size > 0) {
-    snapCandidates = snapCandidates.filter(el => !editor.ghostNodes.has(el.node))
-  }
-
   const st = editor.snapTypes || {}
   const taggedTargets = []
+  const pushWorldTarget = (point, snapType) => {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return
+    taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType })
+  }
+  const pushLocalTarget = (el, point, snapType) => {
+    pushWorldTarget(localPointToWorld(el, point, activeSvg, ctm), snapType)
+  }
 
   snapCandidates.forEach((el) => {
     if (el.type === 'line') {
       const pts = el.array()
       if (st.endpoint) {
         pts.forEach((pointArr) => {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg, ctm), snapType: 'endpoint' })
+          pushLocalTarget(el, { x: pointArr[0], y: pointArr[1] }, 'endpoint')
         })
       }
       if (st.midpoint && pts.length >= 2) {
         const mx = (pts[0][0] + pts[1][0]) / 2
         const my = (pts[0][1] + pts[1][1]) / 2
-        taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg, ctm), snapType: 'midpoint' })
+        pushLocalTarget(el, { x: mx, y: my }, 'midpoint')
       }
       if (st.nearest && pts.length >= 2) {
-        const p1 = { x: pts[0][0], y: pts[0][1] }
-        const p2 = { x: pts[1][0], y: pts[1][1] }
+        const p1 = localPointToWorld(el, { x: pts[0][0], y: pts[0][1] }, activeSvg, ctm)
+        const p2 = localPointToWorld(el, { x: pts[1][0], y: pts[1][1] }, activeSvg, ctm)
         const dx = p2.x - p1.x, dy = p2.y - p1.y
         const len2 = dx * dx + dy * dy
         if (len2 > 0) {
           let t = ((cursorWorld.x - p1.x) * dx + (cursorWorld.y - p1.y) * dy) / len2
           t = Math.max(0, Math.min(1, t))
-          taggedTargets.push({ screenPoint: worldToScreen({ x: p1.x + t * dx, y: p1.y + t * dy }, activeSvg, ctm), snapType: 'nearest' })
+          pushWorldTarget({ x: p1.x + t * dx, y: p1.y + t * dy }, 'nearest')
         }
       }
     } else if (el.type === 'circle') {
@@ -350,20 +548,32 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const cy = el.node.cy.baseVal.value
       const r = el.node.r.baseVal.value
       if (st.center) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg, ctm), snapType: 'center' })
+        pushLocalTarget(el, { x: cx, y: cy }, 'center')
       }
       if (st.quadrant) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy - r }, activeSvg, ctm), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx + r, y: cy }, activeSvg, ctm), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy + r }, activeSvg, ctm), snapType: 'quadrant' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx - r, y: cy }, activeSvg, ctm), snapType: 'quadrant' })
+        pushLocalTarget(el, { x: cx, y: cy - r }, 'quadrant')
+        pushLocalTarget(el, { x: cx + r, y: cy }, 'quadrant')
+        pushLocalTarget(el, { x: cx, y: cy + r }, 'quadrant')
+        pushLocalTarget(el, { x: cx - r, y: cy }, 'quadrant')
       }
       if (st.nearest) {
-        const dx = cursorWorld.x - cx, dy = cursorWorld.y - cy
-        const dist = Math.hypot(dx, dy)
-        if (dist > 0) {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r }, activeSvg, ctm), snapType: 'nearest' })
+        let nearestPoint = null
+        let nearestDistance = Infinity
+        for (let index = 0; index < 64; index += 1) {
+          const theta = (index / 64) * Math.PI * 2
+          const point = localPointToWorld(
+            el,
+            { x: cx + Math.cos(theta) * r, y: cy + Math.sin(theta) * r },
+            activeSvg,
+            ctm,
+          )
+          const distance = Math.hypot(point.x - cursorWorld.x, point.y - cursorWorld.y)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestPoint = point
+          }
         }
+        if (nearestPoint) pushWorldTarget(nearestPoint, 'nearest')
       }
     } else if (el.type === 'ellipse') {
       const cx = el.node.cx.baseVal.value
@@ -371,14 +581,14 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const rx = el.node.rx.baseVal.value
       const ry = el.node.ry.baseVal.value
       if (st.center) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: cx, y: cy }, activeSvg, ctm), snapType: 'center' })
+        pushLocalTarget(el, { x: cx, y: cy }, 'center')
       }
       if (st.quadrant) {
         ;[
           { x: cx + rx, y: cy }, { x: cx, y: cy + ry },
           { x: cx - rx, y: cy }, { x: cx, y: cy - ry },
         ].forEach(point => {
-          taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType: 'quadrant' })
+          pushLocalTarget(el, point, 'quadrant')
         })
       }
     } else if (el.type === 'rect') {
@@ -401,44 +611,53 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       })
       if (st.endpoint) {
         ;['topLeft', 'topRight', 'bottomRight', 'bottomLeft'].forEach(key => {
-          taggedTargets.push({ screenPoint: worldToScreen(rectPoints[key], activeSvg, ctm), snapType: 'endpoint' })
+          pushWorldTarget(rectPoints[key], 'endpoint')
         })
       }
       if (st.midpoint) {
         ;['topMidpoint', 'rightMidpoint', 'bottomMidpoint', 'leftMidpoint'].forEach(key => {
-          taggedTargets.push({ screenPoint: worldToScreen(rectPoints[key], activeSvg, ctm), snapType: 'midpoint' })
+          pushWorldTarget(rectPoints[key], 'midpoint')
         })
       }
     } else if (el.type === 'path' && el.data('arcData')) {
       const arcData = el.data('arcData')
       if (st.endpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p1.x, y: arcData.p1.y }, activeSvg, ctm), snapType: 'endpoint' })
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p3.x, y: arcData.p3.y }, activeSvg, ctm), snapType: 'endpoint' })
+        pushLocalTarget(el, arcData.p1, 'endpoint')
+        pushLocalTarget(el, arcData.p3, 'endpoint')
       }
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.p2.x, y: arcData.p2.y }, activeSvg, ctm), snapType: 'midpoint' })
+        pushLocalTarget(el, arcData.p2, 'midpoint')
       }
       if (st.center) {
         if (arcData.cx !== undefined) {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: arcData.cx, y: arcData.cy }, activeSvg, ctm), snapType: 'center' })
+          pushLocalTarget(el, { x: arcData.cx, y: arcData.cy }, 'center')
         } else {
           const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
-          if (geo) taggedTargets.push({ screenPoint: worldToScreen({ x: geo.cx, y: geo.cy }, activeSvg, ctm), snapType: 'center' })
+          if (geo) pushLocalTarget(el, { x: geo.cx, y: geo.cy }, 'center')
         }
       }
     } else if (el.type === 'polygon' || el.type === 'polyline') {
       const pts = el.array()
       if (st.endpoint) {
         pts.forEach((pointArr) => {
-          taggedTargets.push({ screenPoint: worldToScreen({ x: pointArr[0], y: pointArr[1] }, activeSvg, ctm), snapType: 'endpoint' })
+          pushLocalTarget(el, { x: pointArr[0], y: pointArr[1] }, 'endpoint')
         })
       }
       if (st.midpoint) {
         for (let i = 0; i < pts.length - 1; i++) {
           const mx = (pts[i][0] + pts[i + 1][0]) / 2
           const my = (pts[i][1] + pts[i + 1][1]) / 2
-          taggedTargets.push({ screenPoint: worldToScreen({ x: mx, y: my }, activeSvg, ctm), snapType: 'midpoint' })
+          pushLocalTarget(el, { x: mx, y: my }, 'midpoint')
         }
+      }
+    } else if (el.type === 'use' && el.attr('data-block-instance') === 'true') {
+      if (st.endpoint) {
+        // Block internals live in a referenced shadow tree and are not safe to
+        // traverse as editable instance geometry. Qualify the stable insertion
+        // point and the measurable instance bbox corners as endpoint targets.
+        getBlockInstanceSnapPoints(el).forEach(point => {
+          pushLocalTarget(el, point, 'endpoint')
+        })
       }
     } else if (el.type === 'path' && !el.data('arcData')) {
       const node = el.node
@@ -450,10 +669,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
       const ellipseArcData = el.data('ellipseArcData')
 
       if (ellipseArcData && st.center) {
-        taggedTargets.push({
-          screenPoint: worldToScreen({ x: ellipseArcData.cx, y: ellipseArcData.cy }, activeSvg, ctm),
-          snapType: 'center',
-        })
+        pushLocalTarget(el, { x: ellipseArcData.cx, y: ellipseArcData.cy }, 'center')
       }
 
       if (ellipseArcData && st.quadrant) {
@@ -470,26 +686,26 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         ;[0, Math.PI / 2, Math.PI, Math.PI * 1.5]
           .map(theta => ({ theta, ...pointOnEllipse(ellipseArcData, theta) }))
           .filter(point => isOnArc(point.theta)).forEach(point => {
-          taggedTargets.push({ screenPoint: worldToScreen(point, activeSvg, ctm), snapType: 'quadrant' })
+          pushLocalTarget(el, point, 'quadrant')
         })
       }
 
       if (st.endpoint) {
         if (ellipseArcData) {
-          taggedTargets.push({ screenPoint: worldToScreen(ellipseArcData.startPt, activeSvg, ctm), snapType: 'endpoint' })
-          taggedTargets.push({ screenPoint: worldToScreen(ellipseArcData.endPt, activeSvg, ctm), snapType: 'endpoint' })
+          pushLocalTarget(el, ellipseArcData.startPt, 'endpoint')
+          pushLocalTarget(el, ellipseArcData.endPt, 'endpoint')
         } else if (splineData) {
           splineData.points.forEach(sp => {
-            taggedTargets.push({ screenPoint: worldToScreen(sp, activeSvg, ctm), snapType: 'endpoint' })
+            pushLocalTarget(el, sp, 'endpoint')
           })
         } else {
-          taggedTargets.push({ screenPoint: worldToScreen(ptAt(0), activeSvg, ctm), snapType: 'endpoint' })
-          taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength), activeSvg, ctm), snapType: 'endpoint' })
+          pushLocalTarget(el, ptAt(0), 'endpoint')
+          pushLocalTarget(el, ptAt(totalLength), 'endpoint')
         }
       }
 
       if (st.midpoint) {
-        taggedTargets.push({ screenPoint: worldToScreen(ptAt(totalLength / 2), activeSvg, ctm), snapType: 'midpoint' })
+        pushLocalTarget(el, ptAt(totalLength / 2), 'midpoint')
       }
 
       if (st.nearest) {
@@ -497,7 +713,12 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         let minDist = Infinity
         let nearestPt = null
         for (let i = 0; i <= samples; i++) {
-          const pt = ptAt((i / samples) * totalLength)
+          const pt = localPointToWorld(
+            el,
+            ptAt((i / samples) * totalLength),
+            activeSvg,
+            ctm,
+          )
           const d = Math.hypot(pt.x - cursorWorld.x, pt.y - cursorWorld.y)
           if (d < snapWorldRadius && d < minDist) {
             minDist = d
@@ -505,7 +726,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           }
         }
         if (nearestPt) {
-          taggedTargets.push({ screenPoint: worldToScreen(nearestPt, activeSvg, ctm), snapType: 'nearest' })
+          pushWorldTarget(nearestPt, 'nearest')
         }
       }
     }
@@ -517,11 +738,13 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     for (let i = 0; i < intCandidates.length; i++) {
       for (let j = i + 1; j < intCandidates.length; j++) {
         const elA = intCandidates[i], elB = intCandidates[j]
-        const segsA = getSnapSegments(elA), segsB = getSnapSegments(elB)
-        const cirsA = getSnapCircles(elA), cirsB = getSnapCircles(elB)
+        const segsA = getWorldSnapSegments(elA, activeSvg, ctm)
+        const segsB = getWorldSnapSegments(elB, activeSvg, ctm)
+        const cirsA = getWorldSnapCircles(elA, activeSvg, ctm)
+        const cirsB = getWorldSnapCircles(elB, activeSvg, ctm)
 
         const pushPt = pt => {
-          if (pt) taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'intersection' })
+          if (pt) pushWorldTarget(pt, 'intersection')
         }
 
         // line-line
@@ -539,16 +762,16 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
 
   // ---- PERPENDICULAR SNAP ----
   // Requires a base point: finds the foot where a line FROM the active base TO the element is perpendicular.
-  const snapBasePoint = getSnapBasePoint(editor)
+  const snapBasePoint = getSnapBasePoint(editor, activeSvg, ctm)
   if (st.perpendicular && snapBasePoint) {
     const from = snapBasePoint
-    const pushPerp = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'perpendicular' })
+    const pushPerp = pt => pushWorldTarget(pt, 'perpendicular')
 
     snapCandidates.forEach(el => {
       if (el.type === 'line') {
-        const pts = el.array()
-        if (pts.length < 2) return
-        const p1 = { x: pts[0][0], y: pts[0][1] }, p2 = { x: pts[1][0], y: pts[1][1] }
+        const segment = getWorldSnapSegments(el, activeSvg, ctm)[0]
+        if (!segment) return
+        const { p1, p2 } = segment
         const dx = p2.x - p1.x, dy = p2.y - p1.y
         const len2 = dx * dx + dy * dy
         if (len2 < 1e-10) return
@@ -558,53 +781,46 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         }
 
       } else if (el.type === 'circle') {
-        const cx = el.node.cx.baseVal.value, cy = el.node.cy.baseVal.value
-        const r = el.node.r.baseVal.value
-        const dx = from.x - cx, dy = from.y - cy
-        const dist = Math.hypot(dx, dy)
-        if (dist < 1e-10) return
-        // Both intersections of the from→center line with the circle
-        pushPerp({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r })
-        pushPerp({ x: cx - (dx / dist) * r, y: cy - (dy / dist) * r })
+        getWorldSnapCircles(el, activeSvg, ctm).forEach(({ cx, cy, r }) => {
+          const dx = from.x - cx, dy = from.y - cy
+          const dist = Math.hypot(dx, dy)
+          if (dist < 1e-10) return
+          // Both intersections of the from→center line with the circle
+          pushPerp({ x: cx + (dx / dist) * r, y: cy + (dy / dist) * r })
+          pushPerp({ x: cx - (dx / dist) * r, y: cy - (dy / dist) * r })
+        })
 
       } else if (el.type === 'ellipse') {
         const cx = el.node.cx.baseVal.value, cy = el.node.cy.baseVal.value
         const rx = el.node.rx.baseVal.value, ry = el.node.ry.baseVal.value
-        const dx = from.x - cx, dy = from.y - cy
+        const localFrom = worldPointToLocal(el, from, activeSvg, ctm)
+        const dx = localFrom.x - cx, dy = localFrom.y - cy
         if (Math.hypot(dx, dy) > 1e-10) {
           const len = Math.hypot(dx / rx, dy / ry)
           if (len > 1e-10) {
-            pushPerp({ x: cx + (dx / rx / len) * rx, y: cy + (dy / ry / len) * ry })
-            pushPerp({ x: cx - (dx / rx / len) * rx, y: cy - (dy / ry / len) * ry })
+            pushLocalTarget(el, { x: cx + (dx / rx / len) * rx, y: cy + (dy / ry / len) * ry }, 'perpendicular')
+            pushLocalTarget(el, { x: cx - (dx / rx / len) * rx, y: cy - (dy / ry / len) * ry }, 'perpendicular')
           }
         }
 
       } else if (el.type === 'path' && el.data('arcData')) {
-        const arcData = el.data('arcData')
-        const geo = getArcGeometry(arcData.p1, arcData.p2, arcData.p3)
-        if (!geo) return
-        const cx = arcData.cx !== undefined ? arcData.cx : geo.cx
-        const cy = arcData.cx !== undefined ? arcData.cy : geo.cy
-        const dx = from.x - cx, dy = from.y - cy
+        const arc = getWorldArcSnapGeometry(el, activeSvg, ctm)
+        if (!arc) return
+        const dx = from.x - arc.cx, dy = from.y - arc.cy
         const dist = Math.hypot(dx, dy)
         if (dist < 1e-10) return
         for (const sign of [1, -1]) {
-          const foot = { x: cx + sign * (dx / dist) * geo.radius, y: cy + sign * (dy / dist) * geo.radius }
-          if (isPointInArc(foot, cx, cy, geo.theta1, geo.theta3, geo.ccw)) {
+          const foot = {
+            x: arc.cx + sign * (dx / dist) * arc.r,
+            y: arc.cy + sign * (dy / dist) * arc.r,
+          }
+          if (isPointInArc(foot, arc.cx, arc.cy, arc.theta1, arc.theta3, arc.ccw)) {
             pushPerp(foot)
           }
         }
 
       } else if (el.type === 'rect') {
-        const rx = el.node.x.baseVal.value, ry = el.node.y.baseVal.value
-        const rw = el.node.width.baseVal.value, rh = el.node.height.baseVal.value
-        const edges = [
-          [{ x: rx,      y: ry      }, { x: rx + rw, y: ry      }],
-          [{ x: rx + rw, y: ry      }, { x: rx + rw, y: ry + rh }],
-          [{ x: rx + rw, y: ry + rh }, { x: rx,      y: ry + rh }],
-          [{ x: rx,      y: ry + rh }, { x: rx,      y: ry      }],
-        ]
-        edges.forEach(([p1, p2]) => {
+        getWorldSnapSegments(el, activeSvg, ctm).forEach(({ p1, p2 }) => {
           const dx = p2.x - p1.x, dy = p2.y - p1.y
           const len2 = dx * dx + dy * dy
           if (len2 < 1e-10) return
@@ -613,17 +829,13 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         })
 
       } else if (el.type === 'polygon' || el.type === 'polyline') {
-        const pts = el.array()
-        const count = el.type === 'polygon' ? pts.length : pts.length - 1
-        for (let i = 0; i < count; i++) {
-          const p1 = { x: pts[i][0], y: pts[i][1] }
-          const p2 = { x: pts[(i + 1) % pts.length][0], y: pts[(i + 1) % pts.length][1] }
+        getWorldSnapSegments(el, activeSvg, ctm).forEach(({ p1, p2 }) => {
           const dx = p2.x - p1.x, dy = p2.y - p1.y
           const len2 = dx * dx + dy * dy
-          if (len2 < 1e-10) continue
+          if (len2 < 1e-10) return
           const t = Math.max(0, Math.min(1, ((from.x - p1.x) * dx + (from.y - p1.y) * dy) / len2))
           pushPerp({ x: p1.x + t * dx, y: p1.y + t * dy })
-        }
+        })
       }
     })
   }
@@ -633,21 +845,26 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
   // FROM the active base TO the element is tangent.
   if (st.tangent && snapBasePoint) {
     const from = snapBasePoint
-    const pushTangent = pt => taggedTargets.push({ screenPoint: worldToScreen(pt, activeSvg, ctm), snapType: 'tangent' })
+    const pushTangent = pt => pushWorldTarget(pt, 'tangent')
 
     snapCandidates.forEach(el => {
       if (el.type === 'circle') {
-        const cx = el.node.cx.baseVal.value
-        const cy = el.node.cy.baseVal.value
-        const r = el.node.r.baseVal.value
-        tangentPtsFromPointToCircle(from, cx, cy, r).forEach(pushTangent)
-
+        getWorldSnapCircles(el, activeSvg, ctm).forEach(circle => {
+          tangentPtsFromPointToCircle(from, circle.cx, circle.cy, circle.r)
+            .forEach(pushTangent)
+        })
       } else if (el.type === 'path' && (el.data('arcData') || el.data('circleTrimData'))) {
-        const arcGeo = getArcSnapGeometry(el)
-        if (!arcGeo) return
-
-        tangentPtsFromPointToCircle(from, arcGeo.cx, arcGeo.cy, arcGeo.r)
-          .filter(pt => isPointInArc(pt, arcGeo.cx, arcGeo.cy, arcGeo.theta1, arcGeo.theta3, arcGeo.ccw))
+        const arc = getWorldArcSnapGeometry(el, activeSvg, ctm)
+        if (!arc) return
+        tangentPtsFromPointToCircle(from, arc.cx, arc.cy, arc.r)
+          .filter(point => isPointInArc(
+            point,
+            arc.cx,
+            arc.cy,
+            arc.theta1,
+            arc.theta3,
+            arc.ccw,
+          ))
           .forEach(pushTangent)
       }
     })
@@ -660,7 +877,7 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     // Phase A: register new endpoint hovers when cursor is near an endpoint
     const extEndpointRadius = snapWorldRadius * 1.5
     snapCandidates.forEach(el => {
-      const dirs = [...getLineExtensionDirs(el), ...getArcExtensionDirs(el)]
+      const dirs = getWorldExtensionDirs(el, activeSvg, ctm)
       dirs.forEach(({ point, direction }) => {
         const d = Math.hypot(point.x - cursorWorld.x, point.y - cursorWorld.y)
         if (d < extEndpointRadius) {
@@ -727,8 +944,10 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         }).map(item => item.element)
 
         nearProj.forEach(el => {
-          getSnapSegments(el).forEach(seg => tryPushIntersection(lineLineIntersectPt(ep1, ep2, seg.p1, seg.p2)))
-          getSnapCircles(el).forEach(cir => lineCircleIntersectPts(ep1, ep2, cir.cx, cir.cy, cir.r).forEach(tryPushIntersection))
+          getWorldSnapSegments(el, activeSvg, ctm)
+            .forEach(seg => tryPushIntersection(lineLineIntersectPt(ep1, ep2, seg.p1, seg.p2)))
+          getWorldSnapCircles(el, activeSvg, ctm)
+            .forEach(cir => lineCircleIntersectPts(ep1, ep2, cir.cx, cir.cy, cir.r).forEach(tryPushIntersection))
         })
 
         // Extension-extension intersections (two active extension rays crossing each other)

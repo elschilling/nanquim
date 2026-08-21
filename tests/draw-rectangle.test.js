@@ -79,6 +79,18 @@ function createEditor(coordinates = { x: 120, y: 120 }) {
     signals,
     snapPoint: null,
     svg,
+    addElement(element, parent) {
+      parent.appendChild(element.node)
+    },
+    execute(command) {
+      command.execute()
+      this.history.undos.push(command)
+      this.history.redos.length = 0
+      return command
+    },
+    removeElement(element) {
+      element.remove()
+    },
     setIsDrawing(value) {
       this.isDrawing = value
     },
@@ -154,7 +166,7 @@ describe('rectangle dimension placement', () => {
     expect(rectangle.getAttribute('height')).toBe('20')
     expect(rectangle.getAttribute('name')).toBe('Rectangle')
     expect(editor.history.undos).toHaveLength(1)
-    expect(editor.lastCommand).toBe(command)
+    expect(editor.lastCommand).toBeUndefined()
     expect(editor.isInteracting).toBe(false)
     expect(editor.selectSingleElement).toBe(false)
   })

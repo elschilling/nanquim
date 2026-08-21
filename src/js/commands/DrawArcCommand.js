@@ -14,6 +14,7 @@ class DrawArcCommand extends Command {
         this.arcPath = null
         this.boundHandleMove = this.handleMove.bind(this)
         this.boundHandleClick = this.handleClick.bind(this)
+        this.boundCancelDrawing = this.cleanup.bind(this)
     }
 
     execute() {
@@ -31,9 +32,7 @@ class DrawArcCommand extends Command {
         document.addEventListener('mousemove', this.boundHandleMove)
 
         // Listen for cancellation
-        activeSvg.on('cancelDrawing', (e) => {
-            this.cleanup()
-        })
+        activeSvg.on('cancelDrawing.arc', this.boundCancelDrawing)
     }
 
     handleClick(e) {
@@ -52,6 +51,7 @@ class DrawArcCommand extends Command {
 
             // Start drawing the visual path
             this.arcPath = this.drawing.path(`M ${point.x} ${point.y} L ${point.x} ${point.y}`)
+                .attr('data-nanquim-transient', 'true')
                 .fill('none')
                 .stroke({ color: 'white', width: 0.1, linecap: 'round' })
             applyCollectionStyleToElement(this.editor, this.arcPath)
@@ -101,7 +101,6 @@ class DrawArcCommand extends Command {
         }
 
         // Save the final path
-        this.arcPath.attr('id', this.editor.elementIndex++)
         this.arcPath.attr('name', 'Arc')
 
         // Save the defining points so we can edit the arc later
@@ -112,8 +111,7 @@ class DrawArcCommand extends Command {
         })
 
         // Add to history
-        this.editor.history.undos.push(new AddElementCommand(this.editor, this.arcPath))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, this.arcPath))
         this.updatedOutliner()
 
         this.editor.signals.terminalLogged.dispatch({ msg: 'Arc created.' })
@@ -125,8 +123,8 @@ class DrawArcCommand extends Command {
 
     cleanup() {
         const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
-        activeSvg.off('mousedown.arc')
-        activeSvg.off('cancelDrawing')
+        activeSvg.off('mousedown.arc', this.boundHandleClick)
+        activeSvg.off('cancelDrawing.arc', this.boundCancelDrawing)
         document.removeEventListener('mousemove', this.boundHandleMove)
         this.editor.setIsDrawing(false)
         this.points = []

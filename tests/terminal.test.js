@@ -14,13 +14,33 @@ function createSignal() {
 }
 
 function createEditor() {
+  const documentSnapshot = {
+    sessionId: 1,
+    revision: 0,
+    savedRevision: 0,
+    name: null,
+    handle: null,
+  }
   return {
     activeEditor: 'canvas',
     isInteracting: false,
     isDrawing: false,
     isTypingText: false,
+    commandSessionRevision: 0,
     selected: [],
     previousSelection: [],
+    execute: vi.fn(),
+    documentSnapshot,
+    documentState: {
+      createSaveToken: vi.fn(() => Object.freeze({
+        sessionId: documentSnapshot.sessionId,
+        revision: documentSnapshot.revision,
+        name: documentSnapshot.name,
+        handle: documentSnapshot.handle,
+      })),
+      flushObservedMutations: vi.fn(),
+      snapshot: vi.fn(() => ({ ...documentSnapshot })),
+    },
     signals: new Proxy({}, {
       get(target, key) {
         if (!target[key]) target[key] = createSignal()
@@ -76,6 +96,14 @@ describe('Terminal Space confirmation', () => {
     foreignInput = document.getElementById('foreignInput')
     editor = createEditor()
 
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        readText: vi.fn(),
+        writeText: vi.fn(() => Promise.resolve()),
+      },
+    })
+
     // Terminal currently installs document-level listeners for the application
     // lifetime. Capture them so this focused unit suite leaves jsdom isolated.
     const addDocumentListener = document.addEventListener.bind(document)
@@ -103,6 +131,20 @@ describe('Terminal Space confirmation', () => {
     editor.isDrawing = false
     editor.isTypingText = false
     editor.lastCommand = null
+    editor.commandSessionRevision = 0
+    editor.execute.mockClear()
+    Object.assign(editor.documentSnapshot, {
+      sessionId: 1,
+      revision: 0,
+      savedRevision: 0,
+      name: null,
+      handle: null,
+    })
+    editor.documentState.createSaveToken.mockClear()
+    editor.documentState.flushObservedMutations.mockClear()
+    editor.documentState.snapshot.mockClear()
+    navigator.clipboard.readText.mockReset()
+    navigator.clipboard.writeText.mockClear()
     editor.signals.inputValue.dispatch.mockClear()
     window.newDocument = vi.fn()
     window.openSVG = vi.fn()
@@ -125,6 +167,56 @@ describe('Terminal Space confirmation', () => {
     expect(window.openSVG).toHaveBeenCalledOnce()
     expect(window.saveSVG).toHaveBeenCalledOnce()
     expect(window.saveAsSVG).toHaveBeenCalledOnce()
+  })
+
+  test('discards an asynchronous clipboard read after the document session changes', async () => {
+    let resolveClipboard
+    navigator.clipboard.readText.mockReturnValue(new Promise((resolve) => {
+      resolveClipboard = resolve
+    }))
+
+    expect(pressShortcut('v').defaultPrevented).toBe(true)
+    expect(editor.documentState.createSaveToken).toHaveBeenCalledOnce()
+
+    editor.documentSnapshot.sessionId = 2
+    resolveClipboard(JSON.stringify({
+      nanquimClipboard: true,
+      elements: [{ svg: '<line x1="0" y1="0" x2="1" y2="1" />' }],
+    }))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(editor.documentState.flushObservedMutations).toHaveBeenCalledOnce()
+    expect(editor.execute).not.toHaveBeenCalled()
+    expect(editor.signals.terminalLogged.dispatch).toHaveBeenCalledWith({
+      type: 'span',
+      msg: 'Paste cancelled because the document or command session changed.',
+    })
+  })
+
+  test('discards an asynchronous clipboard read after another command session starts', async () => {
+    let resolveClipboard
+    navigator.clipboard.readText.mockReturnValue(new Promise((resolve) => {
+      resolveClipboard = resolve
+    }))
+
+    expect(pressShortcut('v').defaultPrevented).toBe(true)
+    terminalInput.value = '?'
+    expect(pressSpace(terminalInput).defaultPrevented).toBe(true)
+    expect(editor.commandSessionRevision).toBe(1)
+    resolveClipboard(JSON.stringify({
+      nanquimClipboard: true,
+      elements: [{ svg: '<line x1="0" y1="0" x2="1" y2="1" />' }],
+    }))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(editor.execute).not.toHaveBeenCalled()
+    expect(editor.documentState.snapshot).not.toHaveBeenCalled()
+    expect(editor.signals.terminalLogged.dispatch).toHaveBeenCalledWith({
+      type: 'span',
+      msg: 'Paste cancelled because the document or command session changed.',
+    })
   })
 
   test('clears pending input and autocomplete when the document session changes', () => {

@@ -132,6 +132,7 @@ function toggleLock(editor, id) {
     if (!data) return
 
     data.locked = !data.locked
+    data.group.attr('data-locked', data.locked ? 'true' : 'false')
     if (editor.documentState) editor.documentState.markChanged('collection-lock-changed')
     editor.signals.updatedCollections.dispatch()
     editor.signals.updatedOutliner.dispatch()
@@ -275,7 +276,12 @@ function isElementLocked(editor, element) {
 }
 
 /**
- * Get all drawable elements across all visible collections.
+ * Get all Model Space drawable elements across visible collections.
+ *
+ * Paper annotations are registered in `editor.collections` so they can share
+ * collection UI and persistence behavior, but they live in a separate SVG and
+ * must never participate in Model-only geometric algorithms such as Hatch,
+ * Trim, or Extend.
  * Returns a flat array of SVG leaf elements, recursing into groups.
  */
 function getDrawableElements(editor) {
@@ -291,6 +297,8 @@ function getDrawableElements(editor) {
         })
     }
     editor.collections.forEach((data) => {
+        if (data.group === editor.paperAnnotations
+            || data.group.attr('data-nanquim-paper-annotations') === 'true') return
         if (!data.visible) return
         collectLeaves(data.group)
     })
@@ -322,15 +330,25 @@ function getSelectableElements(editor) {
         return elements
     }
 
+    if (editor.mode === 'paper') {
+        if (editor.paperViewportsGroup) collectLeaves(editor.paperViewportsGroup)
+        const annotations = editor.paperAnnotations
+        const annotationsState = annotations
+            ? editor.collections?.get(annotations.attr('id'))
+            : null
+        if (
+            annotations
+            && annotationsState?.visible !== false
+            && annotationsState?.locked !== true
+        ) collectLeaves(annotations)
+        return elements
+    }
+
     editor.collections.forEach((data) => {
+        if (data.group === editor.paperAnnotations) return
         if (!data.visible || data.locked) return
         collectLeaves(data.group)
     })
-
-    if (editor.mode === 'paper') {
-        if (editor.paperViewportsGroup) collectLeaves(editor.paperViewportsGroup)
-        if (editor.paperAnnotations) collectLeaves(editor.paperAnnotations)
-    }
 
     return elements
 }
@@ -351,7 +369,18 @@ function getAllDrawingElements(editor) {
             }
         })
     }
+    if (editor.mode === 'paper') {
+        if (editor.paperViewportsGroup) collectLeaves(editor.paperViewportsGroup)
+        const annotations = editor.paperAnnotations
+        const annotationsState = annotations
+            ? editor.collections?.get(annotations.attr('id'))
+            : null
+        if (annotations && annotationsState?.visible !== false) collectLeaves(annotations)
+        return elements
+    }
+
     editor.collections.forEach((data) => {
+        if (data.group === editor.paperAnnotations) return
         collectLeaves(data.group)
     })
     return elements

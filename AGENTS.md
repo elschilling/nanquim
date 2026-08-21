@@ -40,9 +40,9 @@ and the other user-facing references in the same change.
 - Use pnpm, not npm or yarn.
 - The application uses vanilla JavaScript ES modules, direct DOM manipulation,
   Pug, indented Sass, SVG.js, Vite 6, and Vitest.
-- There is no configured linter, formatter, type-check command, coverage
-  provider, or browser-test command yet. These are roadmap work, not current
-  capabilities.
+- There is no configured linter, formatter, or type-check command. Vitest uses
+  the V8 coverage provider, and the production browser harness uses
+  `puppeteer-core` with locally installed stock Chromium or Firefox.
 
 Common commands:
 
@@ -51,6 +51,9 @@ pnpm install
 pnpm dev
 pnpm test
 pnpm test -- tests/<name>.test.js
+pnpm test:coverage
+pnpm test:browser:chromium
+pnpm test:browser:firefox
 pnpm test:watch
 pnpm build
 pnpm preview
@@ -92,6 +95,10 @@ CI also uses `pnpm install --frozen-lockfile` and
 - `src/js/ThemeController.js`, `src/js/Preferences.js`, and
   `src/js/PreferencesUI.js`: local appearance/interaction preferences and
   theme application.
+- `tests/support/deterministic-harness.js`: shared Editor, SVG, signal, timer,
+  listener, clipboard, and file-API fixtures for command contracts.
+- `scripts/browser/run-workflows.mjs`: isolated production-build workflows for
+  Chromium and Firefox; failure artifacts go under ignored `test-results/`.
 - `src/styles/main.sass`: active style entry point.
 - `src/styles/_identity.sass` and `src/styles/components/_icon.sass`: Nanquim's
   semantic visual layer and original icon mappings.
@@ -332,8 +339,8 @@ with npm `@svgdotjs/svg.js` 3.2.5 imports.
 - jsdom cannot prove paint visibility, pointer capture, browser file APIs,
   downloads, or layout. Perform a real-browser check for those changes until
   they are covered by an automated browser suite.
-- Do not invent `test:coverage`, Playwright, lint, or type-check validation in a
-  handoff until those scripts actually exist.
+- Do not invent lint, type-check, Playwright, or another validation command in
+  a handoff. Use only scripts that currently exist in `package.json`.
 
 Validation by change type:
 
@@ -344,7 +351,7 @@ Validation by change type:
 | UI/Sass/helper rendering | Focused tests, `pnpm test`, `pnpm build`, and real-browser desktop/narrow check |
 | Persistence/import/export | Adversarial and semantic round-trip tests, full suite, build, and representative fixture check |
 | Geometry or spatial behavior | Unit cases across supported element types/transforms plus full suite |
-| Package/build/CI | Frozen install assumptions, full suite, build, and dependency audit when network is available |
+| Package/build/CI | Frozen install assumptions, coverage suite, build, browser workflow where affected, and dependency audit when network is available |
 | Documentation only | Link/path review, consistency with source, and `git diff --check` |
 
 ## Public assets and performance

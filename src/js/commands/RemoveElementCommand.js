@@ -1,36 +1,13 @@
-import { Command } from '../Command.js';
+import { MultiRemoveElementCommand } from './MultiRemoveElementCommand'
 
-class RemoveElementCommand extends Command {
-
-	constructor( editor, element ) {
-
-		super( editor );
-
-		this.type = 'RemoveElementCommand';
-		this.name = 'Remove Element';
-		this.element = element;
-		this.parent = ( element !== undefined ) ? element.node.parentNode : undefined;
-		// if ( this.parent !== undefined ) {
-
-		// 	this.index = this.parent.children.indexOf( this.element );
-
-		// }
-
-	}
-
-	execute() {
-
-		this.editor.removeElement( this.element );
-		// this.editor.deselect();
-
-	}
-
-	undo() {
-
-		this.editor.addElement( this.element, this.parent);
-		// this.editor.select( this.object );
-
-	}
+class RemoveElementCommand extends MultiRemoveElementCommand {
+  constructor(editor, element) {
+    super(editor, element ? [element] : [])
+    this.type = 'RemoveElementCommand'
+    this.name = 'Remove Element'
+    this.element = element
+    this.parent = this.placements[0]?.parent
+  }
 }
 
-export { RemoveElementCommand };
+export { RemoveElementCommand }

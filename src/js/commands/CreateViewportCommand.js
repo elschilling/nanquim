@@ -13,9 +13,124 @@
  */
 
 import { resolveInputCoordinate } from '../utils/coordinateInput'
+import { Command } from '../Command'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
+
+class CreateViewportCommand extends Command {
+  constructor(editor, { x, y, w, h, scale = 100 }) {
+    super(editor)
+    this.type = 'CreateViewportCommand'
+    this.name = 'Create Viewport'
+    this.requestedState = { x, y, w, h, scale }
+    this.viewportState = null
+    this.viewport = null
+    this.selectionBefore = [...editor.selected]
+    this.selectionApplied = null
+  }
+
+  execute() {
+    const restoring = this.viewportState !== null
+    const state = this.viewportState || this.requestedState
+    const options = this.viewportState
+      ? {
+          id: state.id,
+          locked: state.locked,
+          modelOriginX: state.modelOriginX,
+          modelOriginY: state.modelOriginY,
+          visible: state.visible,
+        }
+      : {}
+
+    const previousViewport = this.viewport
+    const previousState = this.viewportState
+    const previousSelectionApplied = this.selectionApplied
+    const selectionAtStart = [...this.editor.selected]
+    try {
+      this.viewport = this.editor.paperEditor.createViewport(
+        state.x,
+        state.y,
+        state.w,
+        state.h,
+        state.scale,
+        { ...options, notify: false, silent: true },
+      )
+
+      if (!this.viewportState) {
+        this.viewportState = {
+          h: this.viewport.h,
+          id: this.viewport.id,
+          locked: this.viewport.locked === true,
+          modelOriginX: this.viewport.modelOriginX,
+          modelOriginY: this.viewport.modelOriginY,
+          scale: this.viewport.scale,
+          visible: this.viewport.visible !== false,
+          w: this.viewport.w,
+          x: this.viewport.x,
+          y: this.viewport.y,
+        }
+      }
+      if (!this.selectionApplied) this.selectionApplied = [...this.editor.selected]
+      else if (restoring) this.editor.selected = [...this.selectionApplied]
+      invalidateSpatialIndexes(this.editor)
+    } catch (error) {
+      const rollbackErrors = []
+      if (this.viewport) {
+        try {
+          this.editor.paperEditor.removeViewport(this.viewport.id, {
+            notify: false,
+            silent: true,
+          })
+        } catch (rollbackError) {
+          rollbackErrors.push(rollbackError)
+        }
+      }
+      this.viewport = previousViewport
+      this.viewportState = previousState
+      this.selectionApplied = previousSelectionApplied
+      this.editor.selected = selectionAtStart
+      if (rollbackErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...rollbackErrors],
+          `${error.message} Removing the incomplete Paper viewport also failed.`,
+        )
+      }
+      throw error
+    }
+    this.dispatchSignal('paperViewportsChanged')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedProperties')
+  }
+
+  undo() {
+    if (!this.viewportState) return
+    const removed = this.editor.paperEditor.removeViewport(this.viewportState.id, {
+      notify: false,
+      silent: true,
+    })
+    if (!removed) throw new Error(`Paper viewport "${this.viewportState.id}" is unavailable.`)
+    this.viewport = null
+    this.editor.selected = [...this.selectionBefore]
+    invalidateSpatialIndexes(this.editor)
+    this.dispatchSignal('paperViewportsChanged')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedProperties')
+  }
+
+  redo() {
+    this.execute()
+  }
+}
 
 async function createViewportCommand(editor, args) {
   const signals = editor.signals
+  const sessionRevision = editor.commandSessionRevision
+  const assertCurrentSession = () => {
+    if (editor.commandSessionRevision !== sessionRevision) {
+      throw new Error('cancelled')
+    }
+  }
 
   // Only available in paper mode
   if (editor.mode !== 'paper') {
@@ -34,6 +149,7 @@ async function createViewportCommand(editor, args) {
     // ── Step 1: First corner ──────────────────────────────────────────────────
     signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify first corner of viewport:' })
     const p1 = await _capturePointOnPaper(editor)
+    assertCurrentSession()
 
     // ── Step 2: Opposite corner ───────────────────────────────────────────────
     signals.terminalLogged.dispatch({ type: 'span', msg: 'VP: Specify opposite corner:' })
@@ -46,6 +162,7 @@ async function createViewportCommand(editor, args) {
       .stroke('#5599ff')
       .attr('stroke-width', 'var(--helper-stroke-width, 0.2)')
       .attr('stroke-dasharray', '0.2 0.1')
+      .attr('data-nanquim-transient', 'true')
 
     ghostUpdater = (e) => {
       const pt = _screenToPaperSVG(editor, e.clientX, e.clientY)
@@ -60,6 +177,7 @@ async function createViewportCommand(editor, args) {
     let p2
     try {
       p2 = await _capturePointOnPaper(editor, p1)
+      assertCurrentSession()
     } finally {
       if (ghostRect) ghostRect.remove()
       if (ghostUpdater) editor.paperSvg.node.removeEventListener('mousemove', ghostUpdater)
@@ -81,14 +199,19 @@ async function createViewportCommand(editor, args) {
     let scale = 100
     try {
       const input = await _captureScaleInput(editor)
+      assertCurrentSession()
       const num = parseFloat(input)
       if (!isNaN(num) && num > 0) scale = num
-    } catch {
-      // Default scale
+    } catch (error) {
+      if (error?.message === 'cancelled') throw error
+      // Keep the documented default if the terminal input source disappears.
     }
 
     // ── Create the viewport ───────────────────────────────────────────────────
-    const vp = editor.paperEditor.createViewport(x, y, w, h, scale)
+    assertCurrentSession()
+    const command = new CreateViewportCommand(editor, { x, y, w, h, scale })
+    editor.execute(command)
+    const vp = command.viewport
     signals.terminalLogged.dispatch({
       type: 'span',
       msg: `VP: Created viewport ${vp.id} (${w.toFixed(2)}×${h.toFixed(2)} cm) at 1:${scale}`
@@ -96,8 +219,14 @@ async function createViewportCommand(editor, args) {
   } catch (err) {
     if (err.message !== 'cancelled') console.error(err)
   } finally {
-    editor.isInteracting = false
-    signals.updatedOutliner.dispatch()
+    if (editor.commandSessionRevision === sessionRevision) {
+      editor.isInteracting = false
+      try {
+        signals.updatedOutliner.dispatch()
+      } catch (error) {
+        try { console.error('[CreateViewportCommand] updatedOutliner listener failed:', error) } catch (_reportError) {}
+      }
+    }
   }
 }
 
@@ -181,4 +310,4 @@ function _screenToPaperSVG(editor, clientX, clientY) {
   return { x: svgPt.x, y: svgPt.y }
 }
 
-export { createViewportCommand }
+export { CreateViewportCommand, createViewportCommand }

@@ -178,7 +178,6 @@ class LinearDimensionCommand extends Command {
         dimGroup.attr('data-dim-data', JSON.stringify(paramData))
         
         // ID & Name
-        dimGroup.attr('id', this.editor.elementIndex++)
         dimGroup.attr('name', 'Dimension')
         
         // Setup internal styling override barrier - dimension parts shouldn't randomly inherit
@@ -199,8 +198,7 @@ class LinearDimensionCommand extends Command {
 
         applyCollectionStyleToElement(this.editor, dimGroup)
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, dimGroup))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, dimGroup))
         this.updatedOutliner()
 
         this.editor.signals.terminalLogged.dispatch({ msg: `Dimension created.` })
@@ -224,7 +222,7 @@ class LinearDimensionCommand extends Command {
         if (this.boundOnCancelled) this.editor.signals.commandCancelled.remove(this.boundOnCancelled)
 
         this.editor.isInteracting = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
     }
@@ -503,5 +501,5 @@ function linearDimensionCommand(editor) {
     cmd.execute()
 }
 
-window.LinearDimensionCommand = LinearDimensionCommand
+if (typeof window !== 'undefined') window.LinearDimensionCommand = LinearDimensionCommand
 export { LinearDimensionCommand, linearDimensionCommand }

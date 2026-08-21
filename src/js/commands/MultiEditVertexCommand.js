@@ -7,23 +7,35 @@ class MultiEditVertexCommand extends Command {
         this.type = 'MultiEditVertexCommand'
         this.name = 'Multi Edit Vertex'
         this.vertexUpdates = vertexUpdates // Array of { element, vertexIndex, oldX, oldY, newX, newY }
-        this.commands = []
+        this.commands = this.vertexUpdates.map(update => new EditVertexCommand(
+            this.editor,
+            update.element,
+            update.vertexIndex,
+            update.oldX,
+            update.oldY,
+            update.newX,
+            update.newY
+        ))
     }
 
     execute() {
-        this.commands = this.vertexUpdates.map(update => {
-            const cmd = new EditVertexCommand(
-                this.editor,
-                update.element,
-                update.vertexIndex,
-                update.oldX,
-                update.oldY,
-                update.newX,
-                update.newY
-            )
-            cmd.execute()
-            return cmd
-        })
+        const applied = []
+        try {
+          this.commands.forEach(cmd => {
+            try {
+              cmd.execute()
+              applied.push(cmd)
+            } catch (error) {
+              cmd.undo()
+              throw error
+            }
+          })
+        } catch (error) {
+          for (let index = applied.length - 1; index >= 0; index -= 1) {
+            applied[index].undo()
+          }
+          throw error
+        }
     }
 
     undo() {

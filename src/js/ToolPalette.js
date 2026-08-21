@@ -104,10 +104,12 @@ class ToolPalette {
     this._onPointerCancel = this._onPointerCancel.bind(this)
     this._onLostPointerCapture = this._onLostPointerCapture.bind(this)
     this._onDocumentSessionReset = this._onDocumentSessionReset.bind(this)
+    this._syncCommandAvailability = this._syncCommandAvailability.bind(this)
 
     if (!this.palette || !this.content || !this.resizer || !this.toggleButton) return
 
     this._renderCommands()
+    this._syncCommandAvailability()
     this._bind()
 
     const storedState = readStoredState(this.storage)
@@ -151,6 +153,7 @@ class ToolPalette {
           button.title = aliases.length > 0
             ? `${label} (${aliases.join(', ')}) — ${command.description}`
             : `${label} — ${command.description}`
+          button.dataset.availableTitle = button.title
 
           const icon = document.createElement('span')
           icon.className = 'command-tool-icon'
@@ -189,6 +192,21 @@ class ToolPalette {
     window.addEventListener('pointercancel', this._onPointerCancel)
     document.addEventListener('keydown', this._onShortcutKeyDown, true)
     this.editor?.signals?.documentSessionReset?.add?.(this._onDocumentSessionReset)
+    this.editor?.signals?.editorModeChanged?.add?.(this._syncCommandAvailability)
+  }
+
+  _syncCommandAvailability() {
+    if (!this.content) return
+    const mode = this.editor?.mode === 'paper' ? 'paper' : 'model'
+    this.content.querySelectorAll('.command-tool-button[data-command]').forEach((button) => {
+      const definition = commands[button.dataset.command]
+      const available = Boolean(definition?.modes?.includes(mode))
+      button.disabled = !available
+      button.setAttribute('aria-disabled', String(!available))
+      button.title = available
+        ? button.dataset.availableTitle
+        : `${button.dataset.availableTitle} — unavailable in ${mode === 'paper' ? 'Paper' : 'Model'} Space`
+    })
   }
 
   _writeState() {
@@ -405,6 +423,7 @@ class ToolPalette {
 
   _onDocumentSessionReset() {
     this._finishResize({ restoreStart: true, persist: false })
+    this._syncCommandAvailability()
   }
 
   dispose() {
@@ -423,6 +442,7 @@ class ToolPalette {
     window.removeEventListener('pointercancel', this._onPointerCancel)
     document.removeEventListener('keydown', this._onShortcutKeyDown, true)
     this.editor?.signals?.documentSessionReset?.remove?.(this._onDocumentSessionReset)
+    this.editor?.signals?.editorModeChanged?.remove?.(this._syncCommandAvailability)
   }
 }
 

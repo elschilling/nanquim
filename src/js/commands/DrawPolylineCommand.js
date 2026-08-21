@@ -64,6 +64,7 @@ class DrawPolylineCommand extends Command {
       this.polyline = this.drawing
         .polyline(this.points)
         .fill('none')
+        .attr('data-nanquim-transient', 'true')
       applyCollectionStyleToElement(this.editor, this.polyline)
 
       this.editor.signals.terminalLogged.dispatch({
@@ -98,11 +99,9 @@ class DrawPolylineCommand extends Command {
     }
 
     this.polyline.plot(this.points)
-    this.polyline.attr('id', this.editor.elementIndex++)
     this.polyline.attr('name', 'Polyline')
 
-    this.editor.history.undos.push(new AddElementCommand(this.editor, this.polyline))
-    this.editor.lastCommand = this
+    this.editor.execute(new AddElementCommand(this.editor, this.polyline))
     this.updatedOutliner()
 
     this.editor.signals.terminalLogged.dispatch({ msg: `Polyline created with ${this.points.length} points.` })

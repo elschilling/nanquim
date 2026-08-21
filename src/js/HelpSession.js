@@ -244,6 +244,10 @@ class HelpSession {
     const illustration = createCommandIllustration(name)
     if (illustration) card.appendChild(illustration)
     card.appendChild(el('p', '', command.description || `Run the ${commandLabel(name)} command.`))
+    const availability = command.modes.length === 2
+      ? 'Available in Model and Paper Space'
+      : `Available in ${command.modes[0] === 'paper' ? 'Paper' : 'Model'} Space only`
+    card.appendChild(el('small', 'command-help-availability', availability))
     return card
   }
 

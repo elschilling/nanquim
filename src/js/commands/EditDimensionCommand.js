@@ -1,11 +1,48 @@
 import { Command } from '../Command'
+import { applyCollectionStyleToElement } from '../Collection'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
+import { LinearDimensionCommand } from './LinearDimensionCommand'
+
+function cloneDimensionData(data) {
+    return JSON.parse(JSON.stringify(data))
+}
+
+function captureElementSnapshot(element) {
+    const node = element.node
+    return {
+        attributes: Array.from(node.attributes, attribute => ({
+            name: attribute.name,
+            namespaceURI: attribute.namespaceURI,
+            value: attribute.value,
+        })),
+        children: Array.from(node.childNodes, child => child.cloneNode(true)),
+    }
+}
+
+function restoreElementSnapshot(element, snapshot) {
+    const node = element.node
+    Array.from(node.attributes).forEach(attribute => node.removeAttributeNode(attribute))
+    snapshot.attributes.forEach(attribute => {
+        if (attribute.namespaceURI) {
+            node.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value)
+        } else {
+            node.setAttribute(attribute.name, attribute.value)
+        }
+    })
+    node.replaceChildren(...snapshot.children.map(child => child.cloneNode(true)))
+}
 
 export class EditDimensionCommand extends Command {
-    constructor(editor, dimensionUpdates) {
+    constructor(editor, dimensionUpdates, { notifySelection = true } = {}) {
         super(editor)
         this.type = 'EditDimensionCommand'
         this.name = 'Edit Dimension'
-        this.updates = dimensionUpdates // Array of { element, oldData, newData }
+        this.notifySelection = notifySelection
+        this.updates = dimensionUpdates.map(update => ({
+            element: update.element,
+            oldData: cloneDimensionData(update.oldData),
+            newData: cloneDimensionData(update.newData),
+        }))
     }
 
     execute() {
@@ -17,20 +54,23 @@ export class EditDimensionCommand extends Command {
     }
 
     applyUpdates(updates, isUndo) {
-        updates.forEach(update => {
-            const data = isUndo ? update.oldData : update.newData
-            update.element.attr('data-dim-data', JSON.stringify(data))
-            
-            const styleId = data.styleId || 'Standard'
-            const style = this.editor.dimensionManager.getStyle(styleId)
-            
-            const tempStyle = JSON.parse(JSON.stringify(style))
-            if (data.textPosition) {
-                tempStyle.textPosition = data.textPosition
-            }
+        const snapshots = updates.map(update => ({
+            element: update.element,
+            snapshot: captureElementSnapshot(update.element),
+        }))
 
-            // Redraw using the command's static method
-            import('./LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
+        try {
+            updates.forEach(update => {
+                const data = isUndo ? update.oldData : update.newData
+                update.element.attr('data-dim-data', JSON.stringify(data))
+
+                const styleId = data.styleId || 'Standard'
+                const style = this.editor.dimensionManager.getStyle(styleId)
+                const tempStyle = cloneDimensionData(style)
+                if (data.textPosition) {
+                    tempStyle.textPosition = data.textPosition
+                }
+
                 LinearDimensionCommand.renderDimensionGraphics(
                     update.element,
                     data.p1, data.p2, data.p3,
@@ -40,13 +80,15 @@ export class EditDimensionCommand extends Command {
                     data.dimType || 'linear',
                     this.editor
                 )
-                import('../Collection.js').then(({ applyCollectionStyleToElement }) => {
-                    applyCollectionStyleToElement(this.editor, update.element)
-                })
+                applyCollectionStyleToElement(this.editor, update.element)
             })
-        })
-        
+        } catch (error) {
+            snapshots.forEach(({ element, snapshot }) => restoreElementSnapshot(element, snapshot))
+            throw error
+        }
+
+        invalidateSpatialIndexes(this.editor)
         this.editor.signals.updatedOutliner.dispatch()
-        this.editor.signals.updatedSelection.dispatch()
+        if (this.notifySelection) this.editor.signals.updatedSelection.dispatch()
     }
 }

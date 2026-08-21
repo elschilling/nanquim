@@ -115,6 +115,7 @@ class DrawSplineCommand extends Command {
             this.splinePath = this.drawing.path(`M ${point.x} ${point.y}`)
                 .fill('none')
                 .stroke({ color: 'white', width: 0.1, linecap: 'round' })
+                .attr('data-nanquim-transient', 'true')
             applyCollectionStyleToElement(this.editor, this.splinePath)
 
             this.editor.signals.terminalLogged.dispatch({
@@ -160,7 +161,6 @@ class DrawSplineCommand extends Command {
         const d = catmullRomToBezierPath(this.points)
         this.splinePath.plot(d)
 
-        this.splinePath.attr('id', this.editor.elementIndex++)
         this.splinePath.attr('name', 'Spline')
 
         // Store spline point data for editing
@@ -168,8 +168,7 @@ class DrawSplineCommand extends Command {
             points: this.points.map(p => ({ x: p.x, y: p.y }))
         })
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, this.splinePath))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, this.splinePath))
         this.updatedOutliner()
 
         this.editor.signals.terminalLogged.dispatch({ msg: `Spline created with ${this.points.length} points.` })
