@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.11",
-    "@vue/language-plugin-pug": "^1.8.27",
+    "@vue/language-plugin-pug": "^3.3.10",
     "jsdom": "^30.0.1",
     "puppeteer-core": "^25.8.0",
     "sass": "^1.102.0",
