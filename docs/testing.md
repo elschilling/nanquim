@@ -26,7 +26,7 @@ The first Phase 2 report was recorded on 2026-08-21 with Node.js 22.22.2,
 Vitest 4.1.11, and the V8 provider 4.1.11. Before the command lifecycle
 contracts landed, all 348 tests across 38 files passed. The same-day Phase 2
 ratchet report first passed all 437 tests across 43 files. The integrated Phase
-2 report now passes all 658 tests across 62 files.
+2 report now passes all 659 tests across 62 files.
 
 | Metric | Initial result | Current covered / total | Ratcheted floor |
 | --- | ---: | ---: | ---: |
