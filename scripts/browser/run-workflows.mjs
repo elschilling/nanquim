@@ -14,6 +14,7 @@ import {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const DEFAULT_PORT = 4173
+const BROWSER_VIEWPORT = Object.freeze({ width: 1280, height: 800, deviceScaleFactor: 1 })
 const TEST_RECTANGLE_WIDTH = 2
 const TEST_RECTANGLE_HEIGHT = 1.5
 const TEST_MOVE_DELTA = Object.freeze({ x: 1, y: 0.5 })
@@ -77,6 +78,11 @@ try {
       policy: 'allow',
       downloadPath: downloadsDirectory,
     },
+    // Apply the viewport while Puppeteer creates the BiDi browsing context.
+    // Firefox ESR lacks emulation.setScreenOrientationOverride; Puppeteer
+    // tolerates that optional command at this boundary while still applying
+    // browsingContext.setViewport.
+    defaultViewport: BROWSER_VIEWPORT,
     args: browserName === 'chromium'
       ? ['--disable-dev-shm-usage', '--no-sandbox']
       : [],
@@ -84,7 +90,6 @@ try {
 
   page = await browser.newPage()
   page.setDefaultTimeout(Number(process.env.NANQUIM_BROWSER_TIMEOUT || 15000))
-  await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 })
   attachDiagnostics(page)
 
   if (browserName === 'chromium') {
@@ -163,6 +168,14 @@ if (failure) {
 async function runWorkflows(activePage) {
   await step('load a clean application session', async () => {
     await activePage.goto(baseUrl, { waitUntil: 'networkidle0' })
+    const viewport = await activePage.evaluate(() => ({
+      height: window.innerHeight,
+      width: window.innerWidth,
+    }))
+    assert(
+      viewport.width === BROWSER_VIEWPORT.width && viewport.height === BROWSER_VIEWPORT.height,
+      `Expected a ${BROWSER_VIEWPORT.width}x${BROWSER_VIEWPORT.height} viewport, got ${viewport.width}x${viewport.height}.`,
+    )
     await activePage.waitForFunction(() => Boolean(window.editor?.documents && window.welcomeScreen))
     await activePage.waitForSelector('#ws-new')
     await activePage.click('#ws-new')

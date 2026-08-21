@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -38,6 +38,17 @@ describe('browser harness path safety', () => {
 
   test('does not confuse similarly prefixed sibling paths with descendants', () => {
     expect(isWithin('/workspace/nanquim', '/workspace/nanquim-copy')).toBe(false)
+  })
+
+  test('applies the viewport at browser launch for Firefox ESR compatibility', async () => {
+    const source = await readFile(
+      new URL('../scripts/browser/run-workflows.mjs', import.meta.url),
+      'utf8',
+    )
+
+    expect(source).toContain('defaultViewport: BROWSER_VIEWPORT')
+    expect(source).not.toContain('await page.setViewport(')
+    expect(source).toContain('viewport.width === BROWSER_VIEWPORT.width')
   })
 })
 

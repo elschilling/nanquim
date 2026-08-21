@@ -202,8 +202,9 @@ pass all nine production workflows: typed rectangle creation, actual pointer
 selection, Move/Undo/Redo, repeated cancellation, sanitized clipboard paste,
 exact native save/reopen/resave, Paper annotation hover/click/disambiguation
 and Move/Undo/Redo with parsed SVG export, Help keyboard navigation, and
-Geometry Nodes evaluation. The remote previous-Chromium and Firefox-ESR runs,
-direct persistent-handle workflow, Safari/WebKit check, and remaining
+Geometry Nodes evaluation. The remote current/previous Chromium and
+stable/ESR Firefox matrix also passes. The direct persistent-handle workflow,
+Safari/WebKit check, and remaining
 [browser qualification](browser-support.md#release-qualification-record) and
 [release-process](release-process.md) checks are not implied by those local
 results.

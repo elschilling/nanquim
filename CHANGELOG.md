@@ -46,6 +46,9 @@ versions may still contain compatibility changes.
   remain independent from drawing document state.
 - Terminal aliases, canonical command names, repeat-last, the tool palette,
   and cancellation now share one registry-backed command runner.
+- Browser viewport sizing now occurs at browsing-context creation so Firefox
+  ESR can run the qualification workflow without an unsupported optional BiDi
+  screen-orientation command.
 - History commits completed mutations only after a successful deterministic
   apply, preserves its stacks on failures, clears Redo on a new edit, and
   advances document dirty state once per Execute, Undo, or Redo.
