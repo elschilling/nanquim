@@ -6,5 +6,5 @@ export default (entities) => {
     }
     acc[layer].push(entity)
     return acc
-  }, {})
+  }, Object.create(null))
 }

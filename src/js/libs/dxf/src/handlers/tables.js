@@ -293,7 +293,7 @@ const tableHandler = (tuples, tableType, handler) => {
       logger.warn('table row without name:', tableRow)
     }
     return acc
-  }, {})
+  }, Object.create(null))
 }
 
 export default (tuples) => {

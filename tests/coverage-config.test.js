@@ -57,6 +57,14 @@ const PHASE_2_FLOORS = {
     statements: 100,
   },
 }
+const PHASE_3_FLOORS = {
+  'src/js/utils/svgNumericBounds.js': {
+    branches: 76,
+    functions: 97,
+    lines: 93,
+    statements: 85,
+  },
+}
 
 describe('Vitest coverage policy', () => {
   test('covers application modules while excluding vendored and generated surfaces', () => {
@@ -84,7 +92,7 @@ describe('Vitest coverage policy', () => {
     const localThresholds = Object.entries(thresholds)
       .filter(([, value]) => typeof value === 'object')
 
-    expect(METRICS.map((metric) => thresholds[metric])).toEqual([48, 66, 58, 56])
+    expect(METRICS.map((metric) => thresholds[metric])).toEqual([52, 69, 62, 60])
     expect(localThresholds.length).toBeGreaterThanOrEqual(20)
 
     for (const [path, local] of localThresholds) {
@@ -103,6 +111,15 @@ describe('Vitest coverage policy', () => {
     const thresholds = viteConfig.test.coverage.thresholds
 
     for (const [pattern, floors] of Object.entries(PHASE_2_FLOORS)) {
+      expect(thresholds).toHaveProperty(pattern)
+      expect(thresholds[pattern]).toEqual(floors)
+    }
+  })
+
+  test('keeps the Phase 3 SVG numeric boundary on its measured floor', () => {
+    const thresholds = viteConfig.test.coverage.thresholds
+
+    for (const [pattern, floors] of Object.entries(PHASE_3_FLOORS)) {
       expect(thresholds).toHaveProperty(pattern)
       expect(thresholds[pattern]).toEqual(floors)
     }

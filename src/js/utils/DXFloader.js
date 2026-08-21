@@ -369,7 +369,10 @@ function _hydrateStagedElement(stage, element) {
     // attribute and make a clean native save/reopen cycle non-canonical.
     if (attribute.name === 'data-nanquim-paste-scope') return
     const camelKey = attribute.name.slice(5).replace(/-([a-z])/g, (_, character) => character.toUpperCase())
-    const value = parseSafeJson(attribute.value, ELEMENT_DATA_METADATA_LIMITS)
+    const value = parseSafeJson(attribute.value, {
+      ...ELEMENT_DATA_METADATA_LIMITS,
+      maxAbsNumber: MAX_EDITOR_ELEMENT_ID,
+    })
     if (value !== null) element.data(camelKey, value)
     else if (/^\s*[{[]/.test(attribute.value)) {
       node.removeAttribute(attribute.name)
@@ -447,6 +450,20 @@ function _appendCandidateContent(stage, candidate, idPlan, excludedRootMetadata 
     return
   }
 
+  if (candidate.kind === 'dxf') {
+    Array.from(root.children).forEach((child) => {
+      const name = child.localName.toLowerCase()
+      if (child.namespaceURI && child.namespaceURI !== 'http://www.w3.org/2000/svg') return
+      if (NON_GEOMETRY.has(name)) return
+      const imported = document.importNode(child, true)
+      stage.drawing.node.appendChild(imported)
+      if (imported.getAttribute('data-collection') === 'true') {
+        _markForeignStyleOverrides(SVG(imported))
+      }
+    })
+    return
+  }
+
   const collection = stage.drawing.group().attr({
     id: idPlan.foreignCollectionId,
     name: candidate.sourceName.replace(/\.(?:svg|dxf)$/i, '') || 'Imported drawing',
@@ -472,7 +489,7 @@ async function _stagePreparedDocument(editor, candidate) {
   )
   const sourceGeometryNodesElement = sourceGeometryNodesElements[0]
   const idPlan = prepareSanitizedSvgForImport(candidate.root, editor, {
-    reserveForeignCollection: !candidate.isNative,
+    reserveForeignCollection: candidate.kind === 'foreign-svg',
     preserveIds: candidate.isNative,
     freshDocument: false,
     initialElementIndex: 0,
@@ -524,7 +541,9 @@ async function _stagePreparedDocument(editor, candidate) {
   if (candidate.kind === 'dxf') {
     flattenDXFStylingGroups(stage)
     stage.drawing.children().each((collection) => {
-      if (collection.attr('data-collection') === 'true') bakeTransforms(collection)
+      if (collection.attr('data-collection') !== 'true') return
+      bakeTransforms(collection)
+      _markForeignStyleOverrides(collection)
     })
   }
   if (metadata.elementIndex !== null) {
@@ -1236,6 +1255,7 @@ function flattenDXFStylingGroups(editor) {
       // Skip collection groups and explicit user/block groups
       if (child.attr('data-collection') === 'true') return
       if (child.attr('data-group') === 'true') return
+      if (child.attr('data-hidden') === 'true') return
 
       // Recurse first so inner structure is as flat as possible
       flattenInGroup(child)

@@ -1,6 +1,8 @@
 import { getArcGeometry } from './arcUtils'
 import { bakeTransforms } from './transformGeometry'
 
+const MAX_DXF_COORDINATE = 1000000000
+
 // ─── ACI colour helpers ────────────────────────────────────────────────────
 
 // Standard AutoCAD Color Index palette (index → [r, g, b])
@@ -103,16 +105,223 @@ function sampleCatmullRom(points, samplesPerSegment = 20) {
 // ─── Sanitise a string for use as a DXF layer name ─────────────────────────
 
 function sanitizeLayerName(name) {
-    return (name || '0').replace(/[<>/\\:;?*|=`]/g, '_').substring(0, 255) || '0'
+    return String(name || '0')
+        .replace(/[\u0000-\u001f\u007f<>/\\:;?*|=`]/g, '_')
+        .trim()
+        .substring(0, 255) || '0'
+}
+
+function directModelCollections(editor) {
+    const collections = []
+    editor.drawing?.children?.().each(group => {
+        if (group.type !== 'g' || group.attr('data-collection') !== 'true') return
+        if (group.attr('data-block-edit') === 'true' || group.attr('data-nanquim-paper-annotations') === 'true') return
+        const id = group.attr('id')
+        const state = editor.collections?.get(id)
+        collections.push({
+            group,
+            id,
+            locked: state?.locked === true || group.attr('data-locked') === 'true',
+            style: { ...(state?.style || {}) },
+            visible: state?.visible !== false
+                && group.attr('data-hidden') !== 'true'
+                && group.css('display') !== 'none',
+        })
+    })
+    return collections
+}
+
+function straightPathPoints(pathData) {
+    if (typeof pathData !== 'string' || !pathData.trim()) return null
+    if (!/^[\s,0-9+\-.eEmMlLhHvVzZ]+$/.test(pathData)) return null
+    const tokens = pathData.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)
+    if (!tokens) return null
+
+    const points = []
+    let command = null
+    let current = { x: 0, y: 0 }
+    let start = null
+    let closed = false
+    let index = 0
+    const readNumber = () => {
+        const token = tokens[index++]
+        const number = Number(token)
+        return token !== undefined && Number.isFinite(number) ? number : null
+    }
+    const addPoint = (x, y) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+        current = { x, y }
+        points.push(current)
+        if (!start) start = current
+        return true
+    }
+
+    while (index < tokens.length) {
+        if (/^[a-zA-Z]$/.test(tokens[index])) command = tokens[index++]
+        if (!command || !/[mMlLhHvVzZ]/.test(command)) return null
+        const relative = command === command.toLowerCase()
+        const upper = command.toUpperCase()
+        if (upper === 'M' && points.length > 0) return null
+        if (upper === 'Z') {
+            closed = true
+            current = start || current
+            command = null
+            continue
+        }
+        if (upper === 'H') {
+            const value = readNumber()
+            if (value === null || !addPoint(relative ? current.x + value : value, current.y)) return null
+            continue
+        }
+        if (upper === 'V') {
+            const value = readNumber()
+            if (value === null || !addPoint(current.x, relative ? current.y + value : value)) return null
+            continue
+        }
+        const x = readNumber()
+        const y = readNumber()
+        if (x === null || y === null) return null
+        if (!addPoint(relative ? current.x + x : x, relative ? current.y + y : y)) return null
+        if (upper === 'M') command = relative ? 'l' : 'L'
+    }
+
+    if (points.length < 2) return null
+    const last = points[points.length - 1]
+    if (start && last.x === start.x && last.y === start.y) {
+        closed = true
+        points.pop()
+    }
+    return points.length >= 2 ? { points, closed } : null
+}
+
+function exportDiagnostic(code, message, count = 1) {
+    return Object.freeze({ code, message, count })
+}
+
+function multiplyAffine(parent, local) {
+    if (!parent) return local
+    return {
+        a: parent.a * local.a + parent.c * local.b,
+        b: parent.b * local.a + parent.d * local.b,
+        c: parent.a * local.c + parent.c * local.d,
+        d: parent.b * local.c + parent.d * local.d,
+        e: parent.a * local.e + parent.c * local.f + parent.e,
+        f: parent.b * local.e + parent.d * local.f + parent.f,
+    }
+}
+
+function isSimilarityTransform(matrix, epsilon = 1e-8) {
+    const scaleX = Math.hypot(matrix.a, matrix.b)
+    const scaleY = Math.hypot(matrix.c, matrix.d)
+    const scale = Math.max(scaleX, scaleY, 1)
+    const dot = matrix.a * matrix.c + matrix.b * matrix.d
+    return Number.isFinite(scaleX)
+        && Number.isFinite(scaleY)
+        && scaleX > epsilon
+        && scaleY > epsilon
+        && Math.abs(scaleX - scaleY) <= epsilon * scale
+        && Math.abs(dot) <= epsilon * scaleX * scaleY
+}
+
+function isAxisAlignedTransform(matrix, epsilon = 1e-8) {
+    const scale = Math.max(
+        Math.abs(matrix.a),
+        Math.abs(matrix.b),
+        Math.abs(matrix.c),
+        Math.abs(matrix.d),
+        1,
+    )
+    return [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f].every(Number.isFinite)
+        && Math.abs(matrix.b) <= epsilon * scale
+        && Math.abs(matrix.c) <= epsilon * scale
+        && Math.abs(matrix.a) > epsilon
+        && Math.abs(matrix.d) > epsilon
+}
+
+function findUnsupportedDxfTransforms(element, parentMatrix = null, unsupported = new WeakSet()) {
+    const accumulated = multiplyAffine(parentMatrix, element.matrix())
+    if (element.type === 'g') {
+        element.children().each(child => findUnsupportedDxfTransforms(child, accumulated, unsupported))
+        return unsupported
+    }
+
+    const isCircularArc = element.type === 'path' && Boolean(element.data('arcData'))
+    if ((element.type === 'circle' || isCircularArc) && !isSimilarityTransform(accumulated)) {
+        unsupported.add(element.node)
+    } else if (element.type === 'ellipse') {
+        const isCircularEllipse = Math.abs(element.rx() - element.ry()) <= 1e-8
+        const supported = isCircularEllipse
+            ? isSimilarityTransform(accumulated)
+            : isAxisAlignedTransform(accumulated)
+        if (!supported) unsupported.add(element.node)
+    }
+    return unsupported
+}
+
+function validDxfNumber(value, { positive = false, nonNegative = false } = {}) {
+    const number = Number(value)
+    if (!Number.isFinite(number) || Math.abs(number) > MAX_DXF_COORDINATE) return false
+    if (positive && number <= 0) return false
+    if (nonNegative && number < 0) return false
+    return true
+}
+
+function validDxfPoint(point) {
+    return point && validDxfNumber(point.x) && validDxfNumber(point.y)
+}
+
+function validDxfPoints(points) {
+    return Array.isArray(points) && points.length > 0 && points.every(point => (
+        Array.isArray(point)
+            ? validDxfNumber(point[0]) && validDxfNumber(point[1])
+            : validDxfPoint(point)
+    ))
+}
+
+function validDxfRadialBounds(cx, cy, rx, ry = rx) {
+    const values = [cx, cy, rx, ry].map(Number)
+    if (
+        !validDxfNumber(values[0])
+        || !validDxfNumber(values[1])
+        || !validDxfNumber(values[2], { positive: true })
+        || !validDxfNumber(values[3], { positive: true })
+    ) return false
+    return Math.abs(values[0]) + values[2] <= MAX_DXF_COORDINATE
+        && Math.abs(values[1]) + values[3] <= MAX_DXF_COORDINATE
 }
 
 // ─── DXFExporter ──────────────────────────────────────────────────────────
 
-function DXFExporter(editor) {
-    this.saveFile = function (filename = 'drawing.dxf') {
+function buildDXFDocument(editor) {
         const lines = []
+        const diagnosticCounts = new Map()
+        const unsupportedTransformNodes = new WeakSet()
+        const counts = {
+            emitted: Object.create(null),
+            input: 0,
+            layers: 0,
+            skipped: 0,
+            approximated: 0,
+        }
         let handleCounter = 1
         const nextHandle = () => (handleCounter++).toString(16).toUpperCase().padStart(2, '0')
+
+        const diagnose = (code, message, amount = 1) => {
+            const existing = diagnosticCounts.get(code)
+            if (existing) {
+                existing.count += amount
+            } else if (diagnosticCounts.size < 16) {
+                diagnosticCounts.set(code, { code, message, count: amount })
+            }
+        }
+
+        const rejectInvalidGeometry = () => {
+            diagnose(
+                'invalid-numeric-geometry',
+                'Geometry with invalid or out-of-range numeric values was skipped during DXF export.',
+            )
+            return false
+        }
 
         // Emit one DXF group-code/value pair
         function emit(code, value) {
@@ -126,33 +335,45 @@ function DXFExporter(editor) {
         function normAngle(deg) { deg %= 360; return deg < 0 ? deg + 360 : deg }
 
         // ── entity helpers ──────────────────────────────────────────────────
-        function beginEntity(type, layerName) {
+        function beginEntity(type, layerName, el) {
             emit(0, type)
             emit(5, nextHandle())
             emit(100, 'AcDbEntity')
             emit(8, layerName)
+            const presentationValue = (property) => {
+                const inline = el?.node?.style?.getPropertyValue(property)?.trim()
+                return inline || el?.attr?.(property)
+            }
+            const paint = [presentationValue('stroke'), presentationValue('fill')]
+                .find(value => value && value !== 'none' && value !== 'transparent' && !value.startsWith('url('))
+            if (paint) {
+                emit(62, hexToAci(paint))
+            }
+            counts.emitted[type] = (counts.emitted[type] || 0) + 1
         }
 
         // ── layer name for an element (walks up to collection) ──────────────
-        function layerOf(el) {
-            let cur = el.parent()
-            while (cur && cur.node && cur.node.nodeName !== 'svg') {
-                if (cur.attr('data-collection') === 'true') {
-                    return sanitizeLayerName(cur.attr('name') || cur.attr('id'))
-                }
-                cur = cur.parent()
+        const usedLayerNames = new Set(['0'])
+        const layers = directModelCollections(editor).map((data, index) => {
+            const originalName = data.group.attr('name') || data.id || `Layer ${index + 1}`
+            const baseName = sanitizeLayerName(originalName)
+            let name = baseName
+            let suffix = 2
+            while (usedLayerNames.has(name.toLowerCase())) {
+                const suffixText = `_${suffix++}`
+                name = `${baseName.slice(0, 255 - suffixText.length)}${suffixText}`
             }
-            return '0'
-        }
-
-        // ── collect layer info from collections ─────────────────────────────
-        const layers = []
-        editor.collections.forEach((data, id) => {
-            layers.push({
-                name: sanitizeLayerName(data.group.attr('name') || id),
-                aci:  hexToAci(data.style.stroke || 'white'),
-            })
+            usedLayerNames.add(name.toLowerCase())
+            if (name !== originalName) {
+                diagnose('layer-name-normalized', 'One or more layer names were normalized for DXF compatibility.')
+            }
+            return {
+                ...data,
+                name,
+                aci: hexToAci(data.style.stroke || data.group.attr('stroke') || 'white'),
+            }
         })
+        counts.layers = layers.length
 
         // ════════════════════════════════════════════════════════════════════
         // HEADER
@@ -223,8 +444,8 @@ function DXFExporter(editor) {
             emit(100, 'AcDbSymbolTableRecord')
             emit(100, 'AcDbLayerTableRecord')
             emit(2, layer.name)
-            emit(70, 0)
-            emit(62, layer.aci)
+            emit(70, (layer.visible ? 0 : 1) | (layer.locked ? 4 : 0))
+            emit(62, layer.visible ? layer.aci : -layer.aci)
             emit(6, 'Continuous')
         })
         emit(0, 'ENDTAB')
@@ -350,32 +571,41 @@ function DXFExporter(editor) {
         emit(0, 'SECTION')
         emit(2, 'ENTITIES')
 
-        editor.collections.forEach((data) => {
-            const layerName = sanitizeLayerName(data.group.attr('name') || data.group.attr('id'))
+        layers.forEach((data) => {
+            const layerName = data.name
             // DXF has no nested SVG transform stack. Bake a detached clone so
             // procedural array/transform nodes export at their evaluated world
             // positions without mutating the live document.
             const exportGroup = data.group.clone(true, false)
-            bakeTransforms(exportGroup)
-            walkGroup(exportGroup, layerName)
+            try {
+                exportGroup.find('line').each(line => {
+                    for (const attribute of ['x1', 'y1', 'x2', 'y2']) {
+                        if (line.attr(attribute) == null) line.attr(attribute, 0)
+                    }
+                })
+                exportGroup.find('rect').each(rect => {
+                    const rawGeometryIsValid = validDxfNumber(rect.x())
+                        && validDxfNumber(rect.y())
+                        && validDxfNumber(rect.width(), { positive: true })
+                        && validDxfNumber(rect.height(), { positive: true })
+                    rect.attr('data-dxf-rectangle-source', rawGeometryIsValid ? 'true' : 'invalid')
+                })
+                findUnsupportedDxfTransforms(exportGroup, null, unsupportedTransformNodes)
+                bakeTransforms(exportGroup)
+                walkGroup(exportGroup, layerName)
+            } catch (_error) {
+                counts.skipped++
+                diagnose('transform-export-failed', 'Some transformed geometry could not be converted to DXF.')
+            } finally {
+                try { exportGroup.remove() } catch (_error) { /* detached clone */ }
+            }
         })
 
         emit(0, 'ENDSEC')
         emit(0, 'EOF')
 
         // ── download ────────────────────────────────────────────────────────
-        const content = lines.join('\r\n') + '\r\n'
-        const blob = new Blob([content], { type: 'application/dxf' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-
-        editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'DXF exported: ' + filename })
+        const source = lines.join('\r\n') + '\r\n'
 
         // ════════════════════════════════════════════════════════════════════
         // Entity emitters
@@ -392,14 +622,28 @@ function DXFExporter(editor) {
                     return
                 }
                 if (el.type === 'g') {
+                    if (el.attr('data-dimension') === 'true' || el.attr('data-dimension-type')) {
+                        counts.approximated++
+                        diagnose('dimension-exploded', 'Dimensions were exported as ordinary DXF geometry and text.')
+                    }
                     walkGroup(el, layerName)
                 } else {
-                    emitElement(el, layerName)
+                    counts.input++
+                    if (!emitElement(el, layerName)) {
+                        counts.skipped++
+                    }
                 }
             })
         }
 
         function emitElement(el, layerName) {
+            if (unsupportedTransformNodes.has(el.node)) {
+                diagnose(
+                    'unsupported-affine-transform',
+                    'Non-uniform or sheared circles/arcs and rotated or sheared ellipses were skipped during DXF export.',
+                )
+                return false
+            }
             switch (el.type) {
                 case 'line':     return emitLine(el, layerName)
                 case 'circle':   return emitCircle(el, layerName)
@@ -409,28 +653,42 @@ function DXFExporter(editor) {
                 case 'polygon':  return emitPolyline(el, layerName, el.type === 'polygon')
                 case 'path':     return emitPath(el, layerName)
                 case 'text':     return emitText(el, layerName)
-                default: break
+                default:
+                    diagnose('unsupported-entity', 'Some SVG entities are not supported by the DXF export profile.')
+                    return false
             }
         }
 
         function emitLine(el, layerName) {
-            beginEntity('LINE', layerName)
+            const x1 = Number(el.attr('x1') ?? 0)
+            const y1 = Number(el.attr('y1') ?? 0)
+            const x2 = Number(el.attr('x2') ?? 0)
+            const y2 = Number(el.attr('y2') ?? 0)
+            if (![x1, y1, x2, y2].every(value => validDxfNumber(value))) return rejectInvalidGeometry()
+            beginEntity('LINE', layerName, el)
             emit(100, 'AcDbLine')
-            emit(10, el.attr('x1')); emit(20, fy(el.attr('y1'))); emit(30, 0)
-            emit(11, el.attr('x2')); emit(21, fy(el.attr('y2'))); emit(31, 0)
+            emit(10, x1); emit(20, fy(y1)); emit(30, 0)
+            emit(11, x2); emit(21, fy(y2)); emit(31, 0)
+            return true
         }
 
         function emitCircle(el, layerName) {
-            beginEntity('CIRCLE', layerName)
+            const cx = Number(el.cx())
+            const cy = Number(el.cy())
+            const radius = Number(el.radius())
+            if (!validDxfRadialBounds(cx, cy, radius)) return rejectInvalidGeometry()
+            beginEntity('CIRCLE', layerName, el)
             emit(100, 'AcDbCircle')
-            emit(10, el.cx()); emit(20, fy(el.cy())); emit(30, 0)
-            emit(40, el.radius())
+            emit(10, cx); emit(20, fy(cy)); emit(30, 0)
+            emit(40, radius)
+            return true
         }
 
         function emitEllipse(el, layerName) {
-            const cx = el.cx(), cy = el.cy()
-            const rx = el.rx(), ry = el.ry()
-            beginEntity('ELLIPSE', layerName)
+            const cx = Number(el.cx()), cy = Number(el.cy())
+            const rx = Number(el.rx()), ry = Number(el.ry())
+            if (!validDxfRadialBounds(cx, cy, rx, ry)) return rejectInvalidGeometry()
+            beginEntity('ELLIPSE', layerName, el)
             emit(100, 'AcDbEllipse')
             emit(10, cx); emit(20, fy(cy)); emit(30, 0)
             if (rx >= ry) {
@@ -442,44 +700,95 @@ function DXFExporter(editor) {
             }
             emit(41, 0.0)
             emit(42, 6.283185307179586)
+            return true
         }
 
         function emitRect(el, layerName) {
-            const x = el.x(), y = el.y(), w = el.width(), h = el.height()
+            const x = Number(el.x()), y = Number(el.y())
+            const w = Number(el.width()), h = Number(el.height())
             const verts = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
-            beginEntity('LWPOLYLINE', layerName)
+            if (
+                !validDxfNumber(w, { positive: true })
+                || !validDxfNumber(h, { positive: true })
+                || !validDxfPoints(verts)
+            ) return rejectInvalidGeometry()
+            beginEntity('LWPOLYLINE', layerName, el)
+            counts.approximated++
+            diagnose('rectangle-as-polyline', 'Rectangles were exported as closed DXF polylines.')
             emit(100, 'AcDbPolyline')
             emit(90, 4)
             emit(70, 1)  // closed
             emit(43, 0)
             verts.forEach(([px, py]) => { emit(10, px); emit(20, fy(py)) })
+            return true
         }
 
         function emitPolyline(el, layerName, closed) {
             const pts = el.array()
-            beginEntity('LWPOLYLINE', layerName)
+            const rectangleSource = el.attr('data-dxf-rectangle-source')
+            if (
+                rectangleSource === 'invalid'
+                || pts.length < 2
+                || !validDxfPoints(pts)
+            ) return rejectInvalidGeometry()
+            if (rectangleSource === 'true') {
+                counts.approximated++
+                diagnose('rectangle-as-polyline', 'Rectangles were exported as closed DXF polylines.')
+            }
+            beginEntity('LWPOLYLINE', layerName, el)
             emit(100, 'AcDbPolyline')
             emit(90, pts.length)
             emit(70, closed ? 1 : 0)
             emit(43, 0)
             pts.forEach(p => { emit(10, p[0]); emit(20, fy(p[1])) })
+            return true
         }
 
         function emitPath(el, layerName) {
             if (el.data('arcData')) {
-                emitArc(el, layerName)
+                return emitArc(el, layerName)
             } else if (el.data('splineData')) {
-                emitSplinePath(el, layerName)
+                return emitSplinePath(el, layerName)
             }
-            // Other path types (circleTrimData, dimension geometry, hatches) skipped
+            const straight = straightPathPoints(el.attr('d'))
+            if (straight) {
+                if (!validDxfPoints(straight.points)) return rejectInvalidGeometry()
+                if (el.data('hatchData')) {
+                    counts.approximated++
+                    diagnose(
+                        'hatch-outline-only',
+                        'Hatches were exported as boundary polylines without their SVG fill pattern.',
+                    )
+                }
+                beginEntity('LWPOLYLINE', layerName, el)
+                emit(100, 'AcDbPolyline')
+                emit(90, straight.points.length)
+                emit(70, straight.closed ? 1 : 0)
+                emit(43, 0)
+                straight.points.forEach(point => { emit(10, point.x); emit(20, fy(point.y)) })
+                return true
+            }
+            diagnose('unsupported-path', 'Some curved or filled SVG paths could not be represented in DXF and were skipped.')
+            return false
         }
 
         function emitArc(el, layerName) {
             const ad = el.data('arcData')
+            if (!ad || !validDxfPoint(ad.p1) || !validDxfPoint(ad.p2) || !validDxfPoint(ad.p3)) {
+                return rejectInvalidGeometry()
+            }
             const geo = getArcGeometry(ad.p1, ad.p2, ad.p3)
-            if (!geo) return
+            if (!geo) {
+                diagnose('invalid-arc', 'An invalid arc could not be exported to DXF.')
+                return false
+            }
 
             const { cx, cy, radius, theta1, theta3, ccw } = geo
+            if (
+                !validDxfRadialBounds(cx, cy, radius)
+                || !validDxfNumber(theta1)
+                || !validDxfNumber(theta3)
+            ) return rejectInvalidGeometry()
 
             // Y-flip maps SVG angle θ → DXF angle -θ.
             // DXF always draws arcs CCW from startAngle to endAngle.
@@ -493,59 +802,159 @@ function DXFExporter(editor) {
                 endDeg   = normAngle(toDeg(-theta3))
             }
 
-            beginEntity('ARC', layerName)
+            beginEntity('ARC', layerName, el)
             emit(100, 'AcDbCircle')
             emit(10, cx); emit(20, fy(cy)); emit(30, 0)
             emit(40, radius)
             emit(100, 'AcDbArc')
             emit(50, startDeg)
             emit(51, endDeg)
+            return true
         }
 
         function emitSplinePath(el, layerName) {
             const sd = el.data('splineData')
-            if (!sd || !sd.points || sd.points.length < 2) return
+            if (!sd || !sd.points || sd.points.length < 2) {
+                diagnose('invalid-spline', 'An invalid spline could not be exported to DXF.')
+                return false
+            }
+            if (!validDxfPoints(sd.points)) return rejectInvalidGeometry()
 
             // Sample the Catmull-Rom curve and emit as LWPOLYLINE — this preserves
             // the exact visual shape without any B-spline knot vector arithmetic.
             const sampled = sampleCatmullRom(sd.points)
-            beginEntity('LWPOLYLINE', layerName)
+            if (!validDxfPoints(sampled)) return rejectInvalidGeometry()
+            beginEntity('LWPOLYLINE', layerName, el)
+            counts.approximated++
+            diagnose('spline-sampled', 'Splines were sampled as DXF polylines.')
             emit(100, 'AcDbPolyline')
             emit(90, sampled.length)
             emit(70, 0)  // open
             emit(43, 0)
             sampled.forEach(p => { emit(10, p.x); emit(20, fy(p.y)) })
+            return true
         }
 
         function emitText(el, layerName) {
             const node = el.node
-            // SVG.js places text using move(x,y) which sets the x/y attributes
-            const x = parseFloat(node.getAttribute('x')) || 0
-            const y = parseFloat(node.getAttribute('y')) || 0
+            // Text keeps its matrix when geometry transforms are baked. Map
+            // its insertion point and the representable rotation/scale into
+            // DXF instead of silently discarding a matrix transform.
+            const rawX = node.getAttribute('x')
+            const rawY = node.getAttribute('y')
+            const localX = rawX === null || rawX === '' ? 0 : Number(rawX)
+            const localY = rawY === null || rawY === '' ? 0 : Number(rawY)
+            const matrix = el.matrix()
+            const x = matrix.a * localX + matrix.c * localY + matrix.e
+            const y = matrix.b * localX + matrix.d * localY + matrix.f
             const raw = node.textContent || ''
             // SVG.js wraps text in <tspan> children; flatten to plain string
-            const content = raw.replace(/\s+/g, ' ').trim()
-            const fontSize = parseFloat(el.css('font-size')) || 2.5
+            let content = raw
+                .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '�')
+                .replace(/\s+/g, ' ')
+                .trim()
+            if (content.length > 255) {
+                content = content.slice(0, 255)
+                counts.approximated++
+                diagnose('text-truncated', 'DXF TEXT content longer than 255 characters was truncated.')
+            }
+            const scaleX = Math.hypot(matrix.a, matrix.b)
+            const scaleY = Math.hypot(matrix.c, matrix.d)
+            const orthogonality = matrix.a * matrix.c + matrix.b * matrix.d
+            const rawFontSize = el.css('font-size')
+            const baseFontSize = rawFontSize ? Number.parseFloat(rawFontSize) : 2.5
+            const fontSize = baseFontSize * scaleY
+            const rotation = normAngle(-toDeg(Math.atan2(matrix.b, matrix.a)))
+            if (
+                !validDxfNumber(localX)
+                || !validDxfNumber(localY)
+                || ![matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f]
+                    .every(value => validDxfNumber(value))
+                || !validDxfNumber(x)
+                || !validDxfNumber(y)
+                || !validDxfNumber(scaleX, { positive: true })
+                || !validDxfNumber(scaleY, { positive: true })
+                || !validDxfNumber(fontSize, { positive: true })
+                || !validDxfNumber(rotation)
+                || !validDxfNumber(orthogonality)
+            ) return rejectInvalidGeometry()
+            if (Math.abs(scaleX - scaleY) > 1e-8 || Math.abs(orthogonality) > 1e-8) {
+                counts.approximated++
+                diagnose('text-transform-approximated', 'Sheared or non-uniformly scaled text was approximated in DXF.')
+            }
 
-            // Extract rotation from transform="rotate(deg cx cy)" if present
-            let rotation = 0
-            const xform = node.getAttribute('transform') || ''
-            const rm = xform.match(/rotate\(\s*([-\d.]+)/)
-            if (rm) rotation = -parseFloat(rm[1]) // negate: SVG CW → DXF CCW
-
-            beginEntity('TEXT', layerName)
+            beginEntity('TEXT', layerName, el)
             emit(100, 'AcDbText')
             emit(10, x); emit(20, fy(y)); emit(30, 0)
             emit(40, fontSize)
             emit(1, content)
-            if (rotation !== 0) emit(50, normAngle(rotation))
+            if (rotation !== 0) emit(50, rotation)
             // Text anchor → DXF horizontal justification (72)
             const anchor = node.getAttribute('text-anchor') || 'start'
             if (anchor === 'middle') { emit(72, 1); emit(11, x); emit(21, fy(y)); emit(31, 0) }
             else if (anchor === 'end') { emit(72, 2); emit(11, x); emit(21, fy(y)); emit(31, 0) }
             emit(100, 'AcDbText')
+            return true
         }
+
+        const diagnostics = Object.freeze(Array.from(
+            diagnosticCounts.values(),
+            diagnostic => exportDiagnostic(diagnostic.code, diagnostic.message, diagnostic.count),
+        ))
+        const frozenCounts = Object.freeze({
+            ...counts,
+            emitted: Object.freeze({ ...counts.emitted }),
+        })
+        return Object.freeze({ source, diagnostics, counts: frozenCounts })
+}
+
+function terminalExportMessage(editor, filename, result) {
+    const emitted = Object.values(result.counts.emitted).reduce((sum, count) => sum + count, 0)
+    const details = [`${emitted} ${emitted === 1 ? 'entity' : 'entities'}`]
+    if (result.counts.approximated) details.push(`${result.counts.approximated} approximated`)
+    if (result.counts.skipped) details.push(`${result.counts.skipped} skipped`)
+    const warning = result.diagnostics.length
+        ? ` ${result.diagnostics.map(diagnostic => diagnostic.message).join(' ')}`
+        : ''
+    return `DXF exported: ${filename} — ${details.join(', ')}.${warning}`
+}
+
+function DXFExporter(editor) {
+    this.build = function () {
+        return buildDXFDocument(editor)
+    }
+
+    this.saveFile = function (filename = 'drawing.dxf') {
+        const result = buildDXFDocument(editor)
+        const blob = new Blob([result.source], { type: 'application/dxf' })
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = filename
+        document.body.appendChild(anchor)
+        try {
+            anchor.click()
+        } finally {
+            anchor.remove()
+            URL.revokeObjectURL(url)
+        }
+
+        const message = terminalExportMessage(editor, filename, result)
+        try {
+            editor.signals.terminalLogged.dispatch({ type: 'span', msg: message })
+        } catch (error) {
+            try { console.error('[DXFExporter] A terminal listener failed:', error) } catch (_reportError) {}
+        }
+        return { ...result, filename, message }
     }
 }
 
-export { DXFExporter }
+export {
+    DXFExporter,
+    buildDXFDocument,
+    findUnsupportedDxfTransforms,
+    isAxisAlignedTransform,
+    isSimilarityTransform,
+    sanitizeLayerName,
+    straightPathPoints,
+}

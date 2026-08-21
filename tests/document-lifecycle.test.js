@@ -10,7 +10,10 @@ import { Editor } from '../src/js/Editor.js'
 import { PaperEditor } from '../src/js/PaperEditor.js'
 import { Viewport } from '../src/js/Viewport.js'
 import { GeometryNodeManager } from '../src/js/geometry-nodes/GeometryNodeManager.js'
-import { DOCUMENT_SCHEMA_VERSION } from '../src/js/document/DocumentSerializer.js'
+import {
+  DOCUMENT_SCHEMA_VERSION,
+  serializeNativeDocument,
+} from '../src/js/document/DocumentSerializer.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -48,6 +51,32 @@ function nativeDocument({
   content = '<g id="collection-new" name="New" data-collection="true"><line id="10" x1="1" y1="2" x2="3" y2="4"/></g>',
 } = {}) {
   return `<svg xmlns="${SVG_NS}" data-nanquim-version="${version}" ${attributes}>${content}</svg>`
+}
+
+function recursiveInsertDxf() {
+  return [
+    '0', 'SECTION', '2', 'BLOCKS',
+    '0', 'BLOCK', '2', 'A', '10', '0', '20', '0',
+    '0', 'INSERT', '2', 'A', '8', '0', '10', '0', '20', '0',
+    '0', 'ENDBLK',
+    '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'INSERT', '2', 'A', '8', '0', '10', '0', '20', '0',
+    '0', 'ENDSEC', '0', 'EOF',
+  ].join('\n')
+}
+
+function numericBoundsDxf() {
+  return [
+    '0', 'SECTION', '2', 'HEADER',
+    '9', '$INSUNITS', '70', '5',
+    '0', 'ENDSEC',
+    '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'LINE', '8', 'Bounds', '10', '1', '20', '2', '11', '9', '21', '6',
+    '0', 'LINE', '8', 'Bounds', '10', '1e309', '20', '0', '11', '1', '21', '1',
+    '0', 'LINE', '8', 'Bounds', '10', '1e308', '20', '0', '11', '2', '21', '2',
+    '0', 'ENDSEC', '0', 'EOF',
+  ].join('\n')
 }
 
 async function fixture(name) {
@@ -484,6 +513,23 @@ describe('transactional document lifecycle', () => {
     expect(editor.fullSpatialIndex.rebuild).not.toHaveBeenCalled()
   })
 
+  test('preserves exact live state when the root transform exceeds the numeric contract', async () => {
+    const editor = createEditor()
+    const seeded = seedOldSession(editor)
+
+    const result = await editor.loader.loadSource(nativeDocument({
+      attributes: 'transform="matrix(1e308,0,0,1,0,0)"',
+    }), {
+      name: 'unsafe-root-transform.svg',
+      handle: { name: 'unsafe-root-transform.svg' },
+    })
+
+    expectPreservedFailure(editor, seeded, result)
+    expect(result.error).toMatchObject({ code: 'unsafe-svg' })
+    expect(editor.spatialIndex.rebuild).not.toHaveBeenCalled()
+    expect(editor.fullSpatialIndex.rebuild).not.toHaveBeenCalled()
+  })
+
   test('checks the controller commit guard after staging and before any live mutation', async () => {
     const editor = createEditor()
     const seeded = seedOldSession(editor)
@@ -548,6 +594,58 @@ describe('transactional document lifecycle', () => {
       code: 'invalid-element-metadata',
     }))
     expect(editor.drawing.node.querySelector('[id="10"]').hasAttribute('data-arc-data')).toBe(false)
+    expect(editor.documentState.isDirty).toBe(true)
+  })
+
+  test('removes overbound arc, spline, and dimension metadata before live hydration', async () => {
+    const editor = createEditor()
+    const encoded = (value) => JSON.stringify(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+    const arcData = encoded({
+      p1: { x: 0, y: 0 },
+      p2: { x: 1e308, y: 1 },
+      p3: { x: 2, y: 0 },
+    })
+    const splineData = encoded({ points: [{ x: 0, y: 0 }, { x: -1e308, y: 1 }] })
+    const dimensionData = encoded({
+      start: { x: 0, y: 0 },
+      end: { x: 1e308, y: 0 },
+      styleId: 'Standard',
+    })
+
+    const result = await editor.loader.loadSource(nativeDocument({
+      content: `<g id="collection-new" name="New" data-collection="true">
+        <path id="10" d="M0 0L2 0" data-arc-data="${arcData}"/>
+        <path id="11" d="M0 0L2 0" data-spline-data="${splineData}"/>
+        <g id="12" data-dim-data="${dimensionData}"><line x2="2"/></g>
+      </g>`,
+    }), { name: 'bounded-element-metadata.svg' })
+
+    expect(result).toMatchObject({ ok: true, kind: 'native', dirty: true })
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'invalid-element-metadata',
+    }))
+    expect(editor.drawing.node.querySelector('[id="10"]').hasAttribute('data-arc-data')).toBe(false)
+    expect(editor.drawing.node.querySelector('[id="11"]').hasAttribute('data-spline-data')).toBe(false)
+    expect(editor.drawing.node.querySelector('[id="12"]').hasAttribute('data-dim-data')).toBe(false)
+    expect(editor.documentState.isDirty).toBe(true)
+  })
+
+  test('keeps safe siblings when invalid numeric geometry is sanitized before commit', async () => {
+    const editor = createEditor()
+    const result = await editor.loader.loadSource(nativeDocument({
+      content: `<g id="collection-new" name="New" data-collection="true">
+        <line id="10" x1="0" y1="0" x2="10" y2="10"/>
+        <path id="11" d="M0 0L1e308 1"/>
+        <polyline id="12" points="0,0 NaN,2"/>
+      </g>`,
+    }), { name: 'sanitized-numeric-geometry.svg' })
+
+    expect(result).toMatchObject({ ok: true, kind: 'native', dirty: true })
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'sanitized-content' }))
+    expect(editor.drawing.node.querySelector('[id="10"]')).not.toBeNull()
+    expect(editor.drawing.node.querySelector('[id="11"], [id="12"]')).toBeNull()
     expect(editor.documentState.isDirty).toBe(true)
   })
 
@@ -699,6 +797,131 @@ describe('transactional document lifecycle', () => {
     expect(dxfEditor.currentFileHandle).toBeNull()
     expect(dxfEditor.documentState.isDirty).toBe(true)
     expect(dxfEditor.drawing.node.querySelector('line')).not.toBeNull()
+  })
+
+  test('imports DXF layers as direct centimeter collections with visibility and lock state', async () => {
+    const editor = createEditor()
+    seedOldSession(editor)
+
+    const result = await editor.loader.loadSource(await fixture('dxf-layers-units-r2000.dxf'), {
+      name: 'dxf-layers-units-r2000.dxf',
+      type: 'image/vnd.dxf',
+    })
+
+    expect(result.ok, result.error?.stack).toBe(true)
+    expect(result).toMatchObject({ kind: 'dxf', dirty: true })
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: 'dxf-units-converted' }))
+    expect(editor.svg.viewbox()).toMatchObject({ x: 0, y: -8, width: 9, height: 8 })
+
+    const directCollections = Array.from(editor.drawing.node.children)
+    expect(directCollections).toHaveLength(3)
+    expect(directCollections.every(
+      (collection) => collection.getAttribute('data-collection') === 'true',
+    )).toBe(true)
+    expect(editor.drawing.node.querySelector('[data-nanquim-import-root="true"]')).toBeNull()
+    expect(directCollections.map((collection) => collection.getAttribute('name')))
+      .toEqual(['A&B', 'Hidden', 'Locked'])
+
+    const collectionStates = Array.from(editor.collections.values()).map((collection) => ({
+      locked: collection.locked,
+      name: collection.group.attr('name'),
+      visible: collection.visible,
+    }))
+    expect(collectionStates).toEqual([
+      { name: 'A&B', visible: true, locked: false },
+      { name: 'Hidden', visible: false, locked: false },
+      { name: 'Locked', visible: true, locked: true },
+    ])
+
+    const drawingLine = directCollections[0].querySelector('line')
+    expect([
+      drawingLine.getAttribute('x1'),
+      drawingLine.getAttribute('y1'),
+      drawingLine.getAttribute('x2'),
+      drawingLine.getAttribute('y2'),
+    ].map(Number)).toEqual([1, -1, 9, -1])
+    const hiddenCircle = directCollections[1].querySelector('circle')
+    expect(Number(hiddenCircle.getAttribute('cx'))).toBeCloseTo(5)
+    expect(Number(hiddenCircle.getAttribute('cy'))).toBeCloseTo(-4)
+    expect(Number(hiddenCircle.getAttribute('r'))).toBeCloseTo(1.2)
+    const lockedLine = directCollections[2].querySelector('line')
+    expect([
+      lockedLine.getAttribute('x1'),
+      lockedLine.getAttribute('y1'),
+      lockedLine.getAttribute('x2'),
+      lockedLine.getAttribute('y2'),
+    ].map(Number)).toEqual([0, 0, 0, -8])
+
+    const serialized = serializeNativeDocument(editor)
+    expect(serialized).toContain('name="A&amp;B"')
+    const reopened = createEditor()
+    const reopenResult = await reopened.loader.loadSource(serialized, { name: 'reopened.svg' })
+    expect(reopenResult.ok, reopenResult.error?.stack).toBe(true)
+    expect(Array.from(reopened.collections.values())
+      .filter((collection) => collection.group.attr('data-nanquim-paper-annotations') !== 'true')
+      .map((collection) => ({
+        locked: collection.locked,
+        name: collection.group.attr('name'),
+        visible: collection.visible,
+      }))).toEqual(collectionStates)
+  })
+
+  test('replaces the prior model viewBox when a foreign SVG omits viewBox', async () => {
+    const editor = createEditor()
+    seedOldSession(editor)
+    editor.svg.viewbox(40, 50, 60, 70)
+
+    const result = await editor.loader.loadSource(`
+      <svg xmlns="${SVG_NS}" width="20" height="10">
+        <line x1="0" y1="0" x2="20" y2="10"/>
+      </svg>
+    `, { name: 'dimensioned.svg' })
+
+    expect(result.ok, result.error?.stack).toBe(true)
+    expect(editor.svg.viewbox()).toMatchObject({ x: 0, y: 0, width: 20, height: 10 })
+  })
+
+  test('leaves the live document untouched when recursive DXF expansion is rejected', async () => {
+    const editor = createEditor()
+    const seeded = seedOldSession(editor)
+
+    const result = await editor.loader.loadSource(recursiveInsertDxf(), {
+      name: 'recursive.dxf',
+      type: 'image/vnd.dxf',
+    })
+
+    expectPreservedFailure(editor, seeded, result)
+    expect(result.error).toMatchObject({ code: 'invalid-dxf' })
+    expect(editor.spatialIndex.rebuild).not.toHaveBeenCalled()
+    expect(editor.fullSpatialIndex.rebuild).not.toHaveBeenCalled()
+  })
+
+  test('keeps skipped over-bound DXF geometry out of the live and reopened document', async () => {
+    const editor = createEditor()
+    seedOldSession(editor)
+
+    const result = await editor.loader.loadSource(numericBoundsDxf(), {
+      name: 'numeric-bounds.dxf',
+      type: 'image/vnd.dxf',
+    })
+
+    expect(result.ok, result.error?.stack).toBe(true)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'dxf-entities-skipped',
+    }))
+    expect(editor.drawing.node.querySelectorAll('line')).toHaveLength(1)
+    expect(editor.drawing.node.innerHTML).not.toMatch(/(?:^|[^a-z])(?:NaN|[-+]?Infinity)(?=$|[^a-z])|1e\+?30[89]/i)
+    const viewBox = editor.svg.viewbox()
+    expect([viewBox.x, viewBox.y, viewBox.width, viewBox.height].every(Number.isFinite)).toBe(true)
+    expect(viewBox).toMatchObject({ x: 1, y: -6, width: 8, height: 4 })
+
+    const serialized = serializeNativeDocument(editor)
+    expect(serialized).not.toMatch(/(?:^|[^a-z])(?:NaN|[-+]?Infinity)(?=$|[^a-z])|1e\+?30[89]/i)
+    const reopened = createEditor()
+    const reopenResult = await reopened.loader.loadSource(serialized, { name: 'numeric-bounds.svg' })
+    expect(reopenResult.ok, reopenResult.error?.stack).toBe(true)
+    expect(reopened.drawing.node.querySelectorAll('line')).toHaveLength(1)
+    expect(() => serializeNativeDocument(reopened)).not.toThrow()
   })
 
   test('replaces only document-owned definitions and preserves app-owned definitions by identity', async () => {

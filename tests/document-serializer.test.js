@@ -592,6 +592,14 @@ describe('native document serializer', () => {
     })
     expect(() => serializeNativeDocument(semanticFixture.editor)).toThrow(/arcData exceeds/)
 
+    const numericFixture = createEditorFixture()
+    numericFixture.editor.drawing.findOne('[data-kind="arc"]').data('arcData', {
+      p1: { x: 0, y: 0 },
+      p2: { x: 1e308, y: 1 },
+      p3: { x: 2, y: 0 },
+    })
+    expect(() => serializeNativeDocument(numericFixture.editor)).toThrow(/arcData exceeds/)
+
     const attributeFixture = createEditorFixture()
     attributeFixture.editor.drawing.findOne('[data-kind="arc"]')
       .attr('d', 'M' + '0'.repeat(4 * 1024 * 1024 + 1))

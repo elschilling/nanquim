@@ -63,10 +63,10 @@ const reduceSection = (acc, section) => {
       acc.tables = tablesHandler(contentTuples)
       break
     case 'BLOCKS':
-      acc.blocks = blocksHandler(contentTuples)
+      acc.blocks = blocksHandler(contentTuples, acc.diagnostics)
       break
     case 'ENTITIES':
-      acc.entities = entitiesHandler(contentTuples)
+      acc.entities = entitiesHandler(contentTuples, acc.diagnostics)
       break
     case 'OBJECTS':
       acc.objects = objectsHandler(contentTuples)
@@ -85,9 +85,15 @@ export default (string) => {
     // Start with empty defaults in the event of empty sections
     header: {},
     blocks: [],
+    diagnostics: { unsupportedEntityTypes: Object.create(null) },
     entities: [],
     objects: { layouts: [] },
-    tables: { layers: {}, styles: {}, ltypes: {} },
+    tables: {
+      layers: Object.create(null),
+      styles: Object.create(null),
+      ltypes: Object.create(null),
+      vports: Object.create(null),
+    },
   })
   return result
 }

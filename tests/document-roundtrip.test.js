@@ -17,6 +17,12 @@ import {
 
 const FIXTURE_PATH = join(process.cwd(), 'tests', 'fixtures', 'native-v3.svg')
 const V1_FIXTURE_PATH = join(process.cwd(), 'tests', 'fixtures', 'native-v1.svg')
+const SVG_INTEROPERABILITY_FIXTURE_PATH = join(
+  process.cwd(),
+  'tests',
+  'fixtures',
+  'interoperability-profile.svg',
+)
 const JSON_ATTRIBUTES = new Set([
   'data-arc-data',
   'data-block-definitions',
@@ -349,6 +355,31 @@ describe('native schema-v3 semantic round trips', () => {
     const secondRoot = parseSvg(secondSerialized)
 
     assertCanonicalSubsystems(secondEditor, secondRoot)
+    assertUniqueResolvableReferences(secondRoot)
+    expect(normalizedElement(secondRoot)).toEqual(normalizedElement(firstRoot))
+  })
+
+  test('promotes the qualified foreign SVG profile to an idempotent native document', async () => {
+    const fixture = await readFile(SVG_INTEROPERABILITY_FIXTURE_PATH, 'utf8')
+    const importedEditor = createTestEditor()
+    const imported = await importedEditor.loader.loadSource(fixture, {
+      name: 'interoperability-profile.svg',
+      type: 'image/svg+xml',
+    })
+
+    expect(imported).toMatchObject({ ok: true, kind: 'foreign-svg', dirty: true })
+    expect(imported.diagnostics).toEqual([])
+    const first = serializeNativeDocument(importedEditor)
+    const firstRoot = parseSvg(first)
+    assertUniqueResolvableReferences(firstRoot)
+    expect(firstRoot.getAttribute('viewBox')).toBe('0 0 210 148')
+    expect(firstRoot.querySelectorAll('path')).toHaveLength(6)
+    expect(firstRoot.querySelectorAll('use')).toHaveLength(2)
+    expect(firstRoot.querySelector('text').textContent).toBe('Room & curve <profile>')
+
+    const reopened = await openDocument(first, 'interoperability-profile-native.svg')
+    const second = serializeNativeDocument(reopened)
+    const secondRoot = parseSvg(second)
     assertUniqueResolvableReferences(secondRoot)
     expect(normalizedElement(secondRoot)).toEqual(normalizedElement(firstRoot))
   })

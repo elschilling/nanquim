@@ -143,6 +143,76 @@ describe('secure SVG clipboard paste', () => {
     expect({}.polluted).toBeUndefined()
   })
 
+  test('removes overbound semantic geometry metadata before clipboard nodes become live', () => {
+    const editor = createEditor()
+    const arcData = JSON.stringify({
+      p1: { x: 0, y: 0 },
+      p2: { x: 1e308, y: 1 },
+      p3: { x: 2, y: 0 },
+    }).replace(/"/g, '&quot;')
+    const command = new PasteCommand(editor, {
+      elements: [{
+        svg: `<path xmlns="${SVG_NS}" d="M0 0L2 0" data-arc-data="${arcData}"/>`,
+      }],
+    })
+
+    command.execute()
+
+    expect(command.pastedElements).toHaveLength(1)
+    expect(command.pastedElements[0].node.hasAttribute('data-arc-data')).toBe(false)
+    expect(command.pastedElements[0].data('arcData')).toBeUndefined()
+  })
+
+  test('bounds retained full-SVG viewports and propagates viewBox scaling before adoption', () => {
+    const editor = createEditor()
+    const command = new PasteCommand(editor, {
+      elements: [
+        {
+          svg: `<svg xmlns="${SVG_NS}" x="1000000000" width="1000000000" height="1" viewBox="0 0 1 1">
+            <line data-root-box-overflow="true" x2="1"/>
+          </svg>`,
+        },
+        {
+          svg: `<svg xmlns="${SVG_NS}" width="10" height="10" viewBox="0 0 1e308 1">
+            <line data-root-viewbox-overflow="true" x2="1"/>
+          </svg>`,
+        },
+        {
+          svg: `<svg xmlns="${SVG_NS}" width="1000000000" height="1000000000" viewBox="0 0 1 1" overflow="visible">
+            <line data-viewbox-overflow="true" x2="2"/>
+            <line data-viewbox-safe="true" x2="0.5"/>
+          </svg>`,
+        },
+      ],
+    })
+
+    command.execute()
+
+    expect(editor.activeCollection.node.querySelector('[data-root-box-overflow]')).toBeNull()
+    expect(editor.activeCollection.node.querySelector('[data-root-viewbox-overflow]')).toBeNull()
+    expect(editor.activeCollection.node.querySelector('[data-viewbox-overflow]')).toBeNull()
+    expect(editor.activeCollection.node.querySelector('[data-viewbox-safe]')).not.toBeNull()
+    expect(command.pastedElements).toHaveLength(1)
+  })
+
+  test('normalizes a viewBox-only full SVG before retaining it in the live drawing', () => {
+    const editor = createEditor()
+    const command = new PasteCommand(editor, {
+      elements: [{
+        svg: `<svg xmlns="${SVG_NS}" viewBox="0 0 100 100"><line data-viewbox-only-safe="true" x2="10"/></svg>`,
+      }],
+    })
+
+    command.execute()
+
+    expect(command.pastedElements).toHaveLength(1)
+    const root = command.pastedElements[0].node
+    expect(root.localName).toBe('svg')
+    expect(root.getAttribute('width')).toBe('100')
+    expect(root.getAttribute('height')).toBe('100')
+    expect(root.querySelector('[data-viewbox-only-safe]')).not.toBeNull()
+  })
+
   test('skips malformed and structurally oversized items but continues with a safe item', () => {
     const editor = createEditor()
     const deep = `${'<g>'.repeat(130)}<path d="M0 0L1 1"/>${'</g>'.repeat(130)}`

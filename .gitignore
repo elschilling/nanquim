@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 /coverage/
+# Browser workflow and performance evidence is intentionally local/CI output.
 /test-results/
 
 # Editor directories and files

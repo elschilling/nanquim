@@ -12,6 +12,7 @@ const ELEMENT_DATA_METADATA_LIMITS = Object.freeze({
   maxLength: 1024 * 1024,
   maxDepth: 32,
   maxNodes: 50000,
+  maxAbsNumber: 1_000_000_000,
 })
 
 const DOCUMENT_METADATA_LIMITS = Object.freeze({

@@ -28,10 +28,10 @@ export default defineConfig({
       reporter: ['text', 'json-summary', 'html'],
       reportOnFailure: true,
       thresholds: {
-        branches: 48,
-        functions: 66,
-        lines: 58,
-        statements: 56,
+        branches: 52,
+        functions: 69,
+        lines: 62,
+        statements: 60,
         // Vitest's perFile switch is global. Exact paths keep these stronger
         // module floors independent without applying the global legacy ratchet
         // to every source file.
@@ -100,6 +100,12 @@ export default defineConfig({
           functions: 91,
           lines: 91,
           statements: 86,
+        },
+        'src/js/utils/svgNumericBounds.js': {
+          branches: 76,
+          functions: 97,
+          lines: 93,
+          statements: 85,
         },
         'src/js/utils/transformGeometry.js': {
           branches: 93,

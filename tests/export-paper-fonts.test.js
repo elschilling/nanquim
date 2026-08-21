@@ -53,7 +53,7 @@ describe('Paper PDF font registration', () => {
       }
     `
 
-    await registerFontsWithJsPDF(pdf, svg, css)
+    const result = await registerFontsWithJsPDF(pdf, svg, css)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith('/fonts/generated/Inter-400.ttf')
@@ -64,6 +64,7 @@ describe('Paper PDF font registration', () => {
       'normal',
       400,
     )
+    expect(result).toEqual({ requested: 1, registered: 1, fallback: 0 })
   })
 
   test('registers only the requested non-bundled CSS variant once', async () => {
@@ -103,5 +104,50 @@ describe('Paper PDF font registration', () => {
       'normal',
       '400',
     )
+  })
+
+  test('resolves inherited families and class-based variants for dimension text', async () => {
+    document.body.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <g font-family="DM Sans" font-weight="700">
+          <text class="dimension-label">100 cm</text>
+        </g>
+      </svg>
+    `
+    const fetchMock = vi.fn(async () => successfulFontResponse())
+    vi.stubGlobal('fetch', fetchMock)
+    const pdf = createPdfStub()
+
+    await registerFontsWithJsPDF(
+      pdf,
+      document.querySelector('svg'),
+      '.dimension-label { font-style: italic; }',
+    )
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenCalledWith('/fonts/generated/DMSans-Italic-700.ttf')
+    expect(pdf.addFont).toHaveBeenCalledWith(
+      'DM Sans-700-italic.ttf',
+      'DM Sans',
+      'italic',
+      700,
+    )
+    expect(document.querySelector('.dimension-label')).toMatchObject({
+      outerHTML: expect.stringContaining('font-family="DM Sans"'),
+    })
+    expect(document.querySelector('.dimension-label').getAttribute('font-style')).toBe('italic')
+    expect(document.querySelector('.dimension-label').getAttribute('font-weight')).toBe('700')
+  })
+
+  test('reports a bounded renderer fallback when a requested local font is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })))
+    const pdf = createPdfStub()
+    const svg = createSvgText({ family: 'Inter', weight: '500' })
+
+    const result = await registerFontsWithJsPDF(pdf, svg, '')
+
+    expect(result).toEqual({ requested: 1, registered: 0, fallback: 1 })
+    expect(pdf.addFileToVFS).not.toHaveBeenCalled()
+    expect(pdf.addFont).not.toHaveBeenCalled()
   })
 })

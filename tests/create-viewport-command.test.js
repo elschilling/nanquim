@@ -25,6 +25,14 @@ class TestSignal {
     this.listeners.push(listener)
   }
 
+  addOnce(listener) {
+    const once = (...args) => {
+      this.remove(once)
+      listener(...args)
+    }
+    this.add(once)
+  }
+
   remove(listener) {
     this.listeners = this.listeners.filter(candidate => candidate !== listener)
   }
@@ -199,6 +207,36 @@ describe('CreateViewportCommand', () => {
     expect(viewport).toMatchObject({ x: 7, y: 8, w: 14, h: 9 })
     expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(3)
     expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledTimes(3)
+  })
+
+  test('reports interactive viewport dimensions in physical centimetres at non-default density', async () => {
+    const { editor, signals } = createFixture()
+    signals.inputValue = new TestSignal()
+    editor.commandSessionRevision = 1
+    editor.paperConfig.unitsPerCm = 2.5
+    editor.inputCoord = { x: 2.5, y: 5 }
+
+    const completion = createViewportCommand(editor)
+    signals.coordinateInput.dispatch()
+    await vi.waitFor(() => expect(signals.terminalLogged.dispatch).toHaveBeenCalledWith({
+      type: 'span',
+      msg: 'VP: Specify opposite corner:',
+    }))
+
+    editor.inputCoord = { x: 27.5, y: 15 }
+    signals.coordinateInput.dispatch()
+    await vi.waitFor(() => expect(signals.terminalLogged.dispatch).toHaveBeenCalledWith({
+      type: 'span',
+      msg: 'VP: Enter scale denominator (e.g. 100 for 1:100) [100]:',
+    }))
+    signals.inputValue.dispatch('100')
+    await completion
+
+    expect(editor.paperViewports).toHaveLength(1)
+    expect(signals.terminalLogged.dispatch).toHaveBeenLastCalledWith({
+      type: 'span',
+      msg: 'VP: Created viewport vp-1 (10.00×4.00 cm) at 1:100',
+    })
   })
 
   test('failed viewport construction removes every partial Paper node and preserves id allocation', () => {

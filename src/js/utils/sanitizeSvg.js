@@ -1,3 +1,9 @@
+import {
+  MAX_SVG_GEOMETRY_MAGNITUDE,
+  sanitizeGeometryCssValue,
+  sanitizeSvgNumericGeometry,
+} from './svgNumericBounds.js'
+
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const XLINK_NS = 'http://www.w3.org/1999/xlink'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
@@ -202,7 +208,7 @@ function sanitizeCssValue(rawValue) {
   return value
 }
 
-function sanitizeStyleDeclarationsDetailed(cssText) {
+function sanitizeStyleDeclarationsDetailed(cssText, options = {}) {
   const source = String(cssText)
   const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const declarations = []
@@ -220,7 +226,14 @@ function sanitizeStyleDeclarationsDetailed(cssText) {
       filtered = true
       return
     }
-    const value = sanitizeCssValue(candidate.slice(colon + 1))
+    if ((property === 'transform' || property === 'transform-origin') && options.allowTransform !== true) {
+      filtered = true
+      return
+    }
+    const safeCssValue = sanitizeCssValue(candidate.slice(colon + 1))
+    const value = safeCssValue === null
+      ? null
+      : sanitizeGeometryCssValue(property, safeCssValue)
     if (value === null) {
       filtered = true
       return
@@ -232,7 +245,7 @@ function sanitizeStyleDeclarationsDetailed(cssText) {
 }
 
 function sanitizeStyleDeclarations(cssText) {
-  return sanitizeStyleDeclarationsDetailed(cssText).value
+  return sanitizeStyleDeclarationsDetailed(cssText, { allowTransform: true }).value
 }
 
 function scopeSelector(selector, scope, stylesheetRoot = scope) {
@@ -397,7 +410,7 @@ function sanitizeAttributes(element, state) {
       return
     }
     if (localName === 'style') {
-      const result = sanitizeStyleDeclarationsDetailed(attribute.value)
+      const result = sanitizeStyleDeclarationsDetailed(attribute.value, { allowTransform: true })
       if (result.value) attribute.value = result.value
       else element.removeAttributeNode(attribute)
       if (result.filtered || !result.value) markSanitized(state)
@@ -485,6 +498,10 @@ function sanitizeSvgDocument(documentRef, options = {}) {
   }
   const state = { changed: false, elements: 0, mutations: 0 }
   sanitizeElement(root, normalizedOptions, state, 0)
+  sanitizeSvgNumericGeometry(root, {
+    onMutation: () => markSanitized(state),
+    rootViewportIsGeometry: options.rootViewportIsGeometry === true,
+  })
   if (options.report && typeof options.report === 'object') {
     options.report.changed = state.changed
     options.report.mutations = state.mutations
@@ -502,6 +519,9 @@ function parseSafeJson(source, options = {}) {
   const maxLength = Number.isFinite(options.maxLength) ? options.maxLength : 5 * 1024 * 1024
   const maxDepth = Number.isFinite(options.maxDepth) ? options.maxDepth : 64
   const maxNodes = Number.isFinite(options.maxNodes) ? options.maxNodes : 200000
+  const maxAbsNumber = Number.isFinite(options.maxAbsNumber)
+    ? Math.max(0, Math.abs(options.maxAbsNumber))
+    : Infinity
   if (source.length > maxLength) return null
 
   let value
@@ -515,6 +535,9 @@ function parseSafeJson(source, options = {}) {
   const visit = (candidate, depth) => {
     nodeCount += 1
     if (nodeCount > maxNodes || depth > maxDepth) return false
+    if (typeof candidate === 'number') {
+      return Number.isFinite(candidate) && Math.abs(candidate) <= maxAbsNumber
+    }
     if (!candidate || typeof candidate !== 'object') return true
     if (Array.isArray(candidate)) return candidate.every((entry) => visit(entry, depth + 1))
     const keys = Object.keys(candidate)
@@ -728,6 +751,7 @@ function remapSvgIds(roots, allocateId, options = {}) {
 }
 
 export {
+  MAX_SVG_GEOMETRY_MAGNITUDE,
   markupFitsSvgElementBudget,
   parseSafeJson,
   remapSvgIds,
