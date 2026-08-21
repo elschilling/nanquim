@@ -37,6 +37,11 @@ viewport export, Help keyboard navigation, and the representative Geometry
 Nodes fixture. On failure it retains an action/console/network trace and a
 screenshot; Chromium additionally retains a DevTools timeline trace.
 
+On 2026-08-21, [remote qualification run 32465836518](https://github.com/elschilling/nanquim/actions/runs/32465836518)
+passed all four matrix targets: current and previous-stable Chromium plus
+stable and ESR Firefox. Direct persistent-file-handle and Safari checks remain
+manual candidate gates.
+
 Run the same production-build checks locally with:
 
 ```bash
