@@ -295,6 +295,8 @@ describe('Paper document state', () => {
       visible: false,
       locked: true,
     })
+    expect(editor.paperAnnotations.attr('data-locked')).toBe('true')
+    expect(editor.paperAnnotations.css('display')).toBe('none')
     expect(editor.collections.get('paper-annotations').style.stroke)
       .toBe(editor.paperAnnotations.css('stroke'))
     expect(editor.paperViewports).toHaveLength(1)
@@ -306,6 +308,8 @@ describe('Paper document state', () => {
       locked: true,
     })
     expect(editor.paperViewports[0]._group.css('display')).toBe('none')
+    expect(editor.paperViewports[0]._group.attr('data-hidden')).toBe('true')
+    expect(editor.paperViewports[0]._group.attr('data-locked')).toBe('true')
 
     const next = paperEditor.createViewport(2, 3, 4, 5, 100)
     expect(next.id).toBe('vp-8')

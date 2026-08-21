@@ -226,6 +226,16 @@ describe('HelpSession', () => {
       expect(illustration.getAttribute('aria-hidden')).toBe('true')
       expect(illustration.hasAttribute('tabindex')).toBe(false)
     })
+
+    const availability = Object.fromEntries(
+      [...helpSession.dialog.querySelectorAll('.command-help-card')].map((card) => [
+        card.querySelector('.command-help-command-name').textContent.replace(/ /g, '_'),
+        card.querySelector('.command-help-availability').textContent,
+      ]),
+    )
+    expect(availability.LINE).toBe('Available in Model and Paper Space')
+    expect(availability.BLOCK).toBe('Available in Model Space only')
+    expect(availability.VIEWPORT).toBe('Available in Paper Space only')
   })
 
   test('opens from F1 and moves focus to command search', async () => {

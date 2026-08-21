@@ -1,81 +1,187 @@
 import { Command } from '../Command'
+import {
+  allocateTrimIdentity,
+  captureTrimPlacement,
+  createAndReplaceTrimSource,
+  insertTrimElement,
+  notifyTrimMutation,
+  prepareTrimClone,
+  replaceTrimSource,
+  restoreTrimSource,
+} from './TrimTransaction'
 
 class TrimLineCommand extends Command {
-    constructor(editor, element, action) {
-        super(editor)
-        this.type = 'TrimLineCommand'
-        this.name = 'Trim Line'
-        this.element = element
-        this.action = action
+  constructor(editor, element, action) {
+    super(editor)
+    this.type = 'TrimLineCommand'
+    this.name = 'Trim Line'
+    this.element = element
+    this.action = action
+    this.originalGeometry = this._readGeometry()
+    this.oldX1 = this.originalGeometry.x1
+    this.oldY1 = this.originalGeometry.y1
+    this.oldX2 = this.originalGeometry.x2
+    this.oldY2 = this.originalGeometry.y2
+    this.parent = element.parent() || this.editor.activeCollection
+    this.sourcePlacement = captureTrimPlacement(this.parent, element)
+    this.newLinePlacement = {
+      index: this.sourcePlacement.index + 1,
+      nextSibling: this.sourcePlacement.nextSibling,
+    }
+    this.newLine = null
+    this.hasExecutedBefore = false
+  }
 
-        // Backup original coords
-        this.oldX1 = element.node.x1.baseVal.value
-        this.oldY1 = element.node.y1.baseVal.value
-        this.oldX2 = element.node.x2.baseVal.value
-        this.oldY2 = element.node.y2.baseVal.value
-
-        this.parent = window.SVG(element.node.parentNode) || this.editor.activeCollection
-        this.newLine = null // If 'split', store the new line created
+  execute() {
+    if (!['remove', 'shorten', 'split'].includes(this.action?.type)) {
+      throw new TypeError('Trim line action must be remove, shorten, or split')
     }
 
-    execute() {
-        if (this.action.type === 'remove') {
-            this.editor.removeElement(this.element)
-        } else if (this.action.type === 'shorten') {
-            if (this.action.keep === 'start') {
-                this.element.plot(this.oldX1, this.oldY1, this.action.newX, this.action.newY)
-            } else { // keep === 'end'
-                this.element.plot(this.action.newX, this.action.newY, this.oldX2, this.oldY2)
-            }
-        } else if (this.action.type === 'split') {
-            // Shorten the original line
-            this.element.plot(this.oldX1, this.oldY1, this.action.splitX1, this.action.splitY1)
-
-            // Create a new line for the remaining part in the same parent layer
-            if (!this.newLine) {
-                this.newLine = this.parent.line(this.action.splitX2, this.action.splitY2, this.oldX2, this.oldY2)
-
-                // Securely copy explicit styles (stroke color, width, etc from original)
-                // We use raw DOM methods to avoid reading transient CSS/computed styles like hover effects
-                const copyDOMStyles = (src, dest) => {
-                    ['stroke', 'stroke-width', 'opacity', 'stroke-dasharray', 'stroke-linecap'].forEach(prop => {
-                        const attrVal = src.getAttribute(prop)
-                        if (attrVal !== null) dest.setAttribute(prop, attrVal)
-
-                        const styleVal = src.style[prop]
-                        if (styleVal) dest.style[prop] = styleVal
-                    })
-                    const overrides = src.getAttribute('data-style-overrides')
-                    if (overrides) dest.setAttribute('data-style-overrides', overrides)
-                }
-
-                copyDOMStyles(this.element.node, this.newLine.node)
-
-                const rawId = this.newLine.node.id.replace('SvgjsLine', '')
-                this.newLine.attr('name', 'Line ' + rawId)
-                this.newLine
-
-                this.editor.signals.updatedOutliner.dispatch()
-            } else {
-                this.editor.addElement(this.newLine, this.parent)
-            }
-        }
+    if (this.hasExecutedBefore) {
+      this.redo()
+      return
     }
 
-    undo() {
-        if (this.action.type === 'remove') {
-            this.editor.addElement(this.element, this.parent)
-        } else if (this.action.type === 'shorten') {
-            this.element.plot(this.oldX1, this.oldY1, this.oldX2, this.oldY2)
-        } else if (this.action.type === 'split') {
-            // Remove the newly created line
-            if (this.newLine) {
-                this.editor.removeElement(this.newLine)
-            }
-            // Restore the original line
-            this.element.plot(this.oldX1, this.oldY1, this.oldX2, this.oldY2)
-        }
+    if (this.action.type === 'remove') {
+      createAndReplaceTrimSource({
+        createReplacements: () => [],
+        editor: this.editor,
+        parent: this.parent,
+        source: this.element,
+        sourcePlacement: this.sourcePlacement,
+      })
+    } else if (this.action.type === 'shorten') {
+      this._applyGeometry(this._shortenedGeometry())
+    } else {
+      this._executeFirstSplit()
     }
+
+    this.hasExecutedBefore = true
+    notifyTrimMutation(this)
+  }
+
+  undo() {
+    if (this.action.type === 'remove') {
+      restoreTrimSource(this.parent, this.element, [], this.sourcePlacement)
+    } else if (this.action.type === 'shorten') {
+      this._applyGeometry(this.originalGeometry)
+    } else {
+      this._undoSplit()
+    }
+    notifyTrimMutation(this)
+  }
+
+  redo() {
+    if (this.action.type === 'remove') {
+      replaceTrimSource(this.parent, this.element, [], this.sourcePlacement)
+    } else if (this.action.type === 'shorten') {
+      this._applyGeometry(this._shortenedGeometry())
+    } else {
+      this._applySplit()
+    }
+    notifyTrimMutation(this)
+  }
+
+  _readGeometry() {
+    return {
+      x1: Number(this.element.attr('x1')),
+      x2: Number(this.element.attr('x2')),
+      y1: Number(this.element.attr('y1')),
+      y2: Number(this.element.attr('y2')),
+    }
+  }
+
+  _plotGeometry({ x1, y1, x2, y2 }) {
+    this.element.plot(x1, y1, x2, y2)
+  }
+
+  _applyGeometry(geometry) {
+    const previous = this._readGeometry()
+    try {
+      this._plotGeometry(geometry)
+    } catch (error) {
+      this._plotGeometry(previous)
+      throw error
+    }
+  }
+
+  _shortenedGeometry() {
+    if (this.action.keep === 'start') {
+      return {
+        ...this.originalGeometry,
+        x2: this.action.newX,
+        y2: this.action.newY,
+      }
+    }
+    if (this.action.keep === 'end') {
+      return {
+        ...this.originalGeometry,
+        x1: this.action.newX,
+        y1: this.action.newY,
+      }
+    }
+    throw new TypeError('Trim line shorten action requires a retained end')
+  }
+
+  _splitGeometry() {
+    return {
+      first: {
+        ...this.originalGeometry,
+        x2: this.action.splitX1,
+        y2: this.action.splitY1,
+      },
+      second: {
+        ...this.originalGeometry,
+        x1: this.action.splitX2,
+        y1: this.action.splitY2,
+      },
+    }
+  }
+
+  _executeFirstSplit() {
+    const startingElementIndex = this.editor.elementIndex
+    const { second } = this._splitGeometry()
+    try {
+      this.newLine = prepareTrimClone(this.element)
+      this.newLine.plot(second.x1, second.y1, second.x2, second.y2)
+      allocateTrimIdentity(this.editor, this.newLine, 'Line')
+      this._applySplit()
+    } catch (error) {
+      if (this.newLine?.node?.parentNode) this.newLine.remove()
+      this._plotGeometry(this.originalGeometry)
+      this.editor.elementIndex = startingElementIndex
+      this.newLine = null
+      this.hasExecutedBefore = false
+      throw error
+    }
+  }
+
+  _applySplit() {
+    if (!this.newLine) throw new Error('Trim line split replacement is unavailable')
+    const previous = this._readGeometry()
+    try {
+      this._plotGeometry(this._splitGeometry().first)
+      insertTrimElement(this.parent, this.newLine, this.newLinePlacement)
+    } catch (error) {
+      if (this.newLine.node.parentNode) this.newLine.remove()
+      this._plotGeometry(previous)
+      throw error
+    }
+  }
+
+  _undoSplit() {
+    const splitGeometry = this._splitGeometry().first
+    try {
+      if (this.newLine?.node?.parentNode) this.newLine.remove()
+      this._plotGeometry(this.originalGeometry)
+    } catch (error) {
+      this._plotGeometry(splitGeometry)
+      if (this.newLine?.node?.parentNode !== this.parent.node) {
+        insertTrimElement(this.parent, this.newLine, this.newLinePlacement)
+      }
+      throw error
+    }
+  }
 }
 
 export { TrimLineCommand }

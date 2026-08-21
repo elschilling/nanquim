@@ -69,6 +69,7 @@ release deliberately changes that format and includes migration tests.
    ```bash
    pnpm install --frozen-lockfile
    pnpm test
+   pnpm test:browser:chromium
    pnpm build
    pnpm audit --audit-level high
    git diff --check
@@ -77,6 +78,12 @@ release deliberately changes that format and includes migration tests.
 7. Commit the version, changelog, release notes, and product changes together.
    Open a pull request to `master`, wait for `Test, build, and audit`, and review
    the final diff before merging.
+
+8. Refresh the pinned previous-stable Chromium major in `Browser qualification`
+   if the stable channel advanced, trigger the workflow for the candidate, and
+   record current/previous Chromium plus current Firefox/Firefox ESR results.
+   The workflow also runs weekly and when a GitHub prerelease is published, but
+   an earlier scheduled pass does not qualify a different candidate commit.
 
 ## Deploy and verify
 

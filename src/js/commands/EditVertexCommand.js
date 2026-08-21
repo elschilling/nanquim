@@ -17,19 +17,27 @@ class EditVertexCommand extends Command {
     execute() {
         // Update the vertex position
         if (this.vertexIndex === 0) {
-            this.element.plot(this.newX, this.newY, this.element.node.x2.baseVal.value, this.element.node.y2.baseVal.value)
+            this.element.plot(this.newX, this.newY, Number(this.element.attr('x2')), Number(this.element.attr('y2')))
         } else {
-            this.element.plot(this.element.node.x1.baseVal.value, this.element.node.y1.baseVal.value, this.newX, this.newY)
+            this.element.plot(Number(this.element.attr('x1')), Number(this.element.attr('y1')), this.newX, this.newY)
         }
+        this.invalidateGeometry()
     }
 
     undo() {
         // Restore the original vertex position
         if (this.vertexIndex === 0) {
-            this.element.plot(this.oldX, this.oldY, this.element.node.x2.baseVal.value, this.element.node.y2.baseVal.value)
+            this.element.plot(this.oldX, this.oldY, Number(this.element.attr('x2')), Number(this.element.attr('y2')))
         } else {
-            this.element.plot(this.element.node.x1.baseVal.value, this.element.node.y1.baseVal.value, this.oldX, this.oldY)
+            this.element.plot(Number(this.element.attr('x1')), Number(this.element.attr('y1')), this.oldX, this.oldY)
         }
+        this.invalidateGeometry()
+    }
+
+    invalidateGeometry() {
+        this.editor.spatialIndex?.markDirty()
+        this.editor.fullSpatialIndex?.markDirty()
+        this.dispatchSignal('updatedOutliner')
     }
 }
 

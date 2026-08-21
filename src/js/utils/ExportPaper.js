@@ -6,6 +6,10 @@
  * - exportPaperPDF: PDF via jspdf + svg2pdf.js
  */
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+const XLINK_NS = 'http://www.w3.org/1999/xlink'
+const SVGJS_NS = 'http://svgjs.com/svgjs'
+
 /**
  * Apply color mapping to an SVG string.
  * Replaces model colors with their print-mapped equivalents.
@@ -14,7 +18,16 @@ function applyColorMap(svgString, colorMap) {
   if (!colorMap || Object.keys(colorMap).length === 0) return svgString
 
   const parser = new DOMParser()
-  const doc = parser.parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">${svgString}</svg>`, 'image/svg+xml')
+  const doc = parser.parseFromString(
+    `<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}" xmlns:svgjs="${SVGJS_NS}">${svgString}</svg>`,
+    'image/svg+xml',
+  )
+  if (
+    doc.documentElement?.localName === 'parsererror'
+    || doc.getElementsByTagName('parsererror').length > 0
+  ) {
+    throw new TypeError('Paper SVG content could not be parsed for color mapping.')
+  }
   
   const ctx = document.createElement('canvas').getContext('2d')
   const normalizeColor = (c) => {
@@ -36,7 +49,7 @@ function applyColorMap(svgString, colorMap) {
       }
       
       // Check inline style
-      let styleVal = el.style[attr]
+      let styleVal = el.style?.[attr]
       if (styleVal) {
         let norm = normalizeColor(styleVal)
         if (norm && colorMap[norm] && colorMap[norm].enabled) {
@@ -93,7 +106,7 @@ function buildPaperSVGString(editor, viewports) {
 
   const svgString = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"`,
+    `<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}" xmlns:svgjs="${SVGJS_NS}"`,
     `  viewBox="${-margin} ${-margin} ${wSVG + margin * 2} ${hSVG + margin * 2}"`,
     `  width="${editor.paperConfig.width}mm"`,
     `  height="${editor.paperConfig.height}mm"`,

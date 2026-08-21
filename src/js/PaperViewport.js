@@ -62,6 +62,8 @@ function PaperViewport(editor, parentGroup, opts) {
   const group = parentGroup.group().attr('id', id + '-group')
   group.attr('data-paper-viewport', 'true')
   group.attr('data-vp-id', id)
+  group.attr('data-hidden', this.visible ? null : 'true')
+  group.attr('data-locked', this.locked ? 'true' : null)
 
   // Defs block for clip path (attach to paper SVG defs)
   const clipId = id + '-clip'
@@ -100,13 +102,26 @@ function PaperViewport(editor, parentGroup, opts) {
   this._frame = frame
   this._label = label
   this._editor = editor
+  // Selection discovered through the shared spatial-index/hover path resolves
+  // viewport descendants to this group. Carry the same viewport wrapper
+  // contract used by the frame handler so Move/Delete/Properties never treat
+  // the window as ordinary SVG geometry.
+  group._paperVp = this
 
   // Apply initial transform
   this.refreshTransform()
   if (!this.visible) group.hide()
 
   // ── Interactions: Selection & Panning ─────────────────────────────────────
-  this._attachInteractions()
+  try {
+    this._attachInteractions()
+  } catch (error) {
+    try { frame.node.removeEventListener('dblclick', this._onDblClick) } catch (_cleanupError) {}
+    try { frame.node.removeEventListener('mousedown', this._onMouseDown) } catch (_cleanupError) {}
+    try { group.remove() } catch (_cleanupError) {}
+    try { clipRect.remove() } catch (_cleanupError) {}
+    throw error
+  }
 }
 
 /**
@@ -217,6 +232,7 @@ PaperViewport.prototype.setVisible = function (visible, options = {}) {
   const nextVisible = visible !== false
   if (this.visible === nextVisible) return false
   this.visible = nextVisible
+  this._group.attr('data-hidden', nextVisible ? null : 'true')
   if (nextVisible) {
     this._group.show()
   } else {
@@ -233,6 +249,7 @@ PaperViewport.prototype.setLocked = function (locked, options = {}) {
   const nextLocked = locked === true
   if (this.locked === nextLocked) return false
   this.locked = nextLocked
+  this._group.attr('data-locked', nextLocked ? 'true' : null)
   if (nextLocked) this.deactivate()
   this._persistChange('paper-viewport-lock', options)
   return true
@@ -249,7 +266,11 @@ PaperViewport.prototype._persistChange = function (reason, options = {}) {
     this._editor.documentState.markChanged(reason)
   }
   if (options.notify !== false) {
-    this._editor.signals.paperViewportsChanged?.dispatch()
+    try {
+      this._editor.signals.paperViewportsChanged?.dispatch()
+    } catch (error) {
+      try { console.error('[PaperViewport] paperViewportsChanged listener failed:', error) } catch (_reportError) {}
+    }
   }
 }
 
@@ -285,8 +306,7 @@ PaperViewport.prototype._attachInteractions = function() {
       if (e.target.classList.contains('selection-handler')) return
       
       e.stopPropagation()
-      const vpWrapper = { _paperVp: this }
-      _editor.selected = [vpWrapper]
+      _editor.selected = [this._group]
       _editor.signals.updatedSelection.dispatch()
     }
 
@@ -402,13 +422,49 @@ PaperViewport.prototype.deactivate = function(options = {}) {
  * Remove from the SVG and clean up.
  */
 PaperViewport.prototype.destroy = function () {
-  this.deactivate({ persistPan: false })
-  if (this._frame && this._frame.node) {
-    this._frame.node.removeEventListener('dblclick', this._onDblClick)
-    this._frame.node.removeEventListener('mousedown', this._onMouseDown)
+  const groupParent = this._group.parent()
+  const clipParent = this._clipRect.parent()
+  const groupIndex = groupParent
+    ? Array.from(groupParent.node.children).indexOf(this._group.node)
+    : -1
+  const clipIndex = clipParent
+    ? Array.from(clipParent.node.children).indexOf(this._clipRect.node)
+    : -1
+
+  try {
+    this._group.remove()
+    this._clipRect.remove()
+  } catch (error) {
+    const rollbackErrors = []
+    const restore = (parent, element, index) => {
+      if (!parent || element.node.parentNode === parent.node) return
+      try {
+        const reference = index >= 0 ? parent.node.children[index] || null : null
+        parent.node.insertBefore(element.node, reference)
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+    }
+    restore(clipParent, this._clipRect, clipIndex)
+    restore(groupParent, this._group, groupIndex)
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        `${error.message} Restoring the Paper viewport also failed.`,
+      )
+    }
+    throw error
   }
-  this._group.remove()
-  this._clipRect.remove()
+
+  try {
+    this.deactivate({ persistPan: false })
+  } catch (error) {
+    try { console.error('[PaperViewport] Failed to deactivate a removed viewport:', error) } catch (_reportError) {}
+  }
+  if (this._frame && this._frame.node) {
+    try { this._frame.node.removeEventListener('dblclick', this._onDblClick) } catch (_cleanupError) {}
+    try { this._frame.node.removeEventListener('mousedown', this._onMouseDown) } catch (_cleanupError) {}
+  }
 }
 
 export { PaperViewport }

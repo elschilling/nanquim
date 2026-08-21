@@ -3,10 +3,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { SVG, registerWindow } from '@svgdotjs/svg.js'
 
+import { findSelectableAncestor } from '../src/js/Collection.js'
 import { PaperViewport } from '../src/js/PaperViewport.js'
-import { buildPaperSVGString } from '../src/js/utils/ExportPaper.js'
+import { applyColorMap, buildPaperSVGString } from '../src/js/utils/ExportPaper.js'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
+const SVGJS_NS = 'http://svgjs.com/svgjs'
 
 function addSvgRoot() {
   const node = document.createElementNS(SVG_NS, 'svg')
@@ -87,6 +89,7 @@ describe('Paper viewport transforms', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     delete window.SVGElement.prototype.getBBox
     document.body.replaceChildren()
   })
@@ -121,8 +124,41 @@ describe('Paper viewport transforms', () => {
     expect(use.getAttribute('href') || use.getAttribute('xlink:href')).toBe('#Collection')
   })
 
+  test('preserves SVG.js data through namespace-safe Paper color mapping', () => {
+    const { editor } = createFixture()
+    const line = editor.drawing.findOne('line')
+    vi.spyOn(window.HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ fillStyle: '' })
+    line.node.setAttribute('svgjs:data', '{"arcData":{"p1":{"x":0,"y":0}}}')
+    editor.paperConfig.colorMap = {
+      '#111111': { enabled: true, printColor: '#334455' },
+    }
+
+    const output = buildPaperSVGString(editor, editor.paperViewports)
+    const parsed = new DOMParser().parseFromString(output, 'image/svg+xml')
+    const root = parsed.documentElement
+    const exportedLine = root.querySelector('defs #Collection line')
+
+    expect(root.localName).toBe('svg')
+    expect(parsed.getElementsByTagName('parsererror')).toHaveLength(0)
+    expect(root.lookupNamespaceURI('svgjs')).toBe(SVGJS_NS)
+    expect(exportedLine.getAttributeNS(SVGJS_NS, 'data')).toBe('{"arcData":{"p1":{"x":0,"y":0}}}')
+    expect(exportedLine.getAttribute('stroke')).toBe('#334455')
+  })
+
+  test('rejects malformed Paper fragments before touching parser error nodes', () => {
+    expect(() => applyColorMap(
+      '<g foreign:payload="value"/>',
+      { '#111111': { enabled: true, printColor: '#334455' } },
+    )).toThrow('Paper SVG content could not be parsed for color mapping.')
+  })
+
   test('keeps selection interaction and transform refresh behavior intact', () => {
     const { editor, viewport } = createFixture()
+
+    expect(viewport._group._paperVp).toBe(viewport)
+    expect(viewport._group.attr('data-locked')).toBeUndefined()
+    expect(viewport._group.attr('data-hidden')).toBeUndefined()
+    expect(findSelectableAncestor(viewport._useEl)).toBe(viewport._group)
 
     viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
       bubbles: true,
@@ -138,5 +174,22 @@ describe('Paper viewport transforms', () => {
 
     viewport.setScale(50)
     expect(matrixValues(viewport._useEl)).toEqual([0.02, 0, 0, 0.02, 9, 7.4])
+
+    viewport.setLocked(true)
+    viewport.setVisible(false)
+    expect(viewport._group.attr('data-locked')).toBe('true')
+    expect(viewport._group.attr('data-hidden')).toBe('true')
+
+    editor.selected = []
+    viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      button: 0,
+    }))
+    expect(editor.selected).toEqual([])
+
+    viewport.setLocked(false)
+    viewport.setVisible(true)
+    expect(viewport._group.attr('data-locked')).toBeUndefined()
+    expect(viewport._group.attr('data-hidden')).toBeUndefined()
   })
 })

@@ -1,5 +1,6 @@
 import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
 
 class ExtendArcCommand extends Command {
     constructor(editor, element, extendStart, newPosition) {
@@ -76,7 +77,8 @@ class ExtendArcCommand extends Command {
 
         this.element.plot(`M ${p1.x} ${p1.y} A ${geo.radius} ${geo.radius} 0 ${geo.largeArcFlag} ${geo.sweepFlag} ${p3.x} ${p3.y}`)
         this.element.data('arcData', { p1, p2, p3 })
-        this.editor.signals.updatedOutliner.dispatch()
+        invalidateSpatialIndexes(this.editor)
+        this.dispatchSignal('updatedOutliner')
     }
 }
 

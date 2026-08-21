@@ -29,6 +29,7 @@ function createEditor() {
     elementIndex: 100,
     selected: [],
     spatialIndex: { markDirty: vi.fn() },
+    fullSpatialIndex: { markDirty: vi.fn() },
     signals: new Proxy({}, {
       get(target, key) {
         if (!target[key]) target[key] = createSignal()
@@ -157,7 +158,7 @@ describe('secure SVG clipboard paste', () => {
 
     expect(command.pastedElements).toHaveLength(1)
     expect(editor.activeCollection.node.querySelector('[data-test="safe-last"]')).not.toBeNull()
-    expect(editor.elementIndex).toBe(101)
+    expect(editor.elementIndex).toBe(102)
   })
 
   test('enforces a shared SVG element budget across clipboard items', () => {
@@ -313,6 +314,7 @@ describe('secure SVG clipboard paste', () => {
     expect(editor.activeCollection.node.contains(pastedNode)).toBe(true)
     expect(pastedNode.parentNode).toBe(pasteContainer)
     expect(pastedNode.querySelector('[data-test="clipped"]').getAttribute('clip-path')).toBe(`url(#${clipId})`)
-    expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(2)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(3)
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledTimes(3)
   })
 })

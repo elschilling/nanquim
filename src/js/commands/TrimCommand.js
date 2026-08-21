@@ -10,6 +10,9 @@ import { TrimEllipseCommand } from './TrimEllipseCommand'
 import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments, getPolylineSegments, getLineEllipseIntersections, getEllipseAngle } from '../utils/intersection'
 import { getDrawableElements } from '../Collection'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
+import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
+
+const TRANSFORMED_TRIM_DIAGNOSTIC = 'TRIM does not support transformed targets or boundaries.'
 
 class TrimCommand extends Command {
     constructor(editor) {
@@ -37,11 +40,18 @@ class TrimCommand extends Command {
         document.addEventListener('contextmenu', this.boundOnRightClick, true)
 
         if (this.editor.selected.length > 0) {
-            this.boundaryElements = [...this.editor.selected]
+            this.boundaryElements = this.editor.selected.filter(element => (
+                !hasUnsupportedGeometryTransform(element, this.editor.drawing)
+            ))
+            if (this.boundaryElements.length !== this.editor.selected.length) {
+                this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_TRIM_DIAGNOSTIC })
+            }
             this.editor.signals.clearSelection.dispatch()
-            this.startTrimmingLines()
-            this.editor.signals.requestHoverCheck.dispatch()
-            return
+            if (this.boundaryElements.length > 0) {
+                this.startTrimmingLines()
+                this.editor.signals.requestHoverCheck.dispatch()
+                return
+            }
         }
 
         this.editor.signals.terminalLogged.dispatch({
@@ -91,7 +101,7 @@ class TrimCommand extends Command {
         this.editor.selectSingleElement = false
         this.editor.signals.commandCancelled.dispatch()
         this.editor.signals.terminalLogged.dispatch({ msg: 'Command finished.' })
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             const terminalInput = document.getElementById('terminalInput')
             if (terminalInput) terminalInput.focus()
         }, 0)
@@ -105,6 +115,11 @@ class TrimCommand extends Command {
 
     onElementSelected(el) {
         if (!this.isTrimming) {
+            if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+                el?.removeClass?.('elementSelected')
+                this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_TRIM_DIAGNOSTIC })
+                return
+            }
             const index = this.boundaryElements.findIndex(b => b.node === el.node)
             if (index > -1) {
                 this.boundaryElements.splice(index, 1)
@@ -156,12 +171,18 @@ class TrimCommand extends Command {
         if (this.autoTrimMode) {
             const allElements = getDrawableElements(this.editor)
             allElements.forEach((child) => {
-                if (child.node !== originalEl.node && !child.hasClass('grid') && !child.hasClass('axis') && !child.hasClass('ghostLine')) {
+                if (child.node !== originalEl.node
+                    && !child.hasClass('grid')
+                    && !child.hasClass('axis')
+                    && !child.hasClass('ghostLine')
+                    && !hasUnsupportedGeometryTransform(child, this.editor.drawing)) {
                     candidateBoundaries.push(child)
                 }
             })
         } else {
-            candidateBoundaries = this.boundaryElements
+            candidateBoundaries = this.boundaryElements.filter(element => (
+                !hasUnsupportedGeometryTransform(element, this.editor.drawing)
+            ))
         }
         return candidateBoundaries
     }
@@ -523,8 +544,8 @@ class TrimCommand extends Command {
             } else if (boundary.type === 'path' && (boundary.data('circleTrimData') || boundary.data('arcData'))) {
                 const bArcData = boundary.data('circleTrimData') || this.getArcGeometry(boundary.data('arcData'))
                 getCircleCircleIntersections(bArcData, { cx, cy, r }).forEach(pt => {
-                    const bStartAngle = bArcData.theta1 !== undefined ? bArcData.theta1 : bArcData.theta2
-                    const bEndAngle = bArcData.theta3 !== undefined ? bArcData.theta3 : bArcData.theta1
+                    const bStartAngle = bArcData.theta2 ?? bArcData.theta1
+                    const bEndAngle = bArcData.theta1 ?? bArcData.theta3
                     if (isPointInArc(pt, bArcData.cx, bArcData.cy, bStartAngle, bEndAngle, bArcData.ccw)) checkAndAddIntersection(pt)
                 })
             } else if (boundary.type === 'path' && boundary.data('splineData')) {
@@ -1149,6 +1170,7 @@ class TrimCommand extends Command {
 
     calculateTrim(el, point) {
         if (!el || !point) return null
+        if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) return null
         if (el.type === 'line') return this.calculateLineTrim(el, point)
         if (el.type === 'rect') return this.calculateRectTrim(el, point)
         if (el.type === 'circle' || (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData')))) return this.calculateCircleTrim(el, point)
@@ -1171,6 +1193,7 @@ class TrimCommand extends Command {
         for (const item of hoveredList) {
             const el = window.SVG(item.node)
             if (!el || el.type === 'svg' || el.hasClass('ghostLine') || el.hasClass('grid') || el.hasClass('axis')) continue
+            if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) continue
 
             let isValidHover = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'polygon'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValidHover = true
@@ -1236,6 +1259,11 @@ class TrimCommand extends Command {
     onLineClicked(el, source) {
         try {
             if (!el || el.hasClass('ghostLine')) return
+            if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+                this.clearGhost()
+                this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_TRIM_DIAGNOSTIC })
+                return
+            }
             let isValid = el.type === 'line' || el.type === 'rect' || el.type === 'circle' || el.type === 'ellipse' || el.type === 'polyline' || el.type === 'polygon'
             if (el.type === 'path' && (el.data('circleTrimData') || el.data('arcData') || el.data('ellipseArcData') || el.data('splineData'))) isValid = true
 
@@ -1267,7 +1295,7 @@ class TrimCommand extends Command {
             } else if (trimData.type === 'ellipse') {
                 trimCommand = new TrimEllipseCommand(this.editor, el, trimData.action)
             } else if (trimData.type === 'spline') {
-                trimCommand = new TrimSplineCommand(this.editor, el, { type: trimData.actionType, splines: trimData.splines })
+                trimCommand = new TrimSplineCommand(this.editor, el, trimData.action)
             } else if (trimData.type === 'polyline') {
                 trimCommand = new TrimPolylineCommand(this.editor, el, trimData.action)
             }
@@ -1277,7 +1305,7 @@ class TrimCommand extends Command {
             this.editor.signals.requestHoverCheck.dispatch()
 
             if (source === 'selectHovered-multi') {
-                setTimeout(() => {
+                this.deferSessionTask(() => {
                     this.editor.signals.requestHoverCheck.dispatch()
                 }, 50)
             }
@@ -1305,7 +1333,7 @@ class TrimCommand extends Command {
         this.autoTrimMode = false
         this.editor.isInteracting = false
         this.editor.suppressPolarTracking = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
         this.editor.signals.updatedOutliner.dispatch()
@@ -1317,4 +1345,4 @@ function trimCommand(editor) {
     cmd.execute()
 }
 
-export { trimCommand }
+export { trimCommand, TrimCommand }

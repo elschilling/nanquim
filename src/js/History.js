@@ -25,6 +25,10 @@ class History {
   }
 
   execute(cmd) {
+    if (!cmd || typeof cmd.execute !== 'function' || typeof cmd.undo !== 'function') {
+      throw new TypeError('History commands must implement execute() and undo()')
+    }
+
     // const lastCmd = this.undos[this.undos.length - 1]
     // const timeDifference = Date.now() - this.lastCmdTime
 
@@ -48,16 +52,25 @@ class History {
     // } else {
     //   // the command is not updatable and is added as a new part of the history
 
-    this.undos.push(cmd)
-    cmd.id = ++this.idCounter
-    // }
+    const hadId = Object.prototype.hasOwnProperty.call(cmd, 'id')
+    const previousId = cmd.id
+    const nextId = this.idCounter + 1
+    cmd.id = nextId
 
-    // cmd.name = optionalName !== undefined ? optionalName : cmd.name
-    if (this.editor.documentState) {
-      this.editor.documentState.runWithoutTracking(() => cmd.execute())
-    } else {
-      cmd.execute()
+    try {
+      if (this.editor.documentState) {
+        this.editor.documentState.runWithoutTracking(() => cmd.execute())
+      } else {
+        cmd.execute()
+      }
+    } catch (error) {
+      if (hadId) cmd.id = previousId
+      else delete cmd.id
+      throw error
     }
+
+    this.idCounter = nextId
+    this.undos.push(cmd)
     // cmd.inMemory = true
 
     // if (this.config.getKey('settings/history')) {
@@ -68,9 +81,10 @@ class History {
 
     // clearing all the redo-commands
 
-    this.redos = []
+    this.redos.length = 0
     if (this.editor.documentState) this.editor.documentState.markChanged('history-execute')
     // this.editor.signals.historyChanged.dispatch(cmd)
+    return cmd
   }
 
   undo() {
@@ -79,15 +93,7 @@ class History {
   //       return
   //     }
 
-    let cmd = undefined
-
-    if (this.undos.length > 0) {
-      cmd = this.undos.pop()
-
-  //       if (cmd.inMemory === false) {
-  //         cmd.fromJSON(cmd.json)
-  //       }
-    }
+    const cmd = this.undos[this.undos.length - 1]
 
     if (cmd !== undefined) {
       if (this.editor.documentState) {
@@ -95,6 +101,7 @@ class History {
       } else {
         cmd.undo()
       }
+      this.undos.pop()
       this.redos.push(cmd)
       if (this.editor.documentState) this.editor.documentState.markChanged('history-undo')
   //       this.editor.signals.historyChanged.dispatch(cmd)
@@ -109,15 +116,7 @@ class History {
   //       return
   //     }
 
-    let cmd = undefined
-
-    if (this.redos.length > 0) {
-      cmd = this.redos.pop()
-
-  //       if (cmd.inMemory === false) {
-  //         cmd.fromJSON(cmd.json)
-  //       }
-    }
+    const cmd = this.redos[this.redos.length - 1]
 
     if (cmd !== undefined) {
       const redo = () => {
@@ -126,6 +125,7 @@ class History {
       }
       if (this.editor.documentState) this.editor.documentState.runWithoutTracking(redo)
       else redo()
+      this.redos.pop()
       this.undos.push(cmd)
       if (this.editor.documentState) this.editor.documentState.markChanged('history-redo')
   //       this.editor.signals.historyChanged.dispatch(cmd)
@@ -135,8 +135,8 @@ class History {
   }
 
   clear() {
-    this.undos = []
-    this.redos = []
+    this.undos.length = 0
+    this.redos.length = 0
     this.idCounter = 0
   }
 

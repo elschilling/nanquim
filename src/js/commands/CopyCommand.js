@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
+import { remapSvgIds } from '../utils/sanitizeSvg'
 
 class CopyCommand extends Command {
   constructor(editor) {
@@ -11,11 +12,16 @@ class CopyCommand extends Command {
     this.boundOnDistanceInput = this.onDistanceInput.bind(this)
     this.allCopiedElements = []  // All placed copies across all clicks (for undo)
     this.currentGhosts = []      // Ghost clones for the current (unplaced) copy
+    this.copyEntries = []
+    this.idsRemapped = false
     this.interactiveExecutionDone = false
   }
 
   execute() {
-    if (this.interactiveExecutionDone) return
+    if (this.interactiveExecutionDone) {
+      this.applyCopies()
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
@@ -120,6 +126,7 @@ class CopyCommand extends Command {
         }
       }
       stripClasses(clone)
+      clone.attr('data-nanquim-transient', 'true')
       const parent = el.parent() || this.editor.activeCollection
       parent.add(clone)
       return clone
@@ -220,21 +227,38 @@ class CopyCommand extends Command {
     this.currentGhosts.forEach(el => el.remove())
     this.currentGhosts = []
 
-    // Commit all placed copies to undo history in one batch
-    if (this.allCopiedElements.length > 0 && !this.interactiveExecutionDone) {
-      this.interactiveExecutionDone = true
-      this.editor.execute(this)
-      this.editor.lastCommand = new CopyCommand(this.editor)
-      this.editor.signals.terminalLogged.dispatch({ msg: `Command finished.` })
-      this.editor.signals.updatedOutliner.dispatch()
-    }
+    let commitSucceeded = false
+    let commitAttempted = false
+    try {
+      // Commit all placed copies to undo history in one batch
+      if (this.allCopiedElements.length > 0 && !this.interactiveExecutionDone) {
+        commitAttempted = true
+        this.copyEntries = this.allCopiedElements.map((element) => ({
+          element,
+          parent: element.parent() || this.editor.activeCollection,
+        }))
+        this.copyEntries.forEach(({ element }) => element.remove())
+        this.interactiveExecutionDone = true
+        this.editor.execute(this)
+        commitSucceeded = true
+        this.dispatchSignal('terminalLogged', { msg: `Command finished.` })
+      }
 
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
-    this.editor.isInteracting = false
-    this.editor.suppressHandlers = false
-    this.editor.distance = null
-    setTimeout(() => { this.editor.selectSingleElement = false }, 10)
+      this.dispatchSignal('clearSelection')
+      this.editor.selected = []
+    } catch (error) {
+      this.editor.selected = this.originalSelection?.slice() || []
+      this.dispatchSignal('updatedSelection')
+      throw error
+    } finally {
+      this.editor.isInteracting = false
+      this.editor.suppressHandlers = false
+      this.editor.distance = null
+      this.deferSessionTask(() => { this.editor.selectSingleElement = false }, 10)
+      if (commitAttempted && !commitSucceeded) {
+        this.copyEntries.forEach(({ element }) => element.attr('data-nanquim-transient', 'true'))
+      }
+    }
   }
 
   updateArcData(element, originalPos, dx, dy) {
@@ -283,22 +307,99 @@ class CopyCommand extends Command {
   }
 
   undo() {
-    this.allCopiedElements.forEach(el => el.remove())
+    try {
+      this.copyEntries.forEach(({ element }) => element.remove())
+    } catch (error) {
+      try {
+        this.restoreCopyPlacements()
+      } catch (rollbackError) {
+        this.invalidateGeometry()
+        throw new AggregateError(
+          [error, rollbackError],
+          'Copy Undo failed and the placed copies could not be fully restored.',
+          { cause: error },
+        )
+      }
+      this.invalidateGeometry()
+      throw error
+    }
     this.editor.selected = this.originalSelection.slice()
-    this.editor.signals.updatedSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Copies removed.' })
+    this.invalidateGeometry()
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('terminalLogged', { msg: 'Undo: Copies removed.' })
   }
 
   redo() {
-    this.allCopiedElements.forEach(el => {
-      const parent = el.parent() || this.editor.activeCollection
-      parent.add(el)
-    })
+    this.applyCopies()
     this.editor.selected = this.allCopiedElements.slice()
-    this.editor.signals.updatedSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Elements copied again.' })
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('terminalLogged', { msg: 'Redo: Elements copied again.' })
+  }
+
+  applyCopies() {
+    const initialElementIndex = this.editor.elementIndex
+    const hadRemappedIds = this.idsRemapped
+    const transientAttributes = this.copyEntries.map(({ element }) => (
+      element.attr('data-nanquim-transient')
+    ))
+    try {
+      this.remapCopyIds()
+      this.copyEntries.forEach(({ element, parent }) => {
+        parent.add(element)
+        element.attr('data-nanquim-transient', null)
+      })
+      this.copyEntries.forEach((entry) => {
+        entry.nextSibling = entry.element.node.nextSibling
+      })
+    } catch (error) {
+      this.copyEntries.forEach(({ element }, index) => {
+        if (element.node.parentNode) {
+          element.node.parentNode.removeChild(element.node)
+        }
+        this.restoreTransientAttribute(element, transientAttributes[index])
+      })
+      if (!hadRemappedIds) {
+        this.editor.elementIndex = initialElementIndex
+        this.idsRemapped = false
+      }
+      this.invalidateGeometry()
+      throw error
+    }
+    this.invalidateGeometry()
+  }
+
+  restoreCopyPlacements() {
+    for (let index = this.copyEntries.length - 1; index >= 0; index -= 1) {
+      const { element, parent, nextSibling } = this.copyEntries[index]
+      if (!parent || element.node.parentNode === parent.node) continue
+      const reference = nextSibling?.parentNode === parent.node ? nextSibling : null
+      parent.node.insertBefore(element.node, reference)
+    }
+  }
+
+  restoreTransientAttribute(element, value) {
+    if (value == null) element.attr('data-nanquim-transient', null)
+    else element.attr('data-nanquim-transient', value)
+  }
+
+  invalidateGeometry() {
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('updatedOutliner')
+  }
+
+  remapCopyIds() {
+    if (this.idsRemapped) return
+    const initialElementIndex = this.editor.elementIndex
+    try {
+      this.copyEntries.forEach(({ element }) => {
+        remapSvgIds([element.node], () => this.editor.elementIndex++)
+      })
+      this.idsRemapped = true
+    } catch (error) {
+      this.editor.elementIndex = initialElementIndex
+      throw error
+    }
   }
 }
 
@@ -307,4 +408,4 @@ function copyCommand(editor) {
   copyCommand.execute()
 }
 
-export { copyCommand }
+export { copyCommand, CopyCommand }

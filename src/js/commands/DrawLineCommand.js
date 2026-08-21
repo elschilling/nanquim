@@ -23,34 +23,37 @@ class DrawLineCommand extends Command {
       msg: `Click to start drawing a ${this.name} or type (x,y) coordinates `,
     })
     if (this.isDrawing) {
-      let line = this.drawing.line().draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
+      let line = this.drawing.line()
+        .attr('data-nanquim-transient', 'true')
+        .draw({ startPoint, drawCircles: false, ortho: this.editor.ortho, length })
       applyCollectionStyleToElement(this.editor, line)
       line.on('drawstart', (e) => {
         startPoint = e.detail.startPoint
       })
       line.on('drawstop', (e) => {
-        line.attr('id', this.editor.elementIndex++)
+        cleanupActiveSvgListeners()
         line.attr('name', 'Line')
         line.off()
-        this.editor.history.undos.push(new AddElementCommand(editor, line))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, line))
         // this.editor.execute(new AddElementCommand(editor, line))
         line = null
         this.updatedOutliner()
         this.draw({ x: e.detail[1][0], y: e.detail[1][1] }) // call next line draw starting from last endpoint
       })
       const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
-      activeSvg.on('valueInput', (e) => {
+      const onValueInput = () => {
         if (line) {
+          cleanupActiveSvgListeners()
           line.off()
           line.draw('cancel')
           line = null
           this.draw(startPoint, this.editor.length)
         }
-      })
-      activeSvg.on('coordinateInput', (e) => {
+      }
+      const onCoordinateInput = () => {
         if (line) {
           const coord = resolveInputCoordinate(this.editor, startPoint)
+          cleanupActiveSvgListeners()
           line.off()
           line.draw('cancel')
           line = null
@@ -61,33 +64,45 @@ class DrawLineCommand extends Command {
           } else {
             // Start point exists - draw line to absolute coordinate
             let newLine = this.drawing.line(startPoint.x, startPoint.y, coord.x, coord.y)
+              .attr('data-nanquim-transient', 'true')
             applyCollectionStyleToElement(this.editor, newLine)
-            newLine.attr('id', this.editor.elementIndex++)
             newLine.attr('name', 'Line')
-            this.editor.history.undos.push(new AddElementCommand(this.editor, newLine))
-            this.editor.lastCommand = this
+            this.editor.execute(new AddElementCommand(this.editor, newLine))
             this.updatedOutliner()
             this.editor.snapPoint = { x: coord.x, y: coord.y }
             this.draw({ x: coord.x, y: coord.y })
           }
         }
-      })
-      activeSvg.on('orthoChange', () => {
+      }
+      const onOrthoChange = () => {
         if (line) {
+          cleanupActiveSvgListeners()
           line.off()
           line.draw('cancel')
           line = null
           this.draw(startPoint, this.editor.length)
         }
-      })
-      activeSvg.on('cancelDrawing', (e) => {
+      }
+      const onCancelDrawing = () => {
         if (line) {
           line.off()
           line.draw('cancel')
           line = null
           this.editor.setIsDrawing(false)
         }
-      })
+        cleanupActiveSvgListeners()
+      }
+      const cleanupActiveSvgListeners = () => {
+        activeSvg.off('valueInput.draw-line', onValueInput)
+        activeSvg.off('coordinateInput.draw-line', onCoordinateInput)
+        activeSvg.off('orthoChange.draw-line', onOrthoChange)
+        activeSvg.off('cancelDrawing.draw-line', onCancelDrawing)
+      }
+
+      activeSvg.on('valueInput.draw-line', onValueInput)
+      activeSvg.on('coordinateInput.draw-line', onCoordinateInput)
+      activeSvg.on('orthoChange.draw-line', onOrthoChange)
+      activeSvg.on('cancelDrawing.draw-line', onCancelDrawing)
     }
   }
 }

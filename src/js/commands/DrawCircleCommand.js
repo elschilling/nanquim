@@ -23,7 +23,10 @@ class DrawCircleCommand extends Command {
 
   draw(centerPoint) {
     if (this.isDrawing) {
-      let circle = this.drawing.circle().fill('transparent').draw()
+      let circle = this.drawing.circle()
+        .attr('data-nanquim-transient', 'true')
+        .fill('transparent')
+        .draw()
       applyCollectionStyleToElement(this.editor, circle)
       let hasCenter = !!centerPoint
 
@@ -31,7 +34,10 @@ class DrawCircleCommand extends Command {
         // Simulate a click at the center point to start drawing
         circle.draw('cancel')
         circle.remove()
-        circle = this.drawing.circle().fill('transparent').draw({ startPoint: centerPoint })
+        circle = this.drawing.circle()
+          .attr('data-nanquim-transient', 'true')
+          .fill('transparent')
+          .draw({ startPoint: centerPoint })
         applyCollectionStyleToElement(this.editor, circle)
         this.editor.signals.terminalLogged.dispatch({
           type: 'span',
@@ -49,11 +55,10 @@ class DrawCircleCommand extends Command {
       })
 
       circle.on('drawstop', () => {
-        circle.attr('id', this.editor.elementIndex++)
+        cleanupActiveSvgListeners()
         circle.attr('name', 'Circle')
         circle.off()
-        this.editor.history.undos.push(new AddElementCommand(this.editor, circle))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, circle))
         circle = null
         this.updatedOutliner()
         this.editor.setIsDrawing(false)
@@ -62,9 +67,10 @@ class DrawCircleCommand extends Command {
       const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
 
       // Handle @x,y coordinate input for center point
-      activeSvg.on('coordinateInput', (e) => {
+      const onCoordinateInput = () => {
         if (circle) {
           const coord = resolveInputCoordinate(this.editor, centerPoint)
+          cleanupActiveSvgListeners()
           circle.off()
           circle.draw('cancel')
           circle = null
@@ -72,27 +78,26 @@ class DrawCircleCommand extends Command {
           this.editor.snapPoint = { x: coord.x, y: coord.y }
           this.draw({ x: coord.x, y: coord.y })
         }
-      })
+      }
 
       // Handle numeric radius input after center is set
-      activeSvg.on('valueInput', (e) => {
+      const onValueInput = () => {
         if (circle && hasCenter && centerPoint) {
           const radius = parseFloat(this.editor.length)
           if (!isNaN(radius) && radius > 0) {
+            cleanupActiveSvgListeners()
             circle.off()
             circle.draw('cancel')
             circle = null
             // Create circle with exact center and radius
             let newCircle = this.drawing
               .circle(radius * 2)
-
+              .attr('data-nanquim-transient', 'true')
               .fill('transparent')
               .center(centerPoint.x, centerPoint.y)
             applyCollectionStyleToElement(this.editor, newCircle)
-            newCircle.attr('id', this.editor.elementIndex++)
             newCircle.attr('name', 'Circle')
-            this.editor.history.undos.push(new AddElementCommand(this.editor, newCircle))
-            this.editor.lastCommand = this
+            this.editor.execute(new AddElementCommand(this.editor, newCircle))
             this.updatedOutliner()
             this.editor.signals.terminalLogged.dispatch({
               msg: `Circle created with radius ${radius}.`,
@@ -100,16 +105,26 @@ class DrawCircleCommand extends Command {
             this.editor.setIsDrawing(false)
           }
         }
-      })
+      }
 
-      activeSvg.on('cancelDrawing', (e) => {
+      const onCancelDrawing = () => {
         if (circle) {
           circle.off()
           circle.draw('cancel')
           circle = null
           this.editor.setIsDrawing(false)
         }
-      })
+        cleanupActiveSvgListeners()
+      }
+      const cleanupActiveSvgListeners = () => {
+        activeSvg.off('coordinateInput.draw-circle', onCoordinateInput)
+        activeSvg.off('valueInput.draw-circle', onValueInput)
+        activeSvg.off('cancelDrawing.draw-circle', onCancelDrawing)
+      }
+
+      activeSvg.on('coordinateInput.draw-circle', onCoordinateInput)
+      activeSvg.on('valueInput.draw-circle', onValueInput)
+      activeSvg.on('cancelDrawing.draw-circle', onCancelDrawing)
     }
   }
 }

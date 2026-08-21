@@ -38,8 +38,12 @@ export function applyMatrixToElement(element, matrix) {
         const p4 = applyMatrixToPoint(matrix, element.x(), element.y() + element.height())
         const parent = element.parent()
         if (parent) {
+            const nextSibling = element.node?.nextSibling
             const polygon = parent.polygon([[p1.x, p1.y], [p2.x, p2.y], [p3.x, p3.y], [p4.x, p4.y]])
             polygon.attr(element.attr())
+            if (parent.node && nextSibling?.parentNode === parent.node) {
+                parent.node.insertBefore(polygon.node, nextSibling)
+            }
             element.remove()
             return polygon
         }
@@ -122,6 +126,13 @@ export function applyMatrixToElement(element, matrix) {
             cy: center.y,
             startPt: applyMatrixToPoint(matrix, ctd.startPt.x, ctd.startPt.y),
             endPt: applyMatrixToPoint(matrix, ctd.endPt.x, ctd.endPt.y)
+        })
+    }
+    if (element.data('splineData')) {
+        const spline = element.data('splineData')
+        element.data('splineData', {
+            ...spline,
+            points: spline.points.map(point => applyMatrixToPoint(matrix, point.x, point.y))
         })
     }
 

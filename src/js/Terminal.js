@@ -1,5 +1,9 @@
-import commands, { executeRegisteredCommand } from './commands/_commands'
-import { RemoveElementCommand } from './commands/RemoveElementCommand'
+import commands, {
+  cancelCommandSession,
+  executeRegisteredCommand,
+} from './commands/_commands'
+import { MultiRemoveElementCommand } from './commands/MultiRemoveElementCommand'
+import { PasteCommand } from './commands/PasteCommand'
 import { SVG } from '@svgdotjs/svg.js'
 import { parseSafeJson } from './utils/sanitizeSvg'
 
@@ -321,8 +325,16 @@ function Terminal(editor) {
     // the paste event does not carry text (e.g. programmatic invocation).
     if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
       e.preventDefault()
+      const pasteSessionIsCurrent = capturePasteSessionGuard()
       navigator.clipboard.readText().then(text => {
         if (pasteHandledByNativeEvent) return // already handled by the paste event
+        if (!pasteSessionIsCurrent()) {
+          signals.terminalLogged.dispatch({
+            type: 'span',
+            msg: 'Paste cancelled because the document or command session changed.',
+          })
+          return
+        }
         processPastedText(text)
       }).catch(() => {
         // Silently ignore: the native paste event above already handled it
@@ -417,13 +429,10 @@ function Terminal(editor) {
             }
           }
 
-          for (const [command, { aliases }] of Object.entries(commands)) {
-            if (aliases.includes(typed)) {
-              executeRegisteredCommand(editor, command)
-              terminalText.value = ''
-              hideAutocomplete()
-              return
-            }
+          if (executeRegisteredCommand(editor, typed)) {
+            terminalText.value = ''
+            hideAutocomplete()
+            return
           }
         }
       }
@@ -453,38 +462,78 @@ function Terminal(editor) {
       return
     }
     signals.terminalLogged.dispatch({ type: 'span', msg: `[Debug] pasting ${data.elements.length} element(s) from ${text.length}-byte clipboard` })
-    import('./commands/PasteCommand.js').then(({ PasteCommand }) => {
-      try {
-        editor.execute(new PasteCommand(editor, data))
-      } catch (e) {
-        signals.terminalLogged.dispatch({ type: 'span', msg: `[Error] Paste failed: ${e.message}` })
-        console.error(e)
-      }
-    })
+    try {
+      editor.execute(new PasteCommand(editor, data))
+    } catch (e) {
+      signals.terminalLogged.dispatch({ type: 'span', msg: `[Error] Paste failed: ${e.message}` })
+      console.error(e)
+    }
+  }
+
+  function capturePasteSessionGuard() {
+    const commandSessionRevision = Number.isSafeInteger(editor.commandSessionRevision)
+      ? editor.commandSessionRevision
+      : 0
+    const state = editor.documentState
+    const token = state && typeof state.createSaveToken === 'function'
+      ? state.createSaveToken()
+      : null
+    return () => {
+      const currentCommandSessionRevision = Number.isSafeInteger(editor.commandSessionRevision)
+        ? editor.commandSessionRevision
+        : 0
+      if (currentCommandSessionRevision !== commandSessionRevision) return false
+      if (!token) return true
+
+      state.flushObservedMutations?.()
+      const snapshot = state.snapshot?.()
+      if (!snapshot) return false
+      return token.sessionId === snapshot.sessionId
+        && token.revision === snapshot.revision
+        && token.name === snapshot.name
+        && token.handle === snapshot.handle
+    }
   }
 
   function handleKeyUp(e) {
     if (editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) return
     if (e.code === 'Escape') {
       if (editor.isEditingVertex) {
-        editor.editingVertices.forEach((v) => {
-          const element = v.element
-          const vertexIndex = v.vertexIndex
-          const oldPos = v.originalPosition
-          if (element.type === 'line') {
-            if (vertexIndex === 0) element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
-            else element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
-          } else if (element.type === 'circle') {
-            element.center(oldPos.cx, oldPos.cy)
-            element.radius(oldPos.r)
-          } else if (element.type === 'ellipse') {
-            element.center(oldPos.cx, oldPos.cy)
-            element.attr('rx', oldPos.rx)
-            element.attr('ry', oldPos.ry)
-          } else if (element.type === 'polyline') {
-            element.plot(oldPos.points)
-          }
-        })
+        const restoreVertexPreviews = () => {
+          editor.editingVertices.forEach((v) => {
+            const element = v.element
+            const vertexIndex = v.vertexIndex
+            const oldPos = v.originalPosition
+            if (element.type === 'line') {
+              if (vertexIndex === 0) element.plot(oldPos.x, oldPos.y, element.node.x2.baseVal.value, element.node.y2.baseVal.value)
+              else element.plot(element.node.x1.baseVal.value, element.node.y1.baseVal.value, oldPos.x, oldPos.y)
+            } else if (element.type === 'circle') {
+              element.center(oldPos.cx, oldPos.cy)
+              element.radius(oldPos.r)
+            } else if (element.type === 'ellipse') {
+              element.center(oldPos.cx, oldPos.cy)
+              element.attr('rx', oldPos.rx)
+              element.attr('ry', oldPos.ry)
+            } else if (element.type === 'rect') {
+              element.move(oldPos.x, oldPos.y).size(oldPos.width, oldPos.height)
+            } else if (element._paperVp) {
+              const viewport = element._paperVp
+              viewport.x = oldPos.x
+              viewport.y = oldPos.y
+              viewport.w = oldPos.width
+              viewport.h = oldPos.height
+              viewport.refreshGeometry()
+              signals.paperViewportsChanged.dispatch()
+            } else if (element.type === 'polyline') {
+              element.plot(oldPos.points)
+            }
+          })
+        }
+        if (editor.documentState) {
+          editor.documentState.runWithoutTracking(restoreVertexPreviews)
+        } else {
+          restoreVertexPreviews()
+        }
         signals.vertexEditStopped.dispatch()
         signals.updatedSelection.dispatch()
         return
@@ -492,13 +541,7 @@ function Terminal(editor) {
 
       terminalText.value = ''
       hideAutocomplete()
-      editor.isDrawing = false
-      editor.isSelecting = false
-      editor.isInteracting = false
-      editor.isTypingText = false
-      editor.selectSingleElement = false
-      editor.svg.fire('cancelDrawing', e)
-      signals.commandCancelled.dispatch()
+      cancelCommandSession(editor, e)
       signals.clearSelection.dispatch()
       editor.selected = []
       signals.updatedProperties.dispatch()
@@ -518,12 +561,21 @@ function Terminal(editor) {
       handleTogglePolarTracking()
     } else if (e.code === 'Delete') {
       if (editor.selected.length > 0) {
+        e.preventDefault()
         const toDelete = [...editor.selected]
-        signals.clearSelection.dispatch()
-        editor.selected = []
-        import('./commands/MultiRemoveElementCommand.js').then(({ MultiRemoveElementCommand }) => {
-          editor.execute(new MultiRemoveElementCommand(editor, toDelete))
-        })
+        const command = new MultiRemoveElementCommand(editor, toDelete)
+        if (!command.isValid) {
+          command.reportInvalid()
+          return
+        }
+        try {
+          editor.execute(command)
+        } catch (_) {
+          signals.terminalLogged.dispatch({
+            type: 'span',
+            msg: 'Delete failed. The drawing was left unchanged.',
+          })
+        }
       }
     } else if (e.code === 'KeyZ' && e.ctrlKey) {
       if (e.shiftKey) editor.redo()

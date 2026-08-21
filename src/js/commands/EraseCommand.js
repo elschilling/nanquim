@@ -50,17 +50,26 @@ class EraseCommand extends Command {
             return
         }
 
-        this.editor.signals.terminalLogged.dispatch({ msg: `Erased ${selectedElements.length} elements.` })
+        const command = new MultiRemoveElementCommand(this.editor, selectedElements)
+        if (!command.isValid) {
+            command.reportInvalid()
+            this.cleanup()
+            return
+        }
 
-        // Clear selection first
-        this.editor.signals.clearSelection.dispatch()
-        this.editor.selected = []
+        try {
+            this.editor.execute(command)
+        } catch (_) {
+            this.editor.signals.terminalLogged.dispatch({
+                msg: 'Erase failed. The drawing was left unchanged.',
+            })
+            this.cleanup()
+            return
+        }
 
-        // Execute remove commands
-        this.editor.execute(new MultiRemoveElementCommand(this.editor, selectedElements))
+        this.editor.signals.terminalLogged.dispatch({ msg: `Erased ${command.elements.length} elements.` })
 
         this.interactiveExecutionDone = true
-        this.editor.lastCommand = new EraseCommand(this.editor)
         this.cleanup()
     }
 

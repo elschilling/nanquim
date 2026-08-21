@@ -173,6 +173,10 @@ describe('transformGeometry', () => {
         endPt: { x: 1, y: 3 },
         ccw: true,
       },
+      splineData: {
+        degree: 3,
+        points: [{ x: 0, y: 0 }, { x: 2, y: 3 }],
+      },
     })
     const element = { type: 'custom', data }
     const matrix = { a: 2, b: 0, c: 0, d: 3, e: 5, f: -1 }
@@ -190,6 +194,10 @@ describe('transformGeometry', () => {
       startPt: { x: 9, y: 5 },
       endPt: { x: 7, y: 8 },
       ccw: true,
+    })
+    expect(values.get('splineData')).toEqual({
+      degree: 3,
+      points: [{ x: 5, y: -1 }, { x: 9, y: 8 }],
     })
   })
 

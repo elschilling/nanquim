@@ -1,5 +1,7 @@
 import { getArcGeometry } from './utils/arcUtils'
 import { catmullRomToBezierPath } from './commands/DrawSplineCommand'
+import { editTextCommand } from './commands/EditTextCommand'
+import { LinearDimensionCommand } from './commands/LinearDimensionCommand'
 import {
   calculateDistance,
   distanceFromPointToLine,
@@ -12,16 +14,104 @@ import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersecting
 import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
 import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
-import { EditViewportCommand } from './commands/EditViewportCommand'
+import { commitVertexEditUpdates } from './commands/VertexEditTransaction'
+import { dispatchSignalSafely } from './Command'
 import { updateGrid as updateGridDraw } from './utils/gridDraw'
 import { checkSnap as checkSnapSystem, drawSnap, clearSnap, drawExtensionLines } from './utils/snapSystem'
 import { initToolbarHandlers } from './utils/toolbarHandlers'
 import { updateEllipseArcData, renderEllipseArc } from './utils/ellipseArcUtils'
+import {
+  constrainVertexPointInRoot,
+  rootPointToElementLocal,
+} from './utils/vertexCoordinateSpace'
+
+function resizeBoundsFromGrip(original, vertexIndex, point, minimumSize = 0) {
+  let x1 = original.x
+  let y1 = original.y
+  let x2 = original.x + original.width
+  let y2 = original.y + original.height
+
+  if ([0, 3, 7].includes(vertexIndex)) x1 = point.x
+  if ([0, 1, 4].includes(vertexIndex)) y1 = point.y
+  if ([1, 2, 5].includes(vertexIndex)) x2 = point.x
+  if ([2, 3, 6].includes(vertexIndex)) y2 = point.y
+
+  let width = Math.abs(x2 - x1)
+  let height = Math.abs(y2 - y1)
+  if (minimumSize > 0) {
+    width = Math.max(minimumSize, width)
+    height = Math.max(minimumSize, height)
+  }
+
+  return {
+    x: Math.min(x1, x2),
+    y: Math.min(y1, y2),
+    width,
+    height,
+  }
+}
+
+function captureVertexPreviewState(element) {
+  if (element?._paperVp) {
+    const viewport = element._paperVp
+    return {
+      kind: 'paper-viewport',
+      viewport,
+      values: { x: viewport.x, y: viewport.y, w: viewport.w, h: viewport.h },
+    }
+  }
+
+  const node = element?.node
+  if (!node) return null
+  return {
+    attributes: Array.from(node.attributes, attribute => ({
+      name: attribute.name,
+      namespaceURI: attribute.namespaceURI,
+      value: attribute.value,
+    })),
+    children: Array.from(node.childNodes, child => child.cloneNode(true)),
+    kind: 'svg-element',
+    node,
+  }
+}
+
+function restoreVertexPreviewState(snapshot) {
+  if (!snapshot) return
+  if (snapshot.kind === 'paper-viewport') {
+    Object.assign(snapshot.viewport, snapshot.values)
+    snapshot.viewport.refreshGeometry()
+    dispatchSignalSafely(
+      snapshot.viewport._editor?.signals.paperViewportsChanged,
+      [],
+      error => {
+        try { console.error('[Viewport] paperViewportsChanged listener failed:', error) } catch (_reportError) {}
+      },
+    )
+    return
+  }
+
+  const { node } = snapshot
+  Array.from(node.attributes).forEach(attribute => node.removeAttributeNode(attribute))
+  snapshot.attributes.forEach(attribute => {
+    if (attribute.namespaceURI) {
+      node.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value)
+    } else {
+      node.setAttribute(attribute.name, attribute.value)
+    }
+  })
+  node.replaceChildren(...snapshot.children.map(child => child.cloneNode(true)))
+}
 
 function Viewport(editor) {
   const signals = editor.signals
   const svg = editor.svg
   const drawing = editor.drawing
+
+  function dispatchViewportSignal(name, ...args) {
+    return dispatchSignalSafely(signals[name], args, error => {
+      try { console.error(`[Viewport] ${name} listener failed:`, error) } catch (_reportError) {}
+    })
+  }
 
   // Helper: get flat array of selectable drawing elements (visible + unlocked collections)
   function getSelectableDrawingElements() {
@@ -50,6 +140,7 @@ function Viewport(editor) {
   let offsetDistance = null
   let centerPoint = null
   let referencePoint = null
+  let vertexPreviewSnapshots = new Map()
   const canvasNavigationResetters = new Set()
 
   signals.preferencesChanged.add((preferences) => {
@@ -115,6 +206,11 @@ function Viewport(editor) {
     editor.extensionHovers = []
     clearPolarGuides()
     clearSelectionRectangle()
+    if (editor.isEditingVertex) {
+      restoreVertexEditPreviews()
+      dispatchViewportSignal('vertexEditStopped')
+      dispatchViewportSignal('updatedSelection')
+    }
     editor.lastClick = null  // reset so next command has no stale base point
     editor.isDrawing = false
     editor.isSelecting = false
@@ -132,6 +228,7 @@ function Viewport(editor) {
     if (isGhostingRotate) onRotateGhostingStopped()
     if (isGhostingOffset) onOffsetGhostingStopped()
     if (editor.isEditingVertex) onVertexEditStopped()
+    vertexPreviewSnapshots.clear()
     clearHover()
     clearSelectionRectangle()
     editor.ghostNodes = null
@@ -213,9 +310,7 @@ function Viewport(editor) {
         if (hoveredElements.length > 0 && hoveredElements[0].type === 'text') {
           e.preventDefault()
           e.stopPropagation()
-          import('./commands/EditTextCommand.js').then(({ editTextCommand }) => {
-            editTextCommand(editor, hoveredElements[0])
-          })
+          editTextCommand(editor, hoveredElements[0])
           return
         }
       }
@@ -401,6 +496,12 @@ function Viewport(editor) {
   }
 
   function onVertexEditStarted(vertices) {
+    vertexPreviewSnapshots = new Map()
+    vertices.forEach(({ element }) => {
+      if (!vertexPreviewSnapshots.has(element)) {
+        vertexPreviewSnapshots.set(element, captureVertexPreviewState(element))
+      }
+    })
     editor.isEditingVertex = true
     editor.editingVertices = vertices
     editor.handlers.addClass('handlers-editing')
@@ -412,55 +513,13 @@ function Viewport(editor) {
     editor.editingVertices = []
   }
 
-  function getOrthoConstrainedPoint(point, vertexData) {
-    let baseX = 0, baseY = 0
-    const { element, vertexIndex, originalPosition } = vertexData
-
-    // Radius grips are constrained to their own axis; applying the general
-    // ortho rule would incorrectly constrain them relative to the origin.
-    if (element.type === 'path' && element.data('ellipseArcData') && vertexIndex !== 0) {
-      return point
+  function restoreVertexEditPreviews() {
+    const restore = () => {
+      vertexPreviewSnapshots.forEach(snapshot => restoreVertexPreviewState(snapshot))
     }
-
-    // Determine base point for ortho constraint
-    if (element.type === 'line') {
-      baseX = originalPosition.x
-      baseY = originalPosition.y
-    } else if (element.type === 'circle') {
-      const { cx, cy, r } = originalPosition
-      if (vertexIndex === 0) { baseX = cx; baseY = cy }
-      else if (vertexIndex === 1) { baseX = cx; baseY = cy - r }
-      else if (vertexIndex === 2) { baseX = cx + r; baseY = cy }
-      else if (vertexIndex === 3) { baseX = cx; baseY = cy + r }
-      else if (vertexIndex === 4) { baseX = cx - r; baseY = cy }
-    } else if (element.type === 'rect') {
-      const { x, y, width, height } = originalPosition
-      if (vertexIndex === 0) { baseX = x; baseY = y }
-      else if (vertexIndex === 1) { baseX = x + width; baseY = y }
-      else if (vertexIndex === 2) { baseX = x + width; baseY = y + height }
-      else if (vertexIndex === 3) { baseX = x; baseY = y + height }
-      else if (vertexIndex === 4) { baseX = x + width / 2; baseY = y }
-      else if (vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
-      else if (vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
-      else if (vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
-    } else if (element.type === 'ellipse') {
-      const { cx, cy } = originalPosition
-      baseX = cx
-      baseY = cy
-    } else if (element.type === 'path' && element.data('ellipseArcData') && vertexIndex === 0) {
-      const { cx, cy } = originalPosition
-      baseX = cx
-      baseY = cy
-    }
-
-    const dx = point.x - baseX
-    const dy = point.y - baseY
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-      return { x: point.x, y: baseY }
-    } else {
-      return { x: baseX, y: point.y }
-    }
+    if (editor.documentState) editor.documentState.runWithoutTracking(restore)
+    else restore()
+    vertexPreviewSnapshots.clear()
   }
 
   function _doHandleMove(e) {
@@ -587,66 +646,20 @@ function Viewport(editor) {
 
     // Handle vertex editing
     if (editor.isEditingVertex && editor.editingVertices.length > 0) {
-      let point = editor.snapPoint || coordinates
+      let rootPoint = editor.snapPoint || coordinates
 
       const v0 = editor.editingVertices[0]
       const isEllipseArcRadiusGrip = v0.element.type === 'path' &&
         v0.element.data('ellipseArcData') && v0.vertexIndex !== 0
       if (editor.ortho && !isEllipseArcRadiusGrip) {
-        let baseX = 0, baseY = 0
-
-        // Determine base point for ortho constraint
-        if (v0.element.type === 'line') {
-          baseX = v0.originalPosition.x
-          baseY = v0.originalPosition.y
-        } else if (v0.element.type === 'circle') {
-          const { cx, cy, r } = v0.originalPosition
-          if (v0.vertexIndex === 0) { baseX = cx; baseY = cy }
-          else if (v0.vertexIndex === 1) { baseX = cx; baseY = cy - r }
-          else if (v0.vertexIndex === 2) { baseX = cx + r; baseY = cy }
-          else if (v0.vertexIndex === 3) { baseX = cx; baseY = cy + r }
-          else if (v0.vertexIndex === 4) { baseX = cx - r; baseY = cy }
-        } else if (v0.element.type === 'rect') {
-          const { x, y, width, height } = v0.originalPosition
-          if (v0.vertexIndex === 0) { baseX = x; baseY = y }
-          else if (v0.vertexIndex === 1) { baseX = x + width; baseY = y }
-          else if (v0.vertexIndex === 2) { baseX = x + width; baseY = y + height }
-          else if (v0.vertexIndex === 3) { baseX = x; baseY = y + height }
-          else if (v0.vertexIndex === 4) { baseX = x + width / 2; baseY = y }
-          else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
-          else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
-          else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
-        } else if (v0.element._paperVp) {
-          const { x, y, width, height } = v0.originalPosition
-          if (v0.vertexIndex === 0) { baseX = x; baseY = y }
-          else if (v0.vertexIndex === 1) { baseX = x + width; baseY = y }
-          else if (v0.vertexIndex === 2) { baseX = x + width; baseY = y + height }
-          else if (v0.vertexIndex === 3) { baseX = x; baseY = y + height }
-          else if (v0.vertexIndex === 4) { baseX = x + width / 2; baseY = y }
-          else if (v0.vertexIndex === 5) { baseX = x + width; baseY = y + height / 2 }
-          else if (v0.vertexIndex === 6) { baseX = x + width / 2; baseY = y + height }
-          else if (v0.vertexIndex === 7) { baseX = x; baseY = y + height / 2 }
-        } else if (v0.element.type === 'ellipse') {
-          baseX = v0.originalPosition.cx
-          baseY = v0.originalPosition.cy
-        } else if (v0.element.type === 'path' && v0.element.data('ellipseArcData') && v0.vertexIndex === 0) {
-          baseX = v0.originalPosition.cx
-          baseY = v0.originalPosition.cy
-        }
-
-        const dx = point.x - baseX
-        const dy = point.y - baseY
-
-        if (Math.abs(dx) > Math.abs(dy)) {
-          point = { x: point.x, y: baseY }
-        } else {
-          point = { x: baseX, y: point.y }
-        }
+        rootPoint = constrainVertexPointInRoot(rootPoint, v0, activeSvg)
       }
 
-      editor.editingVertices.forEach(vertexData => {
-        const element = vertexData.element
-        const vertexIndex = vertexData.vertexIndex
+      const updateVertexPreviews = () => {
+        editor.editingVertices.forEach(vertexData => {
+          const element = vertexData.element
+          const vertexIndex = vertexData.vertexIndex
+          const point = rootPointToElementLocal(rootPoint, element, activeSvg)
 
         if (element.type === 'line') {
           if (vertexIndex === 0) {
@@ -686,88 +699,18 @@ function Viewport(editor) {
           }
         } else if (element.type === 'rect') {
           const original = vertexData.originalPosition
-          const index = vertexIndex
-
-          let newX = element.x()
-          let newY = element.y()
-          let newW = element.width()
-          let newH = element.height()
-
-          // Helper to update rect from 2 corner points (normalize negative width/height)
-          const setRectFromPoints = (x1, y1, x2, y2) => {
-            const x = Math.min(x1, x2)
-            const y = Math.min(y1, y2)
-            const w = Math.abs(x2 - x1)
-            const h = Math.abs(y2 - y1)
-            element.move(x, y).size(w, h)
-          }
-
-          // Case 0: Top-Left Corner
-          if (index === 0) {
-            setRectFromPoints(point.x, point.y, original.x + original.width, original.y + original.height)
-          }
-          // Case 1: Top-Right Corner
-          else if (index === 1) {
-            setRectFromPoints(original.x, point.y, point.x, original.y + original.height)
-          }
-          // Case 2: Bottom-Right Corner
-          else if (index === 2) {
-            setRectFromPoints(original.x, original.y, point.x, point.y)
-          }
-          // Case 3: Bottom-Left Corner
-          else if (index === 3) {
-            setRectFromPoints(point.x, original.y, original.x + original.width, point.y)
-          }
-          // Case 4: Top Edge
-          else if (index === 4) {
-            setRectFromPoints(original.x, point.y, original.x + original.width, original.y + original.height)
-          }
-          // Case 5: Right Edge
-          else if (index === 5) {
-            setRectFromPoints(original.x, original.y, point.x, original.y + original.height)
-          }
-          // Case 6: Bottom Edge
-          else if (index === 6) {
-            setRectFromPoints(original.x, original.y, original.x + original.width, point.y)
-          }
-          // Case 7: Left Edge
-          else if (index === 7) {
-            setRectFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
-          }
+          const values = resizeBoundsFromGrip(original, vertexIndex, point)
+          element.move(values.x, values.y).size(values.width, values.height)
         } else if (element._paperVp) {
           const vp = element._paperVp
           const original = vertexData.originalPosition
-          const index = vertexIndex
-
-          // Helper to update viewport from 2 corner points (normalize negative width/height)
-          const setVpFromPoints = (x1, y1, x2, y2) => {
-            const x = Math.min(x1, x2)
-            const y = Math.min(y1, y2)
-            let w = Math.abs(x2 - x1)
-            let h = Math.abs(y2 - y1)
-            // enforce minimum scale
-            if (w < 0.5) {
-              w = 0.5
-            }
-            if (h < 0.5) {
-              h = 0.5
-            }
-            vp.x = x
-            vp.y = y
-            vp.w = w
-            vp.h = h
-            vp.refreshGeometry()
-            vp._editor.signals.paperViewportsChanged.dispatch()
-          }
-
-          if (index === 0) setVpFromPoints(point.x, point.y, original.x + original.width, original.y + original.height)
-          else if (index === 1) setVpFromPoints(original.x, point.y, point.x, original.y + original.height)
-          else if (index === 2) setVpFromPoints(original.x, original.y, point.x, point.y)
-          else if (index === 3) setVpFromPoints(point.x, original.y, original.x + original.width, point.y)
-          else if (index === 4) setVpFromPoints(original.x, point.y, original.x + original.width, original.y + original.height)
-          else if (index === 5) setVpFromPoints(original.x, original.y, point.x, original.y + original.height)
-          else if (index === 6) setVpFromPoints(original.x, original.y, original.x + original.width, point.y)
-          else if (index === 7) setVpFromPoints(point.x, original.y, original.x + original.width, original.y + original.height)
+          const values = resizeBoundsFromGrip(original, vertexIndex, point, 0.5)
+          vp.x = values.x
+          vp.y = values.y
+          vp.w = values.width
+          vp.h = values.height
+          vp.refreshGeometry()
+          vp._editor.signals.paperViewportsChanged.dispatch()
 
         } else if (element.type === 'path' && element.data('arcData')) {
           const arcData = element.data('arcData')
@@ -806,9 +749,8 @@ function Viewport(editor) {
           pts[vertexIndex] = [point.x, point.y]
           element.plot(pts)
         } else if (element.type === 'text') {
-          const op = vertexData.originalPosition
-          element.attr('x', op.x + (point.x - op.worldX))
-          element.attr('y', op.y + (point.y - op.worldY))
+          element.attr('x', point.x)
+          element.attr('y', point.y)
           element.rebuild()
         } else if (element.type === 'g' && element.attr('data-element-type') === 'dimension') {
           // Live render during move
@@ -842,32 +784,25 @@ function Viewport(editor) {
               tempStyle.textPosition = dimData.textPosition
             }
 
-            if (window.LinearDimensionCommand) {
-              window.LinearDimensionCommand.renderDimensionGraphics(
-                element,
-                dimData.p1, dimData.p2, dimData.p3,
-                tempStyle,
-                1,
-                false,
-                dimData.dimType || 'linear'
-              )
-            } else {
-              import('./commands/LinearDimensionCommand.js').then(({ LinearDimensionCommand }) => {
-                window.LinearDimensionCommand = LinearDimensionCommand
-                LinearDimensionCommand.renderDimensionGraphics(
-                  element,
-                  dimData.p1, dimData.p2, dimData.p3,
-                  tempStyle,
-                  1,
-                  false,
-                  dimData.dimType || 'linear'
-                )
-              })
-            }
+            LinearDimensionCommand.renderDimensionGraphics(
+              element,
+              dimData.p1, dimData.p2, dimData.p3,
+              tempStyle,
+              1,
+              false,
+              dimData.dimType || 'linear',
+              editor
+            )
 
           } catch (e) { }
         }
-      })
+        })
+      }
+      if (editor.documentState) {
+        editor.documentState.runWithoutTracking(updateVertexPreviews)
+      } else {
+        updateVertexPreviews()
+      }
 
       // Redraw handlers to follow the vertex
       signals.updatedSelection.dispatch()
@@ -1050,7 +985,7 @@ function Viewport(editor) {
   }
 
   function checkHover() {
-    if (editor.isDrawing || editor.isTypingText || editor.mode === 'paper') {
+    if (editor.isDrawing || editor.isTypingText) {
       clearHover()
       return
     }
@@ -1321,16 +1256,21 @@ function Viewport(editor) {
     if (editor.isEditingVertex) {
       const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
       if (!activeSvg) return
-      let point = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+      let rootPoint = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
 
       if (editor.ortho && editor.editingVertices.length > 0) {
-        point = getOrthoConstrainedPoint(point, editor.editingVertices[0])
+        rootPoint = constrainVertexPointInRoot(
+          rootPoint,
+          editor.editingVertices[0],
+          activeSvg,
+        )
       }
 
       // Separate line updates and circle updates
       const lineUpdates = []
       const circleUpdates = []
       const ellipseUpdates = []
+      const rectangleUpdates = []
       const ellipseArcUpdates = []
       const arcUpdates = []
       const splineUpdates = []
@@ -1340,6 +1280,7 @@ function Viewport(editor) {
       const textPositionUpdates = []
 
       editor.editingVertices.forEach(v => {
+        const point = rootPointToElementLocal(rootPoint, v.element, activeSvg)
         if (v.element.type === 'line') {
           // ... existing line logic ...
           lineUpdates.push({
@@ -1386,6 +1327,18 @@ function Viewport(editor) {
             oldValues: { cx: original.cx, cy: original.cy, rx: original.rx, ry: original.ry },
             newValues: { cx: newCx, cy: newCy, rx: newRx, ry: newRy }
           })
+        } else if (v.element.type === 'rect') {
+          const original = v.originalPosition
+          rectangleUpdates.push({
+            element: v.element,
+            oldValues: {
+              x: original.x,
+              y: original.y,
+              width: original.width,
+              height: original.height,
+            },
+            newValues: resizeBoundsFromGrip(original, v.vertexIndex, point),
+          })
         } else if (v.element.type === 'path' && v.element.data('ellipseArcData')) {
           const oldData = JSON.parse(JSON.stringify(v.originalPosition))
           ellipseArcUpdates.push({
@@ -1394,7 +1347,7 @@ function Viewport(editor) {
             newData: updateEllipseArcData(oldData, v.vertexIndex, point),
           })
         } else if (v.element.type === 'path' && v.element.data('arcData')) {
-          const arcData = v.element.data('arcData')
+          const arcData = v.originalPosition
           const oldValues = {
             p1: { x: arcData.p1.x, y: arcData.p1.y },
             p2: { x: arcData.p2.x, y: arcData.p2.y },
@@ -1412,31 +1365,43 @@ function Viewport(editor) {
 
           arcUpdates.push({ element: v.element, oldValues, newValues })
         } else if (v.element.type === 'path' && v.element.data('splineData')) {
-          const splineData = v.element.data('splineData')
           const oldPoints = v.originalPosition.points
-          const newPoints = splineData.points.map(p => ({ x: p.x, y: p.y }))
+          const newPoints = oldPoints.map(p => ({ x: p.x, y: p.y }))
+          newPoints[v.vertexIndex] = { x: point.x, y: point.y }
 
           splineUpdates.push({ element: v.element, oldPoints, newPoints })
         } else if (v.element.type === 'polyline') {
           const oldPoints = v.originalPosition.points
-          const newPoints = v.element.array().map(p => [p[0], p[1]])
+          const newPoints = oldPoints.map(p => [p[0], p[1]])
+          newPoints[v.vertexIndex] = [point.x, point.y]
           polylineUpdates.push({ element: v.element, oldPoints, newPoints })
         } else if (v.element._paperVp) {
           const vp = v.element._paperVp
+          const values = resizeBoundsFromGrip(v.originalPosition, v.vertexIndex, point, 0.5)
           viewportUpdates.push({
             viewport: vp,
             oldValues: v.originalPosition,
             newValues: {
-              x: vp.x,
-              y: vp.y,
-              width: vp.w,
-              height: vp.h
+              x: values.x,
+              y: values.y,
+              width: values.width,
+              height: values.height
             }
           })
         } else if (v.element.type === 'g' && v.element.attr('data-element-type') === 'dimension') {
           try {
-            const oldData = v.originalPosition
-            const newData = JSON.parse(v.element.attr('data-dim-data'))
+            const oldData = JSON.parse(JSON.stringify(v.originalPosition))
+            const newData = JSON.parse(JSON.stringify(v.originalPosition))
+            if (v.vertexIndex === 0) newData.p1 = { x: point.x, y: point.y }
+            else if (v.vertexIndex === 1) newData.p2 = { x: point.x, y: point.y }
+            else if (v.vertexIndex === 2) newData.p3 = { x: point.x, y: point.y }
+            else if (v.vertexIndex === 3) {
+              const base = JSON.parse(v.element.attr('data-dim-text-base'))
+              newData.textPosition = {
+                x: point.x - base.x,
+                y: point.y - base.y,
+              }
+            }
             dimensionUpdates.push({ element: v.element, oldData, newData })
           } catch (e) { }
         } else if (v.element.type === 'text') {
@@ -1444,97 +1409,35 @@ function Viewport(editor) {
           textPositionUpdates.push({
             element: v.element,
             oldValues: { x: op.x, y: op.y },
-            newValues: { x: op.x + (point.x - op.worldX), y: op.y + (point.y - op.worldY) }
+            newValues: { x: point.x, y: point.y }
           })
         }
       })
 
       // Stop edit mode immediately
-      signals.vertexEditStopped.dispatch()
+      dispatchViewportSignal('vertexEditStopped')
 
-      if (lineUpdates.length > 0) {
-        import('./commands/MultiEditVertexCommand.js').then(({ MultiEditVertexCommand }) => {
-          editor.execute(new MultiEditVertexCommand(editor, lineUpdates))
-          signals.updatedSelection.dispatch()
+      try {
+        commitVertexEditUpdates(editor, {
+          arcUpdates,
+          circleUpdates,
+          dimensionUpdates,
+          ellipseArcUpdates,
+          ellipseUpdates,
+          lineUpdates,
+          polylineUpdates,
+          rectangleUpdates,
+          splineUpdates,
+          textPositionUpdates,
+          viewportUpdates,
         })
-      }
-
-      if (dimensionUpdates.length > 0) {
-        import('./commands/EditDimensionCommand.js').then(({ EditDimensionCommand }) => {
-          editor.execute(new EditDimensionCommand(editor, dimensionUpdates))
-          signals.updatedSelection.dispatch()
+        vertexPreviewSnapshots.clear()
+      } catch (error) {
+        restoreVertexEditPreviews()
+        signals.terminalLogged.dispatch({
+          msg: `Vertex edit failed: ${error.message}`,
         })
-      }
-
-      if (circleUpdates.length > 0) {
-        import('./commands/EditCircleCommand.js').then(({ EditCircleCommand }) => {
-          // For now, assume single circle editing or multiple independent circle edits
-          circleUpdates.forEach(update => {
-            editor.execute(new EditCircleCommand(editor, update.element, update.oldValues, update.newValues))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (ellipseUpdates.length > 0) {
-        import('./commands/EditEllipseCommand.js').then(({ EditEllipseCommand }) => {
-          ellipseUpdates.forEach(update => {
-            editor.execute(new EditEllipseCommand(editor, update.element, update.oldValues, update.newValues))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (ellipseArcUpdates.length > 0) {
-        import('./commands/EditEllipseArcCommand.js').then(({ EditEllipseArcCommand }) => {
-          ellipseArcUpdates.forEach(update => {
-            editor.execute(new EditEllipseArcCommand(editor, update.element, update.oldData, update.newData))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (arcUpdates.length > 0) {
-        import('./commands/EditArcCommand.js').then(({ EditArcCommand }) => {
-          arcUpdates.forEach(update => {
-            editor.execute(new EditArcCommand(editor, update.element, update.oldValues, update.newValues))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (splineUpdates.length > 0) {
-        import('./commands/EditSplineCommand.js').then(({ EditSplineCommand }) => {
-          splineUpdates.forEach(update => {
-            editor.execute(new EditSplineCommand(editor, update.element, update.oldPoints, update.newPoints))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (polylineUpdates.length > 0) {
-        import('./commands/EditPolylineCommand.js').then(({ EditPolylineCommand }) => {
-          polylineUpdates.forEach(update => {
-            editor.execute(new EditPolylineCommand(editor, update.element, update.oldPoints, update.newPoints))
-          })
-          signals.updatedSelection.dispatch()
-        })
-      }
-
-      if (viewportUpdates.length > 0) {
-        viewportUpdates.forEach(update => {
-          editor.execute(new EditViewportCommand(editor, update.viewport, update.oldValues, update.newValues))
-        })
-        signals.updatedSelection.dispatch()
-      }
-
-      if (textPositionUpdates.length > 0) {
-        import('./commands/EditTextPositionCommand.js').then(({ EditTextPositionCommand }) => {
-          textPositionUpdates.forEach(update => {
-            editor.execute(new EditTextPositionCommand(editor, update.element, update.oldValues, update.newValues))
-          })
-          signals.updatedSelection.dispatch()
-        })
+        console.error(error)
       }
 
       return
@@ -1981,4 +1884,4 @@ function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
   return angleDegrees
 }
 
-export { Viewport }
+export { captureVertexPreviewState, restoreVertexPreviewState, Viewport }

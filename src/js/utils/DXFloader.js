@@ -364,6 +364,10 @@ function _hydrateStagedElement(stage, element) {
   const node = element.node
   Array.from(node.attributes).forEach((attribute) => {
     if (!attribute.name.startsWith('data-')) return
+    // This is a persistent CSS-isolation marker, not SVG.js application data.
+    // Writing it through element.data() would create a second camel-cased XML
+    // attribute and make a clean native save/reopen cycle non-canonical.
+    if (attribute.name === 'data-nanquim-paste-scope') return
     const camelKey = attribute.name.slice(5).replace(/-([a-z])/g, (_, character) => character.toUpperCase())
     const value = parseSafeJson(attribute.value, ELEMENT_DATA_METADATA_LIMITS)
     if (value !== null) element.data(camelKey, value)
@@ -639,6 +643,48 @@ function _appendChildren(parent, source) {
   while (source.firstChild) parent.appendChild(source.firstChild)
 }
 
+/**
+ * Reacquire adopted collection nodes through the SVG.js registry that owns the
+ * live editor. The detached staging editor intentionally uses the npm runtime,
+ * while the current browser editor still owns vendored draw/select plugins.
+ * Keeping a staging wrapper after its node moves into the live tree therefore
+ * drops those plugin methods from every subsequent draw command.
+ */
+function adoptLiveCollectionState(editor, stage, requestedActiveCollectionId = null) {
+  const collections = new Map()
+
+  // `editor.drawing.children()` adopts through the same registry as
+  // `editor.svg`; do not carry `stage.collections[*].group` across this boundary.
+  editor.drawing.children().each((liveGroup) => {
+    if (liveGroup.attr('data-collection') !== 'true') return
+    const id = liveGroup.attr('id')
+    const staged = stage.collections.get(id)
+    if (!staged) throw new TypeError(`Prepared collection "${id}" is missing staged state.`)
+    collections.set(id, {
+      ...staged,
+      group: liveGroup,
+      style: { ...staged.style },
+    })
+  })
+
+  if (collections.size !== stage.collections.size) {
+    throw new TypeError('Prepared collection state does not match the adopted drawing.')
+  }
+
+  const stagedActiveId = stage.activeCollection?.attr?.('id') || null
+  const activeCollection = collections.get(requestedActiveCollectionId)?.group
+    || collections.get(stagedActiveId)?.group
+    || collections.values().next().value?.group
+    || null
+  if (!activeCollection) throw new TypeError('The adopted drawing has no active collection.')
+
+  return {
+    activeCollection,
+    collectionIndex: stage.collectionIndex,
+    collections,
+  }
+}
+
 function _snapshotPaper(editor) {
   return {
     infrastructure: Boolean(
@@ -854,8 +900,8 @@ function _invalidateIndex(index) {
 
 function _clearHistory(history) {
   if (!history) return
-  history.undos = []
-  history.redos = []
+  history.undos.length = 0
+  history.redos.length = 0
   history.idCounter = 0
 }
 
@@ -918,7 +964,7 @@ function _commitPreparedDocument(editor, prepared, association = {}) {
   const preparedPaperState = _preparePaperState(editor, prepared.paper)
   let paperAttempted = false
   let paperTransaction = null
-  let nextActiveCollection = stage.activeCollection
+  let nextActiveCollection = null
 
   const commit = () => {
     const liveDefs = editor.svg.defs().node
@@ -930,13 +976,15 @@ function _commitPreparedDocument(editor, prepared, association = {}) {
       old.stagedDefinitions.forEach((node) => liveDefs.appendChild(node))
 
       editor.elementIndex = stage.elementIndex
-      editor.collectionIndex = stage.collectionIndex
-      editor.collections = stage.collections
+      const liveCollectionState = adoptLiveCollectionState(
+        editor,
+        stage,
+        prepared.activeCollectionId,
+      )
+      editor.collectionIndex = liveCollectionState.collectionIndex
+      editor.collections = liveCollectionState.collections
       editor.blockDefinitions = stage.blockDefinitions
-      const requestedActiveCollection = prepared.activeCollectionId
-        ? editor.collections.get(prepared.activeCollectionId)?.group
-        : null
-      nextActiveCollection = requestedActiveCollection || stage.activeCollection
+      nextActiveCollection = liveCollectionState.activeCollection
       editor.activeCollection = nextActiveCollection
 
       if (editor.dimensionManager instanceof DimensionManager && stage.dimensionManager) {
@@ -1231,6 +1279,7 @@ function flattenDXFStylingGroups(editor) {
 }
 
 export {
+  adoptLiveCollectionState,
   DXFLoader,
   MAX_SVG_IMPORT_BYTES,
   MAX_SVG_IMPORT_ELEMENTS,

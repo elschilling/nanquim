@@ -6,6 +6,20 @@ import { DimensionManager } from './DimensionManager'
 import { TextStyleManager } from './TextStyleManager'
 import { DocumentState } from './document/DocumentState'
 
+function dispatchEditorNotification(editor, name, ...args) {
+  const signal = editor.signals?.[name]
+  if (!signal || typeof signal.dispatch !== 'function') return
+  try {
+    signal.dispatch(...args)
+  } catch (error) {
+    try {
+      console.error(`[Editor] ${name} listener failed:`, error)
+    } catch (_reportError) {
+      // UI notification errors must not invalidate a committed document edit.
+    }
+  }
+}
+
 function Editor() {
   const Signal = signals.Signal
 
@@ -55,6 +69,12 @@ function Editor() {
     // final instance update regardless of success or failure.
     geometryNodesEvaluated: new Signal(),
   }
+  this.commandSessionRevision = 0
+  this.signals.documentSessionReset.add(() => {
+    this.commandSessionRevision = this.commandSessionRevision < Number.MAX_SAFE_INTEGER
+      ? this.commandSessionRevision + 1
+      : 1
+  })
   this.history = new _History(this)
   this.canvas = document.getElementById('canvas')
   this.svg = SVG().addTo('#canvas')
@@ -175,7 +195,7 @@ Editor.prototype = {
     // element[0].remove()
     this.spatialIndex.markDirty()
     this.fullSpatialIndex.markDirty()
-    this.signals.updatedOutliner.dispatch()
+    dispatchEditorNotification(this, 'updatedOutliner')
     this.documentState.markChanged('element-added')
   },
 
@@ -184,17 +204,17 @@ Editor.prototype = {
       if (this.paperEditor) {
         this.paperEditor.removeViewport(element._paperVp.id)
       }
-      this.signals.updatedProperties.dispatch()
+      dispatchEditorNotification(this, 'updatedProperties')
       return
     }
 
     // Check if element is in selection and remove it
     if (this.selected.includes(element)) {
       this.selected = this.selected.filter(el => el !== element)
-      this.signals.clearSelection.dispatch()
+      dispatchEditorNotification(this, 'clearSelection')
       // If other elements remain selected, update handlers
       if (this.selected.length > 0) {
-        this.signals.updatedSelection.dispatch()
+        dispatchEditorNotification(this, 'updatedSelection')
       }
     }
 
@@ -202,7 +222,7 @@ Editor.prototype = {
     // element[0].remove()
     this.spatialIndex.markDirty()
     this.fullSpatialIndex.markDirty()
-    this.signals.updatedOutliner.dispatch()
+    dispatchEditorNotification(this, 'updatedOutliner')
     this.documentState.markChanged('element-removed')
   },
 
@@ -218,15 +238,15 @@ Editor.prototype = {
   },
 
   execute: function (cmd) {
-    this.history.execute(cmd)
+    return this.history.execute(cmd)
   },
 
   undo: function () {
-    this.history.undo()
+    return this.history.undo()
   },
 
   redo: function () {
-    this.history.redo()
+    return this.history.redo()
   },
 }
 

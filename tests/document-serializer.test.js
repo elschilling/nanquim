@@ -429,6 +429,21 @@ describe('native document serializer', () => {
     expect(fixture.editor.geometryNodes.serialize).toHaveBeenCalledTimes(2)
   })
 
+  test('canonicalizes Paper annotation attributes independently of live DOM insertion order', () => {
+    const fixture = createEditorFixture()
+    const first = serializeNativeDocument(fixture.editor)
+    const attributes = Array.from(fixture.editor.paperAnnotations.node.attributes).reverse()
+      .map(attribute => ({ name: attribute.name, value: attribute.value }))
+    Array.from(fixture.editor.paperAnnotations.node.attributes).forEach((attribute) => {
+      fixture.editor.paperAnnotations.node.removeAttributeNode(attribute)
+    })
+    attributes.forEach(({ name, value }) => {
+      fixture.editor.paperAnnotations.node.setAttribute(name, value)
+    })
+
+    expect(serializeNativeDocument(fixture.editor)).toBe(first)
+  })
+
   test('fails closed for active commands and state outside loader bounds', () => {
     const { editor } = createEditorFixture()
     editor.isDrawing = true

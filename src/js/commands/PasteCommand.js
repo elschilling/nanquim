@@ -63,6 +63,22 @@ function stripPasteReservedAttributes(root) {
   }
 }
 
+function restorePasteRecords(parent, records) {
+  records
+    .slice()
+    .sort((left, right) => left.index - right.index)
+    .forEach(({ container, index }) => {
+      if (container.parentNode === parent.node) return
+      const reference = index >= 0 ? parent.node.children[index] || null : null
+      parent.node.insertBefore(container, reference)
+    })
+}
+
+function combinedError(error, rollbackErrors, message) {
+  if (rollbackErrors.length === 0) return error
+  return new AggregateError([error, ...rollbackErrors], message)
+}
+
 class PasteCommand extends Command {
   constructor(editor, data) {
     super(editor)
@@ -72,11 +88,13 @@ class PasteCommand extends Command {
     this.pastedElements = []
     this._pasteRecords = []
     this.parent = editor.activeCollection || editor.drawing
+    this.selectionBefore = [...editor.selected]
   }
 
   execute() {
     this.pastedElements = []
     this._pasteRecords = []
+    const startingElementIndex = this.editor.elementIndex
 
     const items = Array.isArray(this.data && this.data.elements)
       ? this.data.elements.slice(0, MAX_CLIPBOARD_ITEMS)
@@ -84,7 +102,9 @@ class PasteCommand extends Command {
     let remainingLength = MAX_CLIPBOARD_SVG_LENGTH
     const elementBudget = { remaining: MAX_CLIPBOARD_SVG_ELEMENTS }
 
-    items.forEach(item => {
+    try {
+      items.forEach(item => {
+      const itemElementIndex = this.editor.elementIndex
       if (!item || typeof item.svg !== 'string' || item.svg.length > remainingLength) return
       remainingLength -= item.svg.length
       const original = item.svg.trim()
@@ -136,16 +156,18 @@ class PasteCommand extends Command {
       // styling earlier/later paste operations while remaining transparent to
       // Nanquim's selection traversal (it is not an explicit data-group).
       const container = document.createElementNS(SVG_NS, 'g')
+      const containerId = String(this.editor.elementIndex++)
+      container.setAttribute('id', containerId)
+      container.setAttribute('name', `G ${containerId}`)
       container.setAttribute('data-nanquim-paste-scope', scopeToken)
-      const record = { container, elements: [] }
+      const record = { container, elements: [], index: -1 }
       const adoptedNodes = candidates.map((rawNode) => document.adoptNode(rawNode))
       adoptedNodes.forEach((node) => container.appendChild(node))
       // SVG.js needs a retained nested <svg> to have a live SVG ancestor while
       // it creates the wrapper instance. Markup is already fully sanitized,
       // scoped and ID-remapped before this insertion.
-      this.parent.node.appendChild(container)
-
       try {
+        this.parent.node.appendChild(container)
         const hydrateTree = (rootElement) => {
           const pending = [rootElement]
           while (pending.length > 0) {
@@ -177,42 +199,82 @@ class PasteCommand extends Command {
         })
       } catch (error) {
         container.remove()
+        this.editor.elementIndex = itemElementIndex
         return
       }
 
+      record.index = Array.from(this.parent.node.children).indexOf(container)
       this.pastedElements.push(...record.elements)
       this._pasteRecords.push(record)
-    })
+      })
+    } catch (error) {
+      this._pasteRecords.forEach(({ container }) => container.remove())
+      this.editor.elementIndex = startingElementIndex
+      this.pastedElements = []
+      this._pasteRecords = []
+      throw error
+    }
 
     if (this.pastedElements.length > 0) {
       this.editor.spatialIndex.markDirty()
-      this.editor.signals.clearSelection.dispatch()
+      this.editor.fullSpatialIndex.markDirty()
+      this.dispatchSignal('clearSelection')
       this.editor.selected = this.pastedElements.slice()
-      this.editor.signals.updatedSelection.dispatch()
-      this.editor.signals.updatedOutliner.dispatch()
-      this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Pasted ${this.pastedElements.length} element(s).` })
+      this.dispatchSignal('updatedSelection')
+      this.dispatchSignal('updatedOutliner')
+      this.dispatchSignal('terminalLogged', { type: 'span', msg: `Pasted ${this.pastedElements.length} element(s).` })
+    } else {
+      this.editor.elementIndex = startingElementIndex
+      if (Object.hasOwn(this, 'id')) {
+        throw new TypeError('Paste did not contain any supported safe SVG elements.')
+      }
     }
   }
 
   undo() {
-    this.pastedElements.forEach(el => this.editor.removeElement(el))
-    this._pasteRecords.forEach(({ container }) => container.remove())
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: 'Undo: Paste removed.' })
+    try {
+      this._pasteRecords.forEach(({ container }) => container.remove())
+    } catch (error) {
+      const rollbackErrors = []
+      try {
+        restorePasteRecords(this.parent, this._pasteRecords)
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      throw combinedError(
+        error,
+        rollbackErrors,
+        `${error.message} Restoring the pasted content also failed.`,
+      )
+    }
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('clearSelection')
+    this.editor.selected = [...this.selectionBefore]
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('terminalLogged', { type: 'span', msg: 'Undo: Paste removed.' })
   }
 
   redo() {
-    this._pasteRecords.forEach(({ container, elements }) => {
-      this.parent.node.appendChild(container)
-      elements.forEach((element) => container.appendChild(element.node))
-    })
+    const attached = []
+    try {
+      this._pasteRecords.forEach(({ container, index }) => {
+        const reference = index >= 0 ? this.parent.node.children[index] || null : null
+        this.parent.node.insertBefore(container, reference)
+        attached.push(container)
+      })
+    } catch (error) {
+      attached.forEach((container) => container.remove())
+      throw error
+    }
     this.editor.spatialIndex.markDirty()
-    this.editor.signals.clearSelection.dispatch()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('clearSelection')
     this.editor.selected = this.pastedElements.slice()
-    this.editor.signals.updatedSelection.dispatch()
-    this.editor.signals.updatedOutliner.dispatch()
-    this.editor.signals.terminalLogged.dispatch({ type: 'span', msg: `Redo: Pasted ${this.pastedElements.length} element(s).` })
+    this.dispatchSignal('updatedSelection')
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('terminalLogged', { type: 'span', msg: `Redo: Pasted ${this.pastedElements.length} element(s).` })
   }
 }
 

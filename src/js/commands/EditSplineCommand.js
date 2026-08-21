@@ -1,5 +1,6 @@
 import { Command } from '../Command'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
 
 /**
  * Undo/Redo command for editing a spline's control points.
@@ -25,6 +26,7 @@ class EditSplineCommand extends Command {
         const d = catmullRomToBezierPath(points)
         this.element.plot(d)
         this.element.data('splineData', { points: points.map(p => ({ x: p.x, y: p.y })) })
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

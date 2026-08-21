@@ -7,6 +7,9 @@ import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLi
 import { EditPolylineCommand } from './EditPolylineCommand'
 import { getDrawableElements } from '../Collection'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
+import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
+
+const TRANSFORMED_EXTEND_DIAGNOSTIC = 'EXTEND does not support transformed targets or boundaries.'
 
 class ExtendCommand extends Command {
     constructor(editor) {
@@ -34,11 +37,18 @@ class ExtendCommand extends Command {
 
         // Check if elements are already pre-selected
         if (this.editor.selected.length > 0) {
-            this.boundaryElements = [...this.editor.selected]
+            this.boundaryElements = this.editor.selected.filter(element => (
+                !hasUnsupportedGeometryTransform(element, this.editor.drawing)
+            ))
+            if (this.boundaryElements.length !== this.editor.selected.length) {
+                this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_EXTEND_DIAGNOSTIC })
+            }
             this.editor.signals.clearSelection.dispatch()
-            this.startExtendingLines()
-            this.editor.signals.requestHoverCheck.dispatch()
-            return
+            if (this.boundaryElements.length > 0) {
+                this.startExtendingLines()
+                this.editor.signals.requestHoverCheck.dispatch()
+                return
+            }
         }
 
         this.editor.signals.terminalLogged.dispatch({
@@ -86,6 +96,11 @@ class ExtendCommand extends Command {
 
     onElementSelected(el) {
         if (!el) return
+        if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+            el.removeClass('elementSelected')
+            this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_EXTEND_DIAGNOSTIC })
+            return
+        }
         if (!this.boundaryElements.includes(el)) {
             this.boundaryElements.push(el)
             el.addClass('elementSelected') // Visually mark as selected
@@ -112,7 +127,10 @@ class ExtendCommand extends Command {
         // Setup hover events for ghosting
         const elements = getDrawableElements(this.editor)
         elements.forEach(el => {
-            if (el.type === 'line' || el.type === 'polyline' || (el.type === 'path' && (el.data('arcData') || el.data('splineData')))) {
+            if (!hasUnsupportedGeometryTransform(el, this.editor.drawing)
+                && (el.type === 'line'
+                    || el.type === 'polyline'
+                    || (el.type === 'path' && (el.data('arcData') || el.data('splineData'))))) {
                 el.node.removeEventListener('mouseover', this.boundOnMouseOver)
                 el.node.removeEventListener('mouseout', this.boundOnMouseOut)
                 el.node.addEventListener('mouseover', this.boundOnMouseOver)
@@ -131,6 +149,7 @@ class ExtendCommand extends Command {
         }
 
         if (!el || !point) return null
+        if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) return null
         if (el.type === 'line') return this.calculateLineExtension(el, point)
         if (el.type === 'path' && el.data('arcData')) return this.calculateArcExtension(el, point)
         if (el.type === 'path' && el.data('splineData')) return this.calculateSplineExtension(el, point)
@@ -179,7 +198,8 @@ class ExtendCommand extends Command {
         }
 
         for (const boundary of candidateBoundaries) {
-            if (boundary === el) continue
+            if (boundary === el
+                || hasUnsupportedGeometryTransform(boundary, this.editor.drawing)) continue
             if (boundary.type === 'line') {
                 const intersect = getLineIntersection(virtualLine, boundary)
                 if (intersect) {
@@ -276,7 +296,8 @@ class ExtendCommand extends Command {
         }
 
         for (const boundary of candidateBoundaries) {
-            if (boundary === el) continue // skip self
+            if (boundary === el
+                || hasUnsupportedGeometryTransform(boundary, this.editor.drawing)) continue
 
             const checkAndAddIntersection = (intersect) => {
                 if (!intersect) return
@@ -430,7 +451,8 @@ class ExtendCommand extends Command {
         }
 
         for (const boundary of candidateBoundaries) {
-            if (boundary.node === el.node) continue
+            if (boundary.node === el.node
+                || hasUnsupportedGeometryTransform(boundary, this.editor.drawing)) continue
             if (boundary.type === 'line') {
                 const bEq = getLineEquation(boundary)
                 getLineCircleIntersections(bEq, circle).forEach(pt => {
@@ -549,7 +571,8 @@ class ExtendCommand extends Command {
         }
 
         for (const boundary of candidateBoundaries) {
-            if (boundary.node === el.node) continue
+            if (boundary.node === el.node
+                || hasUnsupportedGeometryTransform(boundary, this.editor.drawing)) continue
 
             const checkAndAddIntersection = (intersect) => {
                 if (!intersect) return
@@ -626,6 +649,10 @@ class ExtendCommand extends Command {
             (el.type === 'path' && (el.data('arcData') || el.data('splineData')))
         )
         if (!isExtendable) return
+        if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+            this.clearGhost()
+            return
+        }
 
         // Need the mouse point translated to SVG coordinates
         const svgPt = this.editor.svg.point(e.clientX, e.clientY)
@@ -721,6 +748,11 @@ class ExtendCommand extends Command {
                 }
                 return
             }
+            if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
+                this.clearGhost()
+                this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_EXTEND_DIAGNOSTIC })
+                return
+            }
 
             this.clearGhost() // clear hover ghost immediately to avoid it being detected as a boundary
 
@@ -775,7 +807,7 @@ class ExtendCommand extends Command {
             // If this was from rectangle selection (multi-select), ensure state is fully reset
             if (source === 'selectHovered-multi') {
                 // Force a brief delay to allow the UI to update before next interaction
-                setTimeout(() => {
+                this.deferSessionTask(() => {
                     this.editor.signals.requestHoverCheck.dispatch()
                 }, 50)
             }
@@ -798,7 +830,7 @@ class ExtendCommand extends Command {
         this.editor.signals.commandCancelled.remove(this.cleanup, this)
         this.editor.isInteracting = false
         this.editor.suppressPolarTracking = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
         this.isExtending = false
@@ -823,4 +855,4 @@ function extendCommand(editor) {
     extendCmd.execute()
 }
 
-export { extendCommand }
+export { extendCommand, ExtendCommand }

@@ -1,6 +1,16 @@
 import { Command } from '../Command'
 import { Matrix } from '@svgdotjs/svg.js'
-import { bakeTransforms } from '../utils/transformGeometry'
+import {
+  hasOwnGeometryTransform,
+  hasUnsupportedAncestorTransform,
+} from '../utils/geometryTransformQualification'
+
+const TRANSFORMED_ROTATE_DIAGNOSTIC = 'ROTATE does not support transformed primitive geometry or geometry inside transformed groups.'
+
+function hasUnsupportedRotateTransform(element, drawing) {
+  if (hasUnsupportedAncestorTransform(element, drawing)) return true
+  return !['g', 'use'].includes(element.type) && hasOwnGeometryTransform(element)
+}
 
 class RotateCommand extends Command {
   constructor(editor) {
@@ -9,15 +19,22 @@ class RotateCommand extends Command {
     this.name = 'Rotate'
     // Store bound function reference for proper cleanup
     this.boundOnKeyDown = this.onKeyDown.bind(this)
+    this.interactiveExecutionDone = false
+    this.elementReplacements = []
   }
 
   execute() {
+    if (this.interactiveExecutionDone) {
+      this.performRotation()
+      return
+    }
     if (this.editor.mode === 'paper') {
       this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
       this.editor.signals.terminalLogged.dispatch({ type: 'error', msg: 'Command not available in Paper Space.' })
       return
     }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
     if (this.editor.selected.length > 0) {
       this.editor.suppressHandlers = true
       this.editor.handlers.clear()
@@ -33,7 +50,6 @@ class RotateCommand extends Command {
     // Use the stored bound reference
     document.addEventListener('keydown', this.boundOnKeyDown)
     this.editor.suppressHandlers = true
-    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {
@@ -51,6 +67,16 @@ class RotateCommand extends Command {
     this.selectedElements = this.editor.selected.slice() // Create a copy
     if (this.selectedElements.length === 0) {
       this.editor.signals.terminalLogged.dispatch({ msg: 'No elements selected. Command cancelled.' })
+      this.cleanup()
+      return
+    }
+    if (this.selectedElements.some((element) => (
+      hasUnsupportedRotateTransform(element, this.editor.drawing)
+    ))) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: TRANSFORMED_ROTATE_DIAGNOSTIC,
+        type: 'error',
+      })
       this.cleanup()
       return
     }
@@ -77,14 +103,11 @@ class RotateCommand extends Command {
 
   onAngleInput() {
     this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
-    if (this.editor.distance) {
+    if (Number.isFinite(this.editor.distance)) {
       this.angle = this.editor.distance
       this.angleRad = this.angle * (Math.PI / 180)
       this.editor.distance = null
-      this.performRotation()
-      this.editor.execute(this)
-      this.editor.lastCommand = this
-      this.cleanup()
+      this.commitRotation()
     }
   }
 
@@ -100,7 +123,6 @@ class RotateCommand extends Command {
   }
 
   onTargetPoint(point) {
-    this.cleanup()
     this.targetPoint = point
     this.editor.signals.terminalLogged.dispatch({
       msg: `Target point: ${this.targetPoint.x.toFixed(2)}, ${this.targetPoint.y.toFixed(2)}`,
@@ -122,58 +144,90 @@ class RotateCommand extends Command {
       msg: `Rotation angle: ${this.angle.toFixed(2)}°`,
     })
 
-    this.performRotation()
-    this.editor.signals.terminalLogged.dispatch({ msg: `Elements rotated by ${this.angle.toFixed(2)} degrees.` })
-
-    // Set up for undo/redo system
-    this.editor.execute(this)
-    this.editor.lastCommand = this
-    this.cleanup()
+    this.commitRotation()
   }
 
-  performRotation() {
-    const newSelectedElements = []
+  commitRotation() {
+    if (!Number.isFinite(this.angleRad) || !this.centerPoint) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Enter a valid rotation angle.', type: 'error' })
+      this.cleanup()
+      return
+    }
 
-    this.selectedElements.forEach((element, index) => {
-      // Check if element is still valid
-      if (!element || !element.type) {
-        newSelectedElements.push(element)
-        return
-      }
+    this.cleanup()
+    this.interactiveExecutionDone = true
+    this.editor.execute(this)
+    this.dispatchSignal('terminalLogged', { msg: `Elements rotated by ${this.angle.toFixed(2)} degrees.` })
+  }
 
-      // Use the original coordinates stored at selection time
-      const originalCoords = this.originalCoordinates[index]
-      if (!originalCoords) {
-        newSelectedElements.push(element)
-        return
-      }
+  performRotation({ updateSelection = true } = {}) {
+    const workingElements = this.selectedElements.slice()
 
-      if (element._paperVp) {
-        this.editor.signals.terminalLogged.dispatch({ msg: 'Viewports cannot be rotated.', type: 'error' })
-        newSelectedElements.push(element)
-        return
-      }
-
-      if (element.type === 'line') {
-      }
-
-      try {
-        const newElement = this.rotateElementFromOriginal(element, originalCoords, this.angleRad, this.centerPoint)
-        newSelectedElements.push(newElement)
-
-        if (newElement.type === 'line') {
+    try {
+      workingElements.forEach((element, index) => {
+        if (!element || !element.type) {
+          return
         }
-      } catch (error) {
-        console.error(`Error rotating element ${index}:`, error)
-        newSelectedElements.push(element)
-        // Continue with other elements
+
+        const originalCoords = this.originalCoordinates[index]
+        if (!originalCoords) {
+          return
+        }
+
+        if (element._paperVp) {
+          this.editor.signals.terminalLogged.dispatch({ msg: 'Viewports cannot be rotated.', type: 'error' })
+          return
+        }
+
+        if (originalCoords.type === 'rect' && this.elementReplacements[index]) {
+          workingElements[index] = this.activateReplacement(index)
+          return
+        }
+
+        try {
+          const transformedElement = this.rotateElementFromOriginal(
+            element,
+            originalCoords,
+            this.angleRad,
+            this.centerPoint,
+          )
+          workingElements[index] = transformedElement
+          if (originalCoords.type === 'rect' && transformedElement !== element) {
+            const originalState = this.originalStates[index]
+            this.elementReplacements[index] = {
+              nextSibling: originalState.nextSibling,
+              original: element,
+              parent: originalState.parent,
+              transformed: transformedElement,
+            }
+          }
+        } catch (error) {
+          throw new Error(`Unable to rotate element ${index + 1}.`, { cause: error })
+        }
+      })
+    } catch (error) {
+      this.selectedElements = workingElements
+      try {
+        this.restoreOriginalStates()
+      } catch (rollbackError) {
+        this.invalidateGeometry()
+        throw new AggregateError(
+          [error, rollbackError],
+          'Rotation failed and its original geometry could not be fully restored.',
+          { cause: error },
+        )
       }
-    })
+      this.invalidateGeometry()
+      throw error
+    }
 
-    this.selectedElements = newSelectedElements
+    this.selectedElements = workingElements
 
-    this.editor.signals.clearSelection.dispatch()
-    this.editor.selected = []
+    if (updateSelection) {
+      this.dispatchSignal('clearSelection')
+      this.editor.selected = []
+    }
+    this.invalidateGeometry()
   }
 
   getElementCoordinates(element) {
@@ -335,8 +389,12 @@ class RotateCommand extends Command {
 
       try {
         // Replace rectangle with polygon
+        const nextSibling = element.node.nextSibling
         const polygon = parent.polygon(polygonPoints)
         polygon.attr(element.attr()) // Copy attributes
+        if (nextSibling?.parentNode === parent.node) {
+          parent.node.insertBefore(polygon.node, nextSibling)
+        }
         element.remove() // Remove original rectangle
 
         // Update reference to the new polygon
@@ -355,8 +413,6 @@ class RotateCommand extends Command {
       // Matches the ghost preview path (transform → rotate) exactly
       element.transform(originalCoords.transform)
       element.rotate(this.angle, centerPoint.x, centerPoint.y)
-      this.editor.spatialIndex.markDirty()
-      this.editor.fullSpatialIndex.markDirty()
     } else if (originalCoords.type === 'text' || originalCoords.type === 'g') {
       // Use pure Matrix transformation for text and block groups to avoid coordinate lock bugs
       const matrix = new Matrix(originalCoords.transform)
@@ -486,11 +542,20 @@ class RotateCommand extends Command {
   }
 
   getElementState(element) {
+    const data = {
+      arcData: element.data('arcData'),
+      circleTrimData: element.data('circleTrimData'),
+      splineData: element.data('splineData'),
+      transformAttribute: element.attr('transform'),
+      parent: element.parent(),
+      nextSibling: element.node.nextSibling,
+    }
     // Store the current state for undo - need to capture actual coordinates
     if (element.type === 'line' || element.type === 'polyline' || element.type === 'polygon') {
       return {
         type: 'points',
         points: element.array().map((point) => [...point]), // Deep copy
+        ...data,
       }
     } else if (element.type === 'circle') {
       return {
@@ -498,6 +563,7 @@ class RotateCommand extends Command {
         cx: element.cx(),
         cy: element.cy(),
         radius: element.radius ? element.radius() : element.attr('r'), // Try both methods
+        ...data,
       }
     } else if (element.type === 'ellipse') {
       return {
@@ -506,6 +572,7 @@ class RotateCommand extends Command {
         cy: element.cy(),
         rx: element.rx ? element.rx() : element.attr('rx'),
         ry: element.ry ? element.ry() : element.attr('ry'),
+        ...data,
       }
     } else if (element.type === 'rect') {
       return {
@@ -515,21 +582,25 @@ class RotateCommand extends Command {
         width: element.width(),
         height: element.height(),
         attrs: { ...element.attr() }, // Copy all attributes
+        ...data,
       }
     } else if (element.type === 'use') {
       return {
         type: 'use',
         transform: element.transform(),
+        ...data,
       }
     } else if (element.type === 'text' || element.type === 'g') {
       return {
         type: element.type,
         transform: element.transform(),
+        ...data,
       }
     } else if (element.type === 'path') {
       return {
         type: 'path',
         d: element.attr('d'),
+        ...data,
       }
     } else {
       return {
@@ -537,23 +608,50 @@ class RotateCommand extends Command {
         x: element.x ? element.x() : 0,
         y: element.y ? element.y() : 0,
         transform: element.transform ? element.transform() : null,
+        ...data,
       }
     }
   }
 
   cleanup() {
     document.removeEventListener('keydown', this.boundOnKeyDown)
+    this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    this.editor.signals.pointCaptured.remove(this.onCenterPoint, this)
+    this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
+    this.editor.signals.pointCaptured.remove(this.onTargetPoint, this)
+    this.editor.signals.inputValue.remove(this.onAngleInput, this)
     this.editor.isInteracting = false
     this.editor.suppressHandlers = false
-    setTimeout(() => {
+    this.deferSessionTask(() => {
       this.editor.selectSingleElement = false
     }, 10)
     this.editor.signals.rotateGhostingStopped.dispatch()
   }
 
   undo() {
-    this.selectedElements.forEach((element, index) => {
+    try {
+      this.restoreOriginalStates()
+    } catch (error) {
+      try {
+        this.performRotation({ updateSelection: false })
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          'Rotation Undo failed and the applied geometry could not be fully restored.',
+          { cause: error },
+        )
+      }
+      throw error
+    }
+    this.invalidateGeometry()
+    this.dispatchSignal('terminalLogged', { msg: 'Undo: Rotation reversed.' })
+  }
+
+  restoreOriginalStates() {
+    for (let index = this.selectedElements.length - 1; index >= 0; index -= 1) {
+      const element = this.selectedElements[index]
       const originalState = this.originalStates[index]
+      let restoredElement = element
 
       if (originalState.type === 'points') {
         element.plot(originalState.points)
@@ -562,26 +660,16 @@ class RotateCommand extends Command {
       } else if (originalState.type === 'ellipse') {
         element.center(originalState.cx, originalState.cy)
       } else if (originalState.type === 'rect') {
-        // If rect was converted to polygon, we need special handling
-        if (element.type === 'polygon') {
-          // Create new rectangle and replace polygon
-          const rect = element.parent().rect(originalState.width, originalState.height)
-          rect.move(originalState.x, originalState.y)
-          rect.attr(originalState.attrs)
-          element.remove()
-
-          // Update reference
-          const elementIndex = this.selectedElements.indexOf(element)
-          if (elementIndex !== -1) {
-            this.selectedElements[elementIndex] = rect
-          }
+        if (this.elementReplacements[index]) {
+          restoredElement = this.restoreReplacement(index)
         } else {
           element.move(originalState.x, originalState.y)
         }
+        restoredElement.move(originalState.x, originalState.y)
+        restoredElement.size(originalState.width, originalState.height)
+        restoredElement.attr(originalState.attrs)
       } else if (originalState.type === 'use') {
         element.transform(originalState.transform)
-        this.editor.spatialIndex.markDirty()
-        this.editor.fullSpatialIndex.markDirty()
       } else if (originalState.type === 'text' || originalState.type === 'g') {
         const matrix = originalState.transform
         element.transform(matrix)
@@ -595,13 +683,65 @@ class RotateCommand extends Command {
           element.transform(originalState.transform)
         }
       }
-    })
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Rotation reversed.' })
+
+      if (originalState.arcData) restoredElement.data('arcData', originalState.arcData)
+      if (originalState.circleTrimData) restoredElement.data('circleTrimData', originalState.circleTrimData)
+      if (originalState.splineData) restoredElement.data('splineData', originalState.splineData)
+      if (originalState.transformAttribute == null) {
+        restoredElement.node.removeAttribute('transform')
+      } else {
+        restoredElement.attr('transform', originalState.transformAttribute)
+      }
+      const reference = originalState.nextSibling?.parentNode === originalState.parent?.node
+        ? originalState.nextSibling
+        : null
+      if (originalState.parent) {
+        originalState.parent.node.insertBefore(restoredElement.node, reference)
+      }
+    }
+  }
+
+  activateReplacement(index) {
+    const replacement = this.elementReplacements[index]
+    const { original, parent, transformed } = replacement
+    if (original.node.parentNode === parent.node) {
+      parent.node.insertBefore(transformed.node, original.node)
+      original.remove()
+    } else {
+      const reference = replacement.nextSibling?.parentNode === parent.node
+        ? replacement.nextSibling
+        : null
+      parent.node.insertBefore(transformed.node, reference)
+    }
+    return transformed
+  }
+
+  restoreReplacement(index) {
+    const replacement = this.elementReplacements[index]
+    const { original, parent, transformed } = replacement
+    if (transformed.node.parentNode === parent.node) {
+      parent.node.insertBefore(original.node, transformed.node)
+      transformed.remove()
+    } else if (original.node.parentNode !== parent.node) {
+      const reference = replacement.nextSibling?.parentNode === parent.node
+        ? replacement.nextSibling
+        : null
+      parent.node.insertBefore(original.node, reference)
+    }
+    this.selectedElements[index] = original
+    return original
   }
 
   redo() {
     this.performRotation()
-    this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Rotation reapplied.' })
+    this.dispatchSignal('terminalLogged', { msg: 'Redo: Rotation reapplied.' })
+  }
+
+  invalidateGeometry() {
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('updatedProperties')
+    this.dispatchSignal('updatedOutliner')
   }
 }
 
@@ -610,4 +750,4 @@ function rotateCommand(editor) {
   rotateCommand.execute()
 }
 
-export { rotateCommand }
+export { rotateCommand, RotateCommand }

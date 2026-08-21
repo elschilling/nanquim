@@ -372,6 +372,9 @@ function PaperEditor(editor) {
       style: saved ? { ...saved.style } : _annotationStyleFromGroup(),
       collapsed: saved ? saved.collapsed : existing?.collapsed === true,
     }
+    annotationsGroup.attr('data-locked', data.locked ? 'true' : 'false')
+    if (data.visible) annotationsGroup.show()
+    else annotationsGroup.hide()
     editor.collections.set(PAPER_ANNOTATIONS_ID, data)
     annotationCollectionState = {
       visible: data.visible,
@@ -556,13 +559,49 @@ function PaperEditor(editor) {
   }
 
   function _appendViewport(state) {
+    const previousCounter = viewportCounter
     const id = state.id || _nextViewportId()
     if (viewports.some(viewport => viewport.id === id)) {
       throw new TypeError(`Paper viewport id "${id}" is duplicated.`)
     }
     _rememberViewportId(id)
+    const hadDefinitions = Array.from(paperSvg.node.children)
+      .some(node => node.localName === 'defs')
+    const definitions = paperSvg.defs()
+    const snapshots = [viewportsGroup.node, definitions.node, paperSvg.node]
+      .map((parent) => ({ parent, children: new Set(Array.from(parent.children)) }))
 
-    const vp = new PaperViewport(editor, viewportsGroup, { ...state, id })
+    let vp
+    try {
+      vp = new PaperViewport(editor, viewportsGroup, { ...state, id })
+    } catch (error) {
+      const cleanupErrors = []
+      snapshots.forEach(({ children, parent }) => {
+        Array.from(parent.children).forEach((node) => {
+          if (children.has(node)) return
+          try {
+            node.remove()
+          } catch (cleanupError) {
+            cleanupErrors.push(cleanupError)
+          }
+        })
+      })
+      if (!hadDefinitions && definitions.node.childElementCount === 0) {
+        try {
+          definitions.remove()
+        } catch (cleanupError) {
+          cleanupErrors.push(cleanupError)
+        }
+      }
+      viewportCounter = previousCounter
+      if (cleanupErrors.length > 0) {
+        throw new AggregateError(
+          [error, ...cleanupErrors],
+          `${error.message} Cleaning up the incomplete Paper viewport also failed.`,
+        )
+      }
+      throw error
+    }
     viewports.push(vp)
     editor.paperViewports = viewports
     return vp
@@ -580,8 +619,16 @@ function PaperEditor(editor) {
   }
 
   function _notifyViewportChange() {
-    signals.paperViewportsChanged.dispatch()
-    signals.updatedOutliner.dispatch()
+    try {
+      signals.paperViewportsChanged.dispatch()
+    } catch (error) {
+      try { console.error('[PaperEditor] A viewport listener failed:', error) } catch (_reportError) {}
+    }
+    try {
+      signals.updatedOutliner.dispatch()
+    } catch (error) {
+      try { console.error('[PaperEditor] An outliner listener failed:', error) } catch (_reportError) {}
+    }
   }
 
   function createViewport(x, y, w, h, scale = 100, options = {}) {

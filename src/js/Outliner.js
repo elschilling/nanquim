@@ -8,6 +8,7 @@ import {
   toggleElementLock,
 } from './Collection'
 import { getPreferences } from './Preferences'
+import { MoveCommand } from './commands/MoveCommand'
 import { pointOnEllipse } from './utils/ellipseArcUtils'
 
 const drawingTree = document.getElementById('drawing-tree')
@@ -154,6 +155,7 @@ function Outliner(editor) {
       // Click: select the viewport to show its properties
       vpLeft.addEventListener('click', (e) => {
         e.stopPropagation()
+        if (vp.locked || vp.visible === false) return
         editor.selected = [{ _paperVp: vp }]
         editor.signals.updatedProperties.dispatch()
       })
@@ -190,6 +192,8 @@ function Outliner(editor) {
     const collectionLi = document.createElement('li')
     collectionLi.className = 'collection-row'
     if (editor.activeCollection === data.group) collectionLi.classList.add('collection-active')
+    if (!data.visible) collectionLi.classList.add('collection-hidden-row')
+    if (data.locked) collectionLi.classList.add('collection-locked-row')
 
     const leftSide = document.createElement('div')
     leftSide.style.cssText = 'display:flex;align-items:center;flex:1;'
@@ -219,6 +223,41 @@ function Outliner(editor) {
     leftSide.appendChild(folderIcon)
     leftSide.appendChild(nameSpan)
     collectionLi.appendChild(leftSide)
+
+    const iconsDiv = document.createElement('div')
+    iconsDiv.className = 'collection-icons'
+
+    const eyeIcon = document.createElement('button')
+    eyeIcon.type = 'button'
+    eyeIcon.className = 'icon collection-icon icon-restrict-screen'
+    if (!data.visible) eyeIcon.classList.add('icon-off')
+    eyeIcon.title = data.visible ? 'Hide annotations' : 'Show annotations'
+    eyeIcon.setAttribute('aria-label', eyeIcon.title)
+    eyeIcon.setAttribute('data-paper-annotations-action', 'visibility')
+
+    const toggleAnnotationsVisibility = (event) => {
+      event.stopPropagation()
+      toggleVisibility(editor, 'paper-annotations')
+    }
+    eyeIcon.addEventListener('click', toggleAnnotationsVisibility)
+    iconsDiv.appendChild(eyeIcon)
+
+    const lockIcon = document.createElement('button')
+    lockIcon.type = 'button'
+    lockIcon.className = 'icon collection-icon icon-restrict-edit-mode'
+    lockIcon.classList.add(data.locked ? 'icon-on' : 'icon-off')
+    lockIcon.title = data.locked ? 'Unlock annotations' : 'Lock annotations'
+    lockIcon.setAttribute('aria-label', lockIcon.title)
+    lockIcon.setAttribute('data-paper-annotations-action', 'lock')
+
+    const toggleAnnotationsLock = (event) => {
+      event.stopPropagation()
+      toggleLock(editor, 'paper-annotations')
+    }
+    lockIcon.addEventListener('click', toggleAnnotationsLock)
+    iconsDiv.appendChild(lockIcon)
+
+    collectionLi.appendChild(iconsDiv)
     collectionUl.appendChild(collectionLi)
 
     // Container for children
@@ -790,15 +829,13 @@ function Outliner(editor) {
           .addClass('selection-handler')
           .mousedown((e) => {
             e.stopPropagation()
-            import('./commands/MoveCommand.js').then(({ MoveCommand }) => {
-              const cmd = new MoveCommand(editor)
-              cmd.execute()
-              // execute() registered pointCaptured.addOnce(onBasePoint) — remove it
-              // before calling onBasePoint directly so it doesn't fire a second time
-              editor.signals.pointCaptured.remove(cmd.onBasePoint, cmd)
-              editor.signals.coordinateInput.remove(cmd.boundOnBaseCoordinateInput, cmd)
-              cmd.onBasePoint(pt)
-            })
+            const cmd = new MoveCommand(editor)
+            cmd.execute()
+            // execute() registered pointCaptured.addOnce(onBasePoint) — remove it
+            // before calling onBasePoint directly so it doesn't fire a second time
+            editor.signals.pointCaptured.remove(cmd.onBasePoint, cmd)
+            editor.signals.coordinateInput.remove(cmd.boundOnBaseCoordinateInput, cmd)
+            cmd.onBasePoint(pt)
           })
         return
       }

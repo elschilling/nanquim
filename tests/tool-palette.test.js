@@ -35,9 +35,11 @@ function createEditor() {
     lastCommand: null,
     documentState: { revision: 7, dirty: false },
     history: { undos: [], redos: [] },
+    mode: 'model',
     signals: {
       commandCancelled: createSignal(),
       documentSessionReset: createSignal(),
+      editorModeChanged: createSignal(),
       terminalLogged: createSignal(),
     },
   }
@@ -148,6 +150,29 @@ describe('registry-driven command tool palette', () => {
     expect(resizer.getAttribute('aria-valuetext')).toBe(
       `${TOOL_PALETTE_LABEL_THRESHOLD} pixels, icons and tool names`,
     )
+  })
+
+  test('disables commands outside the active Model or Paper contract', () => {
+    paletteController = new ToolPalette(editor)
+    const button = (name) => document.querySelector(`[data-command="${name}"]`)
+
+    expect(button('BLOCK').disabled).toBe(false)
+    expect(button('VIEWPORT').disabled).toBe(true)
+    expect(button('VIEWPORT').getAttribute('aria-disabled')).toBe('true')
+    expect(button('VIEWPORT').title).toContain('unavailable in Model Space')
+
+    editor.mode = 'paper'
+    editor.signals.editorModeChanged.dispatch('paper')
+
+    expect(button('VIEWPORT').disabled).toBe(false)
+    expect(button('LINE').disabled).toBe(false)
+    expect(button('BLOCK').disabled).toBe(true)
+    expect(button('BLOCK').title).toContain('unavailable in Paper Space')
+
+    editor.mode = 'model'
+    editor.signals.editorModeChanged.dispatch('model')
+    expect(button('BLOCK').disabled).toBe(false)
+    expect(button('BLOCK').title).not.toContain('unavailable')
   })
 
   test('is wired into the real canvas layout, composition root, styles, and shortcut docs', async () => {

@@ -12,9 +12,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "pnpm test:browser:chromium",
+    "test:browser:chromium": "pnpm build && node scripts/browser/run-workflows.mjs --browser=chromium",
+    "test:browser:firefox": "pnpm build && node scripts/browser/run-workflows.mjs --browser=firefox",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.11",
     "@vue/language-plugin-pug": "^1.8.27",
     "jsdom": "^30.0.1",
     "puppeteer-core": "^25.8.0",

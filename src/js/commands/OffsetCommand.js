@@ -1,6 +1,20 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
-import { applyOffsetToElement, computeOffsetVector } from '../utils/offsetCalc'
+import {
+  applyOffsetToElement,
+  computeOffsetVector,
+  getOffsetResultIssue,
+  getOffsetSupportIssue,
+} from '../utils/offsetCalc'
+
+const OFFSET_DIAGNOSTICS = {
+  'invalid-geometry': 'OFFSET requires finite, non-degenerate geometry.',
+  'inward-distance': 'OFFSET distance is too large for a valid inward result.',
+  'outside-drawing': 'OFFSET can only modify geometry in the active drawing.',
+  'rounded-rectangle': 'OFFSET does not yet support rounded rectangles.',
+  transformed: 'OFFSET does not support transformed geometry or geometry inside transformed groups.',
+  'unsupported-type': 'OFFSET supports only lines, circles, and square-corner rectangles.',
+}
 
 class OffsetCommand extends Command {
   constructor(editor) {
@@ -53,8 +67,16 @@ class OffsetCommand extends Command {
   }
 
   onElementSelected(el) {
-    if (!el) return
+    if (!el) {
+      this.startSelection()
+      return
+    }
     this.selectedElement = el
+    const supportIssue = getOffsetSupportIssue(el, this.editor.drawing)
+    if (supportIssue) {
+      this.rejectSelectedElement(supportIssue)
+      return
+    }
 
     // Start ghosting in viewport with fixed distance
     this.editor.signals.offsetGhostingStarted.dispatch([this.selectedElement], this.distance)
@@ -68,7 +90,16 @@ class OffsetCommand extends Command {
   onConfirmPoint(point) {
     if (!this.selectedElement) return this.cleanup()
 
+    const supportIssue = getOffsetSupportIssue(this.selectedElement, this.editor.drawing)
+      || getOffsetResultIssue(this.selectedElement, point, this.distance)
+    if (supportIssue) {
+      this.rejectSelectedElement(supportIssue, { stopGhosting: true })
+      return
+    }
+
     const clone = this.selectedElement.clone()
+    const parent = this.selectedElement.parent() || this.editor.activeCollection
+    clone.attr('id', null)
 
     // Remove interactive classes so the new element isn't highlighted or selected
     clone.removeClass('elementHover')
@@ -84,48 +115,45 @@ class OffsetCommand extends Command {
       clone.children().each(child => stripClasses(child))
     }
 
-    clone.putIn(this.selectedElement.parent() || this.editor.activeCollection)
-
-    // For circles/rects, resize instead of translate
-    if (this.selectedElement.type === 'circle') {
-      const cx = this.selectedElement.cx()
-      const cy = this.selectedElement.cy()
-      const r = this.selectedElement.radius ? this.selectedElement.radius() : this.selectedElement.attr('r')
-      const dx = point.x - cx
-      const dy = point.y - cy
-      const dist = Math.hypot(dx, dy)
-      const inward = dist < (typeof r === 'number' ? r : parseFloat(r))
-      const newR = Math.max(0, (typeof r === 'number' ? r : parseFloat(r)) + (inward ? -this.distance : this.distance))
-      clone.center(cx, cy)
-      if (clone.radius) clone.radius(newR)
-      else clone.attr('r', newR)
-    } else if (this.selectedElement.type === 'rect') {
-      const x = this.selectedElement.x()
-      const y = this.selectedElement.y()
-      const w = this.selectedElement.width()
-      const h = this.selectedElement.height()
-      const cx = x + w / 2
-      const cy = y + h / 2
-      const inside = point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h
-      const delta = inside ? -this.distance : this.distance
-      const newW = Math.max(0, w + 2 * delta)
-      const newH = Math.max(0, h + 2 * delta)
-      const newX = cx - newW / 2
-      const newY = cy - newH / 2
-      clone.size(newW, newH)
-      clone.move(newX, newY)
-    } else {
-      // Compute offset direction relative to the selected element and click position
-      const { dx, dy } = computeOffsetVector(this.selectedElement, point, this.distance)
-      try {
+    try {
+      // For circles/rects, resize instead of translate
+      if (this.selectedElement.type === 'circle') {
+        const cx = this.selectedElement.cx()
+        const cy = this.selectedElement.cy()
+        const radius = this.selectedElement.radius
+          ? this.selectedElement.radius()
+          : Number(this.selectedElement.attr('r'))
+        const inward = Math.hypot(point.x - cx, point.y - cy) < radius
+        const newRadius = radius + (inward ? -this.distance : this.distance)
+        clone.center(cx, cy)
+        if (clone.radius) clone.radius(newRadius)
+        else clone.attr('r', newRadius)
+      } else if (this.selectedElement.type === 'rect') {
+        const x = this.selectedElement.x()
+        const y = this.selectedElement.y()
+        const width = this.selectedElement.width()
+        const height = this.selectedElement.height()
+        const centerX = x + width / 2
+        const centerY = y + height / 2
+        const inside = point.x >= x && point.x <= x + width
+          && point.y >= y && point.y <= y + height
+        const delta = inside ? -this.distance : this.distance
+        const newWidth = width + 2 * delta
+        const newHeight = height + 2 * delta
+        clone.size(newWidth, newHeight)
+        clone.move(centerX - newWidth / 2, centerY - newHeight / 2)
+      } else {
+        const { dx, dy } = computeOffsetVector(this.selectedElement, point, this.distance)
         applyOffsetToElement(clone, dx, dy)
-      } catch (e) {
-        const t = clone.transform ? clone.transform() : {}
-        if (clone.transform) clone.transform(t).translate(dx, dy)
       }
+    } catch (_error) {
+      clone.remove()
+      this.rejectSelectedElement('invalid-geometry', { stopGhosting: true })
+      return
     }
-    // Assign id/name
-    clone.attr('id', this.editor.elementIndex++)
+
+    // Preserve the semantic name; AddElementCommand assigns the persistent ID
+    // transactionally when History performs the first attachment.
     if (this.selectedElement.attr && this.selectedElement.attr('name')) {
       clone.attr('name', this.selectedElement.attr('name'))
     }
@@ -136,13 +164,27 @@ class OffsetCommand extends Command {
     this.clearInteractionStyles(this.selectedElement)
 
     // Record into history for undo/redo
-    this.editor.execute(new AddElementCommand(this.editor, clone))
-    this.editor.signals.updatedOutliner.dispatch()
+    try {
+      this.editor.execute(new AddElementCommand(this.editor, clone, parent))
+    } catch (error) {
+      this.cleanup()
+      throw error
+    }
 
     this.editor.signals.terminalLogged.dispatch({ msg: `Created offset element. Select next element or press Esc to finish.` })
 
     // Continue: loop back to element selection with the same distance
     this.selectedElement = null
+    this.startSelection()
+  }
+
+  rejectSelectedElement(issue, { stopGhosting = false } = {}) {
+    if (stopGhosting) this.editor.signals.offsetGhostingStopped.dispatch()
+    this.clearInteractionStyles(this.selectedElement)
+    this.selectedElement = null
+    this.editor.signals.terminalLogged.dispatch({
+      msg: OFFSET_DIAGNOSTICS[issue] || OFFSET_DIAGNOSTICS['invalid-geometry'],
+    })
     this.startSelection()
   }
 
@@ -160,9 +202,10 @@ class OffsetCommand extends Command {
     this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
     this.editor.signals.pointCaptured.remove(this.boundOnConfirmPoint)
     this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    this.editor.signals.offsetGhostingStopped.dispatch()
     this.clearInteractionStyles(this.selectedElement)
     this.editor.isInteracting = false
-    setTimeout(() => {
+    this.deferSessionTask(() => {
       this.editor.selectSingleElement = false
     }, 10)
     this.editor.distance = null
@@ -187,4 +230,4 @@ function offsetCommand(editor) {
   offsetCmd.execute()
 }
 
-export { offsetCommand }
+export { offsetCommand, OffsetCommand }

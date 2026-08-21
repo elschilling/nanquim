@@ -1,4 +1,5 @@
 import { Command } from '../Command.js'
+import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes.js'
 
 class EditEllipseCommand extends Command {
     constructor(editor, element, oldValues, newValues) {
@@ -11,13 +12,17 @@ class EditEllipseCommand extends Command {
     }
 
     execute() {
-        this.element.center(this.newValues.cx, this.newValues.cy)
-        this.element.attr({ rx: this.newValues.rx, ry: this.newValues.ry })
+        this.applyValues(this.newValues)
     }
 
     undo() {
-        this.element.center(this.oldValues.cx, this.oldValues.cy)
-        this.element.attr({ rx: this.oldValues.rx, ry: this.oldValues.ry })
+        this.applyValues(this.oldValues)
+    }
+
+    applyValues(values) {
+        this.element.center(values.cx, values.cy)
+        this.element.attr({ rx: values.rx, ry: values.ry })
+        invalidateSpatialIndexes(this.editor)
     }
 }
 

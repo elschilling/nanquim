@@ -179,7 +179,6 @@ class AlignedDimensionCommand extends Command {
         dimGroup.attr('data-dim-data', JSON.stringify(paramData))
         
         // ID & Name
-        dimGroup.attr('id', this.editor.elementIndex++)
         dimGroup.attr('name', 'Aligned Dimension')
         
         LinearDimensionCommand.renderDimensionGraphics(
@@ -194,8 +193,7 @@ class AlignedDimensionCommand extends Command {
 
         applyCollectionStyleToElement(this.editor, dimGroup)
 
-        this.editor.history.undos.push(new AddElementCommand(this.editor, dimGroup))
-        this.editor.lastCommand = this
+        this.editor.execute(new AddElementCommand(this.editor, dimGroup))
         this.updatedOutliner()
 
         this.editor.signals.terminalLogged.dispatch({ msg: `Aligned dimension created.` })
@@ -219,7 +217,7 @@ class AlignedDimensionCommand extends Command {
         if (this.boundOnCancelled) this.editor.signals.commandCancelled.remove(this.boundOnCancelled)
 
         this.editor.isInteracting = false
-        setTimeout(() => {
+        this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
     }

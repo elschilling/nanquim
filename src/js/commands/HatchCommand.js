@@ -1,171 +1,273 @@
 import { Command } from '../Command'
-import { findEnclosingBoundary, boundaryToPathD, extractSegments, findIslands } from '../utils/boundaryDetection'
-import { applyCollectionStyleToElement } from '../Collection'
-import { ensurePattern, HATCH_PATTERNS } from '../utils/hatchPatterns'
+import {
+  boundaryToPathD,
+  extractSegments,
+  findEnclosingBoundary,
+  findIslands,
+} from '../utils/boundaryDetection'
+import {
+  HATCH_TRANSFORM_DIAGNOSTIC,
+  qualifyHatchGeometry,
+  transformedGeometryContainsPoint,
+  transformedGeometryIntersectsBoundary,
+} from '../utils/hatchTransformQualification'
+import { ensurePattern, getPatternId, HATCH_PATTERNS } from '../utils/hatchPatterns'
+
+function childIndex(element) {
+  const parent = element.parent()
+  return parent ? Array.from(parent.node.children).indexOf(element.node) : -1
+}
+
+function insertAt(parent, element, index) {
+  const reference = index >= 0 ? parent.node.children[index] || null : null
+  parent.node.insertBefore(element.node, reference)
+}
+
+function combinedError(error, rollbackErrors, message) {
+  if (rollbackErrors.length === 0) return error
+  return new AggregateError([error, ...rollbackErrors], message)
+}
 
 class HatchCommand extends Command {
-    constructor(editor) {
-        super(editor)
-        this.type = 'HatchCommand'
-        this.name = 'Hatch'
-        this.hatchElement = null
-        this.interactiveExecutionDone = false
-        this.patternType = editor.lastHatchPattern || 'SOLID'
-        this.hatchScale = editor.lastHatchScale || 10
+  constructor(editor) {
+    super(editor)
+    this.type = 'HatchCommand'
+    this.name = 'Hatch'
+    this.hatchElement = null
+    this.hatchParent = null
+    this.hatchIndex = -1
+    this.patternElement = null
+    this.patternIndex = -1
+    this.createdPattern = false
+    this.interactiveExecutionDone = false
+    this.patternType = editor.lastHatchPattern || 'SOLID'
+    this.hatchScale = editor.lastHatchScale || 10
+    this.pendingHatch = null
+  }
+
+  execute() {
+    if (this.interactiveExecutionDone) {
+      this._applyInitial()
+      return
     }
 
-    execute() {
-        if (this.interactiveExecutionDone) {
-            return
-        }
+    const patternLabel = HATCH_PATTERNS[this.patternType]?.label || this.patternType
+    this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'HATCH ' })
+    this.editor.signals.terminalLogged.dispatch({
+      type: 'span',
+      msg: `[${patternLabel} / scale ${this.hatchScale}] Click inside a closed region to hatch.`,
+    })
 
-        const patternLabel = HATCH_PATTERNS[this.patternType]?.label || this.patternType
-        this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'HATCH ' })
-        this.editor.signals.terminalLogged.dispatch({
-            type: 'span',
-            msg: `[${patternLabel} / scale ${this.hatchScale}] Click inside a closed region to hatch.`,
-        })
+    this.editor.isInteracting = true
+    this.editor.suppressHandlers = true
+    this.editor.selectSingleElement = true
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
+    this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
+  }
 
-        this.editor.isInteracting = true
-        this.editor.suppressHandlers = true
-        this.editor.selectSingleElement = true
-        this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
-        this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
+  onPointClicked(point) {
+    this.editor.signals.terminalLogged.dispatch({
+      msg: `Detecting boundary at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})...`,
+    })
+
+    const geometryPolicy = qualifyHatchGeometry(this.editor)
+    if (transformedGeometryContainsPoint(geometryPolicy, point)) {
+      this.rejectTransformedBoundary()
+      return
     }
 
-    onPointClicked(point) {
-        this.clickPoint = point
-        this.editor.signals.terminalLogged.dispatch({
-            msg: `Detecting boundary at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})...`,
-        })
-
-        const segments = extractSegments(this.editor)
-        const boundaryEdges = findEnclosingBoundary(this.editor, point)
-
-        if (!boundaryEdges || boundaryEdges.length < 2) {
-            this.editor.signals.terminalLogged.dispatch({
-                msg: 'No closed boundary found at that point. Try clicking inside a closed region.',
-            })
-            this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
-            return
-        }
-
-        let pathD = boundaryToPathD(boundaryEdges, segments)
-        if (!pathD) {
-            this.editor.signals.terminalLogged.dispatch({ msg: 'Failed to create hatch path.' })
-            this.cleanup()
-            return
-        }
-
-        // Detect islands (closed shapes inside the boundary) and append as holes
-        const islandPaths = findIslands(this.editor, boundaryEdges, segments, point)
-        for (const ip of islandPaths) {
-            pathD += ' ' + ip
-        }
-
-        // Derive fill color from active collection stroke
-        const collection = this.editor.activeCollection
-        let fillColor = '#888888'
-        if (collection) {
-            const collectionData = this.editor.collections
-                ? this.editor.collections.get(collection.attr('id'))
-                : null
-            if (collectionData && collectionData.style && collectionData.style.stroke) {
-                fillColor = collectionData.style.stroke
-            } else {
-                const stroke = collection.attr('stroke')
-                if (stroke && stroke !== 'none') fillColor = stroke
-            }
-        }
-
-        // Resolve fill — SVG pattern or solid
-        let fillValue
-        if (this.patternType === 'SOLID') {
-            fillValue = { color: fillColor, opacity: 1.0 }
-        } else {
-            const patternId = ensurePattern(this.editor.svg, this.patternType, fillColor, this.hatchScale)
-            if (patternId) {
-                fillValue = `url(#${patternId})`
-            } else {
-                fillValue = { color: fillColor, opacity: 1.0 }
-            }
-        }
-
-        // Create hatch path element
-        const parent = this.editor.activeCollection || this.editor.drawing
-        const hatchPath = parent.path(pathD)
-        hatchPath.fill(fillValue)
-        hatchPath.attr('fill-rule', 'evenodd')
-        hatchPath.stroke({ width: 0, opacity: 0 })
-        hatchPath.addClass('hatch-fill')
-        hatchPath.attr('id', this.editor.elementIndex++)
-        hatchPath.attr('name', 'Hatch')
-        hatchPath.data('hatchData', {
-            clickPoint: { x: point.x, y: point.y },
-            fillColor,
-            patternType: this.patternType,
-            hatchScale: this.hatchScale,
-            opacity: 1.0,
-        })
-
-        hatchPath.back()
-
-        this.hatchElement = hatchPath
-        this.editor.spatialIndex.markDirty()
-
-        this.editor.signals.terminalLogged.dispatch({
-            msg: `Hatch created with ${boundaryEdges.length} boundary edges.`,
-        })
-
-        this.cleanup()
-        this.interactiveExecutionDone = true
-        // Persist last-used settings on editor for next invocation
-        this.editor.lastHatchPattern = this.patternType
-        this.editor.lastHatchScale = this.hatchScale
-        this.editor.execute(this)
-        this.editor.lastCommand = this
-        this.editor.signals.updatedOutliner.dispatch()
+    const segments = extractSegments(this.editor, geometryPolicy.safeElements)
+    const boundaryEdges = findEnclosingBoundary(this.editor, point, segments)
+    if (!boundaryEdges || boundaryEdges.length < 2) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'No closed boundary found at that point. Try clicking inside a closed region.',
+      })
+      this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
+      return
     }
 
-    cleanup() {
-        this.editor.isInteracting = false
-        this.editor.suppressHandlers = false
-        setTimeout(() => {
-            this.editor.selectSingleElement = false
-        }, 10)
-        this.editor.signals.pointCaptured.remove(this.onPointClicked, this)
-        this.editor.signals.commandCancelled.remove(this.cleanup, this)
+    if (transformedGeometryIntersectsBoundary(geometryPolicy, boundaryEdges, segments)) {
+      this.rejectTransformedBoundary()
+      return
     }
 
-    undo() {
-        if (this.hatchElement) {
-            this.hatchElement.remove()
-            this.editor.spatialIndex.markDirty()
-            this.editor.signals.updatedOutliner.dispatch()
-            this.editor.signals.terminalLogged.dispatch({ msg: 'Undo: Hatch removed.' })
-        }
+    let pathD = boundaryToPathD(boundaryEdges, segments)
+    if (!pathD) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Failed to create hatch path.' })
+      this.cleanup()
+      return
+    }
+    findIslands(
+      this.editor,
+      boundaryEdges,
+      segments,
+      point,
+      geometryPolicy.safeElements,
+    ).forEach((islandPath) => {
+      pathD += ` ${islandPath}`
+    })
+
+    const collection = this.editor.activeCollection
+    let fillColor = '#888888'
+    if (collection) {
+      const collectionData = this.editor.collections?.get(collection.attr('id'))
+      if (collectionData?.style?.stroke) fillColor = collectionData.style.stroke
+      else if (collection.attr('stroke') && collection.attr('stroke') !== 'none') {
+        fillColor = collection.attr('stroke')
+      }
     }
 
-    redo() {
-        if (this.hatchElement) {
-            const parent = this.editor.activeCollection || this.editor.drawing
-            // Re-ensure pattern in case defs were cleared
-            const hd = this.hatchElement.data('hatchData')
-            if (hd && hd.patternType && hd.patternType !== 'SOLID') {
-                ensurePattern(this.editor.svg, hd.patternType, hd.fillColor, hd.hatchScale)
-            }
-            parent.add(this.hatchElement)
-            this.hatchElement.back()
-            this.editor.spatialIndex.markDirty()
-            this.editor.signals.updatedOutliner.dispatch()
-            this.editor.signals.terminalLogged.dispatch({ msg: 'Redo: Hatch restored.' })
-        }
+    this.pendingHatch = {
+      boundaryCount: boundaryEdges.length,
+      fillColor,
+      parent: this.editor.activeCollection || this.editor.drawing,
+      pathD,
+      point: { x: point.x, y: point.y },
     }
+    this.interactiveExecutionDone = true
+    this.cleanup()
+    this.editor.execute(this)
+  }
+
+  rejectTransformedBoundary() {
+    this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
+    this.editor.signals.terminalLogged.dispatch({ msg: HATCH_TRANSFORM_DIAGNOSTIC })
+  }
+
+  _applyInitial() {
+    if (!this.pendingHatch?.pathD || !this.pendingHatch.parent) {
+      throw new TypeError('Hatch creation requires a detected boundary.')
+    }
+
+    const editor = this.editor
+    const startingElementIndex = editor.elementIndex
+    const defs = editor.svg.defs()
+    const defsBefore = new Set(Array.from(defs.node.children))
+    const parentChildrenBefore = new Set(Array.from(this.pendingHatch.parent.node.children))
+    const patternId = this.patternType === 'SOLID'
+      ? null
+      : getPatternId(this.patternType, this.pendingHatch.fillColor, this.hatchScale)
+    const existingPattern = patternId ? defs.findOne(`#${patternId}`) : null
+    try {
+      let fillValue = { color: this.pendingHatch.fillColor, opacity: 1 }
+      if (patternId) {
+        const ensuredId = ensurePattern(
+          editor.svg,
+          this.patternType,
+          this.pendingHatch.fillColor,
+          this.hatchScale,
+        )
+        if (ensuredId) {
+          this.patternElement = defs.findOne(`#${ensuredId}`)
+          this.createdPattern = !existingPattern && Boolean(this.patternElement)
+          this.patternIndex = this.patternElement ? childIndex(this.patternElement) : -1
+          fillValue = `url(#${ensuredId})`
+        }
+      }
+
+      this.hatchParent = this.pendingHatch.parent
+      this.hatchElement = this.hatchParent.path(this.pendingHatch.pathD)
+      this.hatchElement.fill(fillValue)
+      this.hatchElement.attr({
+        'fill-rule': 'evenodd',
+        id: editor.elementIndex++,
+        name: 'Hatch',
+      })
+      this.hatchElement.stroke({ width: 0, opacity: 0 })
+      this.hatchElement.addClass('hatch-fill')
+      this.hatchElement.data('hatchData', {
+        clickPoint: { ...this.pendingHatch.point },
+        fillColor: this.pendingHatch.fillColor,
+        hatchScale: this.hatchScale,
+        opacity: 1,
+        patternType: this.patternType,
+      })
+      this.hatchElement.back()
+      this.hatchIndex = childIndex(this.hatchElement)
+    } catch (error) {
+      this.hatchElement?.remove()
+      Array.from(this.pendingHatch.parent.node.children).forEach((node) => {
+        if (!parentChildrenBefore.has(node)) node.remove()
+      })
+      Array.from(defs.node.children).forEach((node) => {
+        if (!defsBefore.has(node)) node.remove()
+      })
+      editor.elementIndex = startingElementIndex
+      this.hatchElement = null
+      this.patternElement = null
+      this.createdPattern = false
+      this.hatchIndex = -1
+      this.patternIndex = -1
+      throw error
+    }
+
+    editor.lastHatchPattern = this.patternType
+    editor.lastHatchScale = this.hatchScale
+    this._notify(`Hatch created with ${this.pendingHatch.boundaryCount} boundary edges.`)
+  }
+
+  cleanup() {
+    this.editor.isInteracting = false
+    this.editor.suppressHandlers = false
+    this.editor.selectSingleElement = false
+    this.editor.signals.pointCaptured.remove(this.onPointClicked, this)
+    this.editor.signals.commandCancelled.remove(this.cleanup, this)
+  }
+
+  undo() {
+    try {
+      this.hatchElement.remove()
+      if (this.createdPattern) this.patternElement.remove()
+    } catch (error) {
+      const rollbackErrors = []
+      try {
+        if (this.createdPattern && !this.patternElement.parent()) {
+          insertAt(this.editor.svg.defs(), this.patternElement, this.patternIndex)
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      try {
+        if (!this.hatchElement.parent()) {
+          insertAt(this.hatchParent, this.hatchElement, this.hatchIndex)
+        }
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError)
+      }
+      throw combinedError(
+        error,
+        rollbackErrors,
+        `${error.message} Restoring the hatch also failed.`,
+      )
+    }
+    this._notify('Undo: Hatch removed.')
+  }
+
+  redo() {
+    try {
+      if (this.createdPattern) {
+        insertAt(this.editor.svg.defs(), this.patternElement, this.patternIndex)
+      }
+      insertAt(this.hatchParent, this.hatchElement, this.hatchIndex)
+    } catch (error) {
+      this.hatchElement.remove()
+      if (this.createdPattern) this.patternElement.remove()
+      throw error
+    }
+    this._notify('Redo: Hatch restored.')
+  }
+
+  _notify(message) {
+    this.editor.spatialIndex.markDirty()
+    this.editor.fullSpatialIndex.markDirty()
+    this.dispatchSignal('updatedOutliner')
+    this.dispatchSignal('terminalLogged', { msg: message })
+  }
 }
 
 function hatchCommand(editor) {
-    const cmd = new HatchCommand(editor)
-    cmd.execute()
+  const command = new HatchCommand(editor)
+  command.execute()
 }
 
-export { hatchCommand }
+export { HatchCommand, hatchCommand }
