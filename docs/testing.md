@@ -69,6 +69,13 @@ one-file floor derived from this complete report:
 | --- | ---: | ---: | ---: | ---: |
 | `svgNumericBounds.js` | 85.16% | 76.60% | 97.26% | 93.15% |
 
+The root-space transform boundary added for transformed `ROTATE` workflows was
+recorded on 2026-08-22 and has its own exact one-file floor:
+
+| Module | Statements | Branches | Functions | Lines |
+| --- | ---: | ---: | ---: | ---: |
+| `rootSpaceTransform.js` | 82.00% | 74.16% | 100% | 84.12% |
+
 Per-file floors protect the newer document boundary, visual-identity modules,
 core state utilities, and sanitizer/geometry utilities at substantially higher
 levels. Every protected module uses an exact one-file threshold entry; a broad
@@ -80,6 +87,8 @@ branches, 100% functions, and 100% lines. The transform-aware HATCH
 qualification boundary has its own 83% statements, 80% branches, 96%
 functions, and 88% lines floor. The Phase 3 SVG numeric boundary has an 85%
 statements, 76% branches, 97% functions, and 93% lines floor.
+The root-space transform boundary is locked at 82% statements, 74% branches,
+100% functions, and 84% lines.
 
 New standalone state-boundary, transaction, or geometry modules should receive
 an exact one-file threshold entry with at least 80% statements, 70% branches,
@@ -121,8 +130,8 @@ degradation, DXF unit/layer conversion, bounded `INSERT` expansion, DXF export
 mappings/diagnostics, Paper physical sizes and scale, reference closure, and
 vector SVG/PDF output.
 
-The settled local production harness also passes all nine workflows in both
-Chromium 151.0.7922.137 and Firefox 153.0.3. Its exchange checks cover
+The settled local production harness also passes all ten workflows in both
+Chromium 151.0.7922.137 and Firefox 154.0. Its exchange checks cover
 sanitized foreign SVG import, centimetre/layer-aware DXF import and re-export,
 and intercepted vector Paper SVG/PDF downloads with physical page size,
 reference closure, no raster image fallback, and a nonempty embedded font.

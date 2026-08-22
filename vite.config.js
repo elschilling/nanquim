@@ -143,6 +143,12 @@ export default defineConfig({
           lines: 100,
           statements: 92,
         },
+        'src/js/utils/rootSpaceTransform.js': {
+          branches: 74,
+          functions: 100,
+          lines: 84,
+          statements: 82,
+        },
         'src/js/utils/invalidateSpatialIndexes.js': {
           branches: 100,
           functions: 100,

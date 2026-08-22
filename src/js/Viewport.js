@@ -24,6 +24,10 @@ import {
   constrainVertexPointInRoot,
   rootPointToElementLocal,
 } from './utils/vertexCoordinateSpace'
+import {
+  captureRootTransformContext,
+  composeRootRotation,
+} from './utils/rootSpaceTransform'
 
 function resizeBoundsFromGrip(original, vertexIndex, point, minimumSize = 0) {
   let x1 = original.x
@@ -102,6 +106,22 @@ function restoreVertexPreviewState(snapshot) {
   node.replaceChildren(...snapshot.children.map(child => child.cloneNode(true)))
 }
 
+function captureTransformPreviewState(element) {
+  return {
+    matrix: element.matrixify(),
+    transformAttribute: element.attr('transform'),
+  }
+}
+
+function restoreTransformPreviewState(element, snapshot) {
+  if (!element?.node || !snapshot) return
+  if (snapshot.transformAttribute == null) {
+    element.node.removeAttribute('transform')
+  } else {
+    element.attr('transform', snapshot.transformAttribute)
+  }
+}
+
 function Viewport(editor) {
   const signals = editor.signals
   const svg = editor.svg
@@ -132,6 +152,8 @@ function Viewport(editor) {
   let ghostElements = []
   let basePoint = null
   let initialTransforms = new Map()
+  let initialTransformAttributes = new Map()
+  let rootRotationContexts = new Map()
   let isGhostingMove = false
   let isGhostingRotate = false
   let isGhostingOffset = false
@@ -382,7 +404,9 @@ function Viewport(editor) {
       if (el._paperVp) {
         initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
       } else {
-        initialTransforms.set(el, el.transform())
+        const snapshot = captureTransformPreviewState(el)
+        initialTransforms.set(el, snapshot.matrix)
+        initialTransformAttributes.set(el, snapshot.transformAttribute)
       }
     })
   }
@@ -399,12 +423,15 @@ function Viewport(editor) {
         el._paperVp.h = initial.h
         el._paperVp.refreshGeometry()
       } else {
-        el.transform(initial)
+        restoreTransformPreviewState(el, {
+          transformAttribute: initialTransformAttributes.get(el),
+        })
       }
     })
     ghostElements = []
     basePoint = null
     initialTransforms.clear()
+    initialTransformAttributes.clear()
   }
 
   function onScaleGhostingStarted(elements, point) {
@@ -416,7 +443,9 @@ function Viewport(editor) {
       if (el._paperVp) {
         initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
       } else {
-        initialTransforms.set(el, el.transform())
+        const snapshot = captureTransformPreviewState(el)
+        initialTransforms.set(el, snapshot.matrix)
+        initialTransformAttributes.set(el, snapshot.transformAttribute)
       }
     })
   }
@@ -433,12 +462,15 @@ function Viewport(editor) {
         el._paperVp.h = initial.h
         el._paperVp.refreshGeometry()
       } else {
-        el.transform(initial)
+        restoreTransformPreviewState(el, {
+          transformAttribute: initialTransformAttributes.get(el),
+        })
       }
     })
     ghostElements = []
     basePoint = null
     initialTransforms.clear()
+    initialTransformAttributes.clear()
   }
 
   function onRotateGhostingStarted(elements, cPoint, rPoint) {
@@ -451,7 +483,14 @@ function Viewport(editor) {
       if (el._paperVp) {
         initialTransforms.set(el, { x: el._paperVp.x, y: el._paperVp.y, w: el._paperVp.w, h: el._paperVp.h })
       } else {
-        initialTransforms.set(el, el.transform())
+        const snapshot = captureTransformPreviewState(el)
+        initialTransforms.set(el, snapshot.matrix)
+        initialTransformAttributes.set(el, snapshot.transformAttribute)
+        try {
+          rootRotationContexts.set(el, captureRootTransformContext(el, svg))
+        } catch (_error) {
+          rootRotationContexts.set(el, null)
+        }
       }
     })
   }
@@ -459,22 +498,30 @@ function Viewport(editor) {
   function onRotateGhostingStopped() {
     isGhostingRotate = false
     editor.ghostNodes = null
-    ghostElements.forEach((el) => {
-      const initial = initialTransforms.get(el)
-      if (el._paperVp) {
-        el._paperVp.x = initial.x
-        el._paperVp.y = initial.y
-        el._paperVp.w = initial.w
-        el._paperVp.h = initial.h
-        el._paperVp.refreshGeometry()
-      } else {
-        el.transform(initial)
-      }
-    })
+    const restorePreviews = () => {
+      ghostElements.forEach((el) => {
+        const initial = initialTransforms.get(el)
+        if (el._paperVp) {
+          el._paperVp.x = initial.x
+          el._paperVp.y = initial.y
+          el._paperVp.w = initial.w
+          el._paperVp.h = initial.h
+          el._paperVp.refreshGeometry()
+        } else {
+          restoreTransformPreviewState(el, {
+            transformAttribute: initialTransformAttributes.get(el),
+          })
+        }
+      })
+    }
+    if (editor.documentState) editor.documentState.runWithoutTracking(restorePreviews)
+    else restorePreviews()
     ghostElements = []
     centerPoint = null
     referencePoint = null
     initialTransforms.clear()
+    initialTransformAttributes.clear()
+    rootRotationContexts.clear()
   }
 
   function onOffsetGhostingStarted(element, distance) {
@@ -607,13 +654,22 @@ function Viewport(editor) {
         if (editor.distance) {
           rotationAngle = editor.distance
         }
-        ghostElements.forEach((el) => {
-          const initial = initialTransforms.get(el)
-          if (!el._paperVp) {
-            el.transform(initial)
-            el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
-          }
-        })
+        const updateRotatePreviews = () => {
+          ghostElements.forEach((el) => {
+            const initial = initialTransforms.get(el)
+            if (!el._paperVp) {
+              const context = rootRotationContexts.get(el)
+              if (context) {
+                el.transform(composeRootRotation(context, rotationAngle, centerPoint))
+              } else {
+                el.transform(initial)
+                el.rotate(rotationAngle, centerPoint.x, centerPoint.y)
+              }
+            }
+          })
+        }
+        if (editor.documentState) editor.documentState.runWithoutTracking(updateRotatePreviews)
+        else updateRotatePreviews()
       }
       if (isGhostingScale) {
         const dist = calculateDistance(basePoint, coordinates)
@@ -1884,4 +1940,10 @@ function calculateRotationAngle(centerPoint, referencePoint, targetPoint) {
   return angleDegrees
 }
 
-export { captureVertexPreviewState, restoreVertexPreviewState, Viewport }
+export {
+  captureTransformPreviewState,
+  captureVertexPreviewState,
+  restoreTransformPreviewState,
+  restoreVertexPreviewState,
+  Viewport,
+}

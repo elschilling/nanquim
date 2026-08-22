@@ -1,6 +1,6 @@
 # Browser and file API support
 
-Last reviewed: 2026-08-21
+Last reviewed: 2026-08-22
 
 This document defines the intended `v0.1` desktop-browser support contract. It
 does not claim that a browser has passed release qualification unless the exact
@@ -31,10 +31,11 @@ Chromium major, current stable Firefox, and Firefox ESR. GitHub Actions records
 the exact browser build used by each run; the pinned preceding Chromium major
 must be refreshed when the stable channel advances at a release boundary.
 
-The harness exercises typed rectangle creation, Move with Undo/Redo, repeated
-command cancellation, sanitized copy/paste, native SVG save/reopen, Paper
-viewport export, Help keyboard navigation, and the representative Geometry
-Nodes fixture. On failure it retains an action/console/network trace and a
+The harness exercises typed rectangle creation, Move with Undo/Redo,
+moved-rectangle Rotate/Undo, repeated command cancellation, sanitized
+copy/paste, native SVG save/reopen, Paper viewport export, Help keyboard
+navigation, and the representative Geometry Nodes fixture. On failure it
+retains an action/console/network trace and a
 screenshot; Chromium additionally retains a DevTools timeline trace.
 
 On 2026-08-21, [remote qualification run 32465836518](https://github.com/elschilling/nanquim/actions/runs/32465836518)

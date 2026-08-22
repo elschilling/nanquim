@@ -1,15 +1,57 @@
 import { Command } from '../Command'
 import { Matrix } from '@svgdotjs/svg.js'
+import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
+import { resolveInputCoordinate } from '../utils/coordinateInput'
 import {
-  hasOwnGeometryTransform,
-  hasUnsupportedAncestorTransform,
-} from '../utils/geometryTransformQualification'
+  captureRootTransformContext,
+  composeRootRotation,
+} from '../utils/rootSpaceTransform'
 
-const TRANSFORMED_ROTATE_DIAGNOSTIC = 'ROTATE does not support transformed primitive geometry or geometry inside transformed groups.'
+const TRANSFORMED_ROTATE_DIAGNOSTIC = 'ROTATE could not resolve the selected geometry transform.'
 
-function hasUnsupportedRotateTransform(element, drawing) {
-  if (hasUnsupportedAncestorTransform(element, drawing)) return true
-  return !['g', 'use'].includes(element.type) && hasOwnGeometryTransform(element)
+function selectedRoots(elements) {
+  const byNode = new Map()
+  elements.forEach((element) => {
+    if (element?.node && !byNode.has(element.node)) byNode.set(element.node, element)
+  })
+
+  const selectedNodes = new Set(byNode.keys())
+  return [...byNode.entries()]
+    .filter(([node]) => {
+      let ancestor = node.parentNode
+      while (ancestor) {
+        if (selectedNodes.has(ancestor)) return false
+        ancestor = ancestor.parentNode
+      }
+      return true
+    })
+    .map(([, element]) => element)
+}
+
+function attributesWithoutSelectionState(element) {
+  const attributes = { ...element.attr() }
+  delete attributes.selected
+  if (attributes.class) {
+    const classes = String(attributes.class)
+      .split(/\s+/)
+      .filter(className => (
+        className
+        && className !== 'elementHover'
+        && className !== 'elementSelected'
+      ))
+    if (classes.length > 0) attributes.class = classes.join(' ')
+    else delete attributes.class
+  }
+  return attributes
+}
+
+function clearSelectionState(element) {
+  element.removeClass?.('elementHover')
+  element.removeClass?.('elementSelected')
+  if (!String(element.attr?.('class') || '').trim()) {
+    element.node?.removeAttribute?.('class')
+  }
+  element.node?.removeAttribute?.('selected')
 }
 
 class RotateCommand extends Command {
@@ -19,8 +61,25 @@ class RotateCommand extends Command {
     this.name = 'Rotate'
     // Store bound function reference for proper cleanup
     this.boundOnKeyDown = this.onKeyDown.bind(this)
+    this.boundOnCenterCoordinateInput = () => {
+      this.editor.signals.pointCaptured.remove(this.onCenterPoint, this)
+      const point = resolveInputCoordinate(this.editor)
+      if (point) this.onCenterPoint(point)
+    }
+    this.boundOnReferenceCoordinateInput = () => {
+      this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
+      this.editor.signals.inputValue.remove(this.onAngleInput, this)
+      const point = resolveInputCoordinate(this.editor, this.centerPoint)
+      if (point) this.onReferencePoint(point)
+    }
+    this.boundOnTargetCoordinateInput = () => {
+      this.editor.signals.pointCaptured.remove(this.onTargetPoint, this)
+      const point = resolveInputCoordinate(this.editor, this.centerPoint)
+      if (point) this.onTargetPoint(point)
+    }
     this.interactiveExecutionDone = false
     this.elementReplacements = []
+    this.selectionSnapshot = []
   }
 
   execute() {
@@ -64,14 +123,15 @@ class RotateCommand extends Command {
   }
 
   onSelectionConfirmed() {
-    this.selectedElements = this.editor.selected.slice() // Create a copy
+    this.selectionSnapshot = this.editor.selected.slice()
+    this.selectedElements = selectedRoots(this.selectionSnapshot)
     if (this.selectedElements.length === 0) {
       this.editor.signals.terminalLogged.dispatch({ msg: 'No elements selected. Command cancelled.' })
       this.cleanup()
       return
     }
     if (this.selectedElements.some((element) => (
-      hasUnsupportedRotateTransform(element, this.editor.drawing)
+      !this.editor.drawing?.node?.contains?.(element?.node)
     ))) {
       this.editor.signals.terminalLogged.dispatch({
         msg: TRANSFORMED_ROTATE_DIAGNOSTIC,
@@ -85,34 +145,59 @@ class RotateCommand extends Command {
     this.editor.selectSingleElement = true
 
     // Store original states AND original coordinates for each element BEFORE any rotation
-    this.originalStates = this.selectedElements.map((element) => this.getElementState(element))
-    this.originalCoordinates = this.selectedElements.map((element) => this.getElementCoordinates(element))
+    try {
+      this.originalStates = this.selectedElements.map((element) => this.getElementState(element))
+      this.originalCoordinates = this.selectedElements.map((element) => this.getElementCoordinates(element))
+    } catch (_error) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: TRANSFORMED_ROTATE_DIAGNOSTIC,
+        type: 'error',
+      })
+      this.cleanup()
+      return
+    }
 
     this.editor.signals.terminalLogged.dispatch({ msg: `Selected ${this.selectedElements.length} elements.` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify center point.' })
     this.editor.signals.pointCaptured.addOnce(this.onCenterPoint, this)
+    this.editor.signals.coordinateInput.addOnce(this.boundOnCenterCoordinateInput, this)
   }
 
   onCenterPoint(point) {
+    this.editor.signals.coordinateInput.remove(this.boundOnCenterCoordinateInput, this)
     this.centerPoint = point
     this.editor.signals.terminalLogged.dispatch({ msg: `Center point: ${this.centerPoint.x.toFixed(2)}, ${this.centerPoint.y.toFixed(2)}` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify reference point or an angle to rotate.' })
     this.editor.signals.pointCaptured.addOnce(this.onReferencePoint, this)
-    this.editor.signals.inputValue.addOnce(this.onAngleInput, this)
+    this.editor.signals.inputValue.add(this.onAngleInput, this)
+    this.editor.signals.coordinateInput.addOnce(this.boundOnReferenceCoordinateInput, this)
   }
 
-  onAngleInput() {
-    this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
-    if (Number.isFinite(this.editor.distance)) {
-      this.angle = this.editor.distance
-      this.angleRad = this.angle * (Math.PI / 180)
-      this.editor.distance = null
-      this.commitRotation()
+  onAngleInput(value) {
+    const typedAngle = typeof value === 'string' && value.trim() === ''
+      ? Number.NaN
+      : Number(value)
+    const angle = Number.isFinite(this.editor.distance) ? this.editor.distance : typedAngle
+    if (!Number.isFinite(angle)) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'Enter a valid rotation angle.',
+        type: 'error',
+      })
+      return
     }
+
+    this.editor.signals.inputValue.remove(this.onAngleInput, this)
+    this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
+    this.editor.signals.coordinateInput.remove(this.boundOnReferenceCoordinateInput, this)
+    this.angle = angle
+    this.angleRad = this.angle * (Math.PI / 180)
+    this.editor.distance = null
+    this.commitRotation()
   }
 
   onReferencePoint(point) {
     this.editor.signals.inputValue.remove(this.onAngleInput, this)
+    this.editor.signals.coordinateInput.remove(this.boundOnReferenceCoordinateInput, this)
     this.referencePoint = point
     this.editor.signals.terminalLogged.dispatch({
       msg: `Reference point: ${this.referencePoint.x.toFixed(2)}, ${this.referencePoint.y.toFixed(2)}`,
@@ -120,9 +205,11 @@ class RotateCommand extends Command {
     this.editor.signals.rotateGhostingStarted.dispatch(this.selectedElements, this.centerPoint, this.referencePoint)
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify the target point.' })
     this.editor.signals.pointCaptured.addOnce(this.onTargetPoint, this)
+    this.editor.signals.coordinateInput.addOnce(this.boundOnTargetCoordinateInput, this)
   }
 
   onTargetPoint(point) {
+    this.editor.signals.coordinateInput.remove(this.boundOnTargetCoordinateInput, this)
     this.targetPoint = point
     this.editor.signals.terminalLogged.dispatch({
       msg: `Target point: ${this.targetPoint.x.toFixed(2)}, ${this.targetPoint.y.toFixed(2)}`,
@@ -225,6 +312,13 @@ class RotateCommand extends Command {
 
     if (updateSelection) {
       this.dispatchSignal('clearSelection')
+      this.selectionSnapshot.forEach(clearSelectionState)
+      this.selectedElements.forEach(clearSelectionState)
+      this.elementReplacements.forEach((replacement) => {
+        if (!replacement) return
+        clearSelectionState(replacement.original)
+        clearSelectionState(replacement.transformed)
+      })
       this.editor.selected = []
     }
     this.invalidateGeometry()
@@ -235,6 +329,18 @@ class RotateCommand extends Command {
       arcData: element.data('arcData'),
       circleTrimData: element.data('circleTrimData'),
       splineData: element.data('splineData')
+    }
+
+    const explicitTransform = element.attr('transform')
+    const usesTransformForRotation = ['g', 'text', 'use'].includes(element.type)
+    if ((explicitTransform && explicitTransform.trim() !== '')
+      || usesTransformForRotation
+      || hasUnsupportedGeometryTransform(element, this.editor.svg)) {
+      return {
+        type: 'root-transform',
+        context: captureRootTransformContext(element, this.editor.svg),
+        ...data,
+      }
     }
 
     // Store just the coordinate data that we need for rotation
@@ -300,6 +406,15 @@ class RotateCommand extends Command {
     const sin = Math.sin(angleRad)
     const cx = centerPoint.x
     const cy = centerPoint.y
+
+    if (originalCoords.type === 'root-transform') {
+      element.transform(composeRootRotation(
+        originalCoords.context,
+        angleRad * (180 / Math.PI),
+        centerPoint,
+      ))
+      return element
+    }
 
     // Helper function to rotate a point around the center
     const rotatePoint = (x, y) => {
@@ -391,10 +506,11 @@ class RotateCommand extends Command {
         // Replace rectangle with polygon
         const nextSibling = element.node.nextSibling
         const polygon = parent.polygon(polygonPoints)
-        polygon.attr(element.attr()) // Copy attributes
+        polygon.attr(attributesWithoutSelectionState(element))
         if (nextSibling?.parentNode === parent.node) {
           parent.node.insertBefore(polygon.node, nextSibling)
         }
+        clearSelectionState(element)
         element.remove() // Remove original rectangle
 
         // Update reference to the new polygon
@@ -581,7 +697,7 @@ class RotateCommand extends Command {
         y: element.y(),
         width: element.width(),
         height: element.height(),
-        attrs: { ...element.attr() }, // Copy all attributes
+        attrs: attributesWithoutSelectionState(element),
         ...data,
       }
     } else if (element.type === 'use') {
@@ -620,6 +736,9 @@ class RotateCommand extends Command {
     this.editor.signals.pointCaptured.remove(this.onReferencePoint, this)
     this.editor.signals.pointCaptured.remove(this.onTargetPoint, this)
     this.editor.signals.inputValue.remove(this.onAngleInput, this)
+    this.editor.signals.coordinateInput.remove(this.boundOnCenterCoordinateInput, this)
+    this.editor.signals.coordinateInput.remove(this.boundOnReferenceCoordinateInput, this)
+    this.editor.signals.coordinateInput.remove(this.boundOnTargetCoordinateInput, this)
     this.editor.isInteracting = false
     this.editor.suppressHandlers = false
     this.deferSessionTask(() => {

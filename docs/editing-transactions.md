@@ -105,11 +105,15 @@ analytic curve solution.
 When a non-uniform or skew transform turns a circle or circular arc into a
 non-circular curve, the circle-only intersection, tangent, and perpendicular
 solvers do not return an unsafe target. Direct transformed snap points remain
-available where their geometry is defined. ROTATE and SCALE may compose a
-transform on a selected group or Block instance that has untransformed
-ancestors, but reject transformed primitives and any selection inside a
-transformed ancestor. MIRROR rejects any selected element with its own
-transform or a transformed ancestor before it creates preview clones.
+available where their geometry is defined. ROTATE composes its drawing-root
+rotation through each selected element's complete affine ancestry, preserving
+the element's local geometry and specialized metadata. It rejects an own CSS
+transform that cannot be composed safely or a non-invertible ancestor matrix
+before History mutation. SCALE may compose a transform on a selected group or
+Block instance that has untransformed ancestors, but rejects transformed
+primitives and any selection inside a transformed ancestor. MIRROR rejects any
+selected element with its own transform or a transformed ancestor before it
+creates preview clones.
 
 TRIM and EXTEND currently reject a transformed target or boundary, and FILLET
 rejects transformed lines, with an explicit terminal diagnostic before
@@ -197,9 +201,10 @@ including `tests/transformed-intersection-guards.test.js`,
 `tests/create-viewport-command.test.js`,
 `tests/model-drawable-isolation.test.js`, `tests/command-runner.test.js`, and
 `tests/terminal.test.js`.
-On Fedora 44, Chromium 151.0.7922.137 and Firefox 153.0.3 each
-pass all nine production workflows: typed rectangle creation, actual pointer
-selection, Move/Undo/Redo, repeated cancellation, sanitized clipboard paste,
+On Fedora 44, Chromium 151.0.7922.137 and Firefox 154.0 each
+pass all ten production workflows: typed rectangle creation, actual pointer
+selection, Move/Undo/Redo, moved-rectangle Rotate/Undo, repeated cancellation,
+sanitized clipboard paste,
 exact native save/reopen/resave, Paper annotation hover/click/disambiguation
 and Move/Undo/Redo with parsed SVG export, Help keyboard navigation, and
 Geometry Nodes evaluation. The remote current/previous Chromium and

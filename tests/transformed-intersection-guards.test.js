@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ExtendCommand } from '../src/js/commands/ExtendCommand.js'
 import { FilletCommand } from '../src/js/commands/FilletCommand.js'
 import { MirrorCommand } from '../src/js/commands/MirrorCommand.js'
-import { RotateCommand } from '../src/js/commands/RotateCommand.js'
 import { ScaleCommand } from '../src/js/commands/ScaleCommand.js'
 import { TrimCircleCommand } from '../src/js/commands/TrimCircleCommand.js'
 import { TrimCommand } from '../src/js/commands/TrimCommand.js'
@@ -172,14 +171,7 @@ describe('transformed intersection command guards', () => {
     vi.runAllTimers()
   })
 
-  test.each([
-    ['ROTATE', RotateCommand, 'ROTATE does not support transformed primitive geometry or geometry inside transformed groups.'],
-    ['SCALE', ScaleCommand, 'SCALE does not support transformed primitive geometry or geometry inside transformed groups.'],
-  ])('%s rejects geometry in a transformed parent before point capture', (
-    _name,
-    CommandType,
-    diagnostic,
-  ) => {
+  test('SCALE rejects geometry in a transformed parent before point capture', () => {
     const { activeCollection, editor } = createFixture()
     const parent = activeCollection.group().translate(20, 10)
     const line = parent.line(0, 0, 10, 0)
@@ -187,10 +179,12 @@ describe('transformed intersection command guards', () => {
     editor.elementIndex = 240
     clearMutationSpies(editor)
 
-    const command = new CommandType(editor)
+    const command = new ScaleCommand(editor)
     command.execute()
 
-    expect(messages(editor)).toContain(diagnostic)
+    expect(messages(editor)).toContain(
+      'SCALE does not support transformed primitive geometry or geometry inside transformed groups.',
+    )
     expect(editor.isInteracting).toBe(false)
     expect(editor.suppressHandlers).toBe(false)
     expect(editor.signals.pointCaptured.getNumListeners()).toBe(0)
@@ -219,19 +213,18 @@ describe('transformed intersection command guards', () => {
     expectNoMutation(editor, 250)
   })
 
-  test.each([
-    ['ROTATE', RotateCommand, 'ROTATE does not support transformed primitive geometry or geometry inside transformed groups.'],
-    ['SCALE', ScaleCommand, 'SCALE does not support transformed primitive geometry or geometry inside transformed groups.'],
-  ])('%s rejects a transformed primitive in the drawing root', (_name, CommandType, diagnostic) => {
+  test('SCALE rejects a transformed primitive in the drawing root', () => {
     const { activeCollection, editor } = createFixture()
     const line = activeCollection.line(0, 0, 10, 0).translate(20, 0)
     editor.selected = [line]
     editor.elementIndex = 260
     clearMutationSpies(editor)
 
-    new CommandType(editor).execute()
+    new ScaleCommand(editor).execute()
 
-    expect(messages(editor)).toContain(diagnostic)
+    expect(messages(editor)).toContain(
+      'SCALE does not support transformed primitive geometry or geometry inside transformed groups.',
+    )
     expect(editor.signals.pointCaptured.getNumListeners()).toBe(0)
     expectNoMutation(editor, 260)
   })

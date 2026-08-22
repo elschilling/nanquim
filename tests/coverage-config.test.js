@@ -65,6 +65,12 @@ const PHASE_3_FLOORS = {
     statements: 85,
   },
 }
+const ROOT_SPACE_TRANSFORM_FLOORS = {
+  branches: 74,
+  functions: 100,
+  lines: 84,
+  statements: 82,
+}
 
 describe('Vitest coverage policy', () => {
   test('covers application modules while excluding vendored and generated surfaces', () => {
@@ -123,6 +129,11 @@ describe('Vitest coverage policy', () => {
       expect(thresholds).toHaveProperty(pattern)
       expect(thresholds[pattern]).toEqual(floors)
     }
+  })
+
+  test('keeps root-space transform composition on its measured floor', () => {
+    expect(viteConfig.test.coverage.thresholds['src/js/utils/rootSpaceTransform.js'])
+      .toEqual(ROOT_SPACE_TRANSFORM_FLOORS)
   })
 
   test('publishes the command and keeps generated reports out of Git', async () => {
