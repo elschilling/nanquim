@@ -1,6 +1,6 @@
 # File interoperability and Paper output
 
-Last reviewed: 2026-08-21
+Last reviewed: 2026-08-22
 
 Qualification status: **Partial — Phase 3 is in progress.**
 
@@ -62,8 +62,8 @@ Automated tests cover every A0-A4 orientation at 1 and 2.5 SVG units per
 centimetre, viewport scale/origin behavior, persisted Paper state, detached
 SVG export, multiple PDF viewports, line-only geometry, reference closure,
 stroke widths, the embedded font, and vector dimension output. The settled
-local production harness passes all nine workflows in Chromium
-151.0.7922.137 and Firefox 153.0.3, including intercepted Paper SVG/PDF
+local production harness passes all ten workflows in Chromium
+151.0.7922.137 and Firefox 154.0, including intercepted Paper SVG/PDF
 downloads with exact physical page bounds, vector-only output, closed local
 references, and a nonempty embedded font. External visual comparison in
 representative renderers, direct persistent-handle coverage, Safari, and an

@@ -240,6 +240,208 @@ async function runWorkflows(activePage) {
       original.x + TEST_MOVE_DELTA.x,
       original.y + TEST_MOVE_DELTA.y,
     )
+    const transformAttribute = await activePage.evaluate((expectedWidth) => {
+      const rect = Array.from(document.querySelectorAll('#Collection rect'))
+        .find(candidate => Number(candidate.getAttribute('width')) === expectedWidth)
+      return rect?.getAttribute('transform') ?? null
+    }, TEST_RECTANGLE_WIDTH)
+    assert(transformAttribute === null, 'MOVE left an identity transform on the rectangle.')
+  })
+
+  await step('rotate the moved rectangle in Model space and undo the rotation', async () => {
+    await selectDimensionedRectangle(activePage)
+    const original = await activePage.evaluate((expectedWidth) => {
+      const rect = Array.from(document.querySelectorAll('#Collection rect'))
+        .find(candidate => Number(candidate.getAttribute('width')) === expectedWidth)
+      if (!rect) return null
+      const bounds = rect.getBoundingClientRect()
+      return {
+        centerX: bounds.left + bounds.width / 2,
+        centerY: bounds.top + bounds.height / 2,
+        height: bounds.height,
+        historyDepth: window.editor.history.undos.length,
+        id: rect.id,
+        markup: rect.outerHTML,
+        revision: window.editor.documentState.revision,
+        transform: rect.getAttribute('transform'),
+        width: bounds.width,
+        x: Number(rect.getAttribute('x')),
+        y: Number(rect.getAttribute('y')),
+      }
+    }, TEST_RECTANGLE_WIDTH)
+    assert(original, 'Could not capture the moved rectangle before ROTATE.')
+
+    // Exercise the reference-point preview and cancellation path first. Preview
+    // transforms must not leak into persistent geometry or dirty DocumentState.
+    await runTerminalCommand(activePage, 'r')
+    await waitForTerminalText(activePage, 'Specify center point.')
+    await activePage.mouse.click(original.centerX, original.centerY)
+    await waitForTerminalText(activePage, 'Specify reference point or an angle to rotate.')
+    await activePage.mouse.click(original.centerX + 40, original.centerY)
+    await waitForTerminalText(activePage, 'Specify the target point.')
+    await activePage.mouse.move(original.centerX, original.centerY + 40)
+    await activePage.waitForFunction(({ id, transform }) => (
+      document.getElementById(id)?.getAttribute('transform') !== transform
+    ), {}, original)
+    const previewState = await activePage.evaluate(() => ({
+      historyDepth: window.editor.history.undos.length,
+      observedMutation: window.editor.documentState.flushObservedMutations(),
+      revision: window.editor.documentState.revision,
+    }))
+    assert(previewState.observedMutation === false, 'ROTATE preview queued a persistent mutation.')
+    assert(previewState.revision === original.revision, 'ROTATE preview dirtied DocumentState.')
+    assert(
+      previewState.historyDepth === original.historyDepth,
+      'ROTATE preview entered History before commit.',
+    )
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(({ historyDepth, id, revision, transform }) => {
+      const rect = document.getElementById(id)
+      return rect?.getAttribute('transform') === transform
+        && window.editor.documentState.revision === revision
+        && window.editor.history.undos.length === historyDepth
+        && !window.editor.isInteracting
+    }, {}, original)
+
+    await selectDimensionedRectangle(activePage)
+    await runTerminalCommand(activePage, 'r')
+    await waitForTerminalText(activePage, 'Specify center point.')
+    await activePage.mouse.click(original.centerX, original.centerY)
+    await waitForTerminalText(activePage, 'Specify reference point or an angle to rotate.')
+    await typeTerminalValue(activePage, '')
+    await waitForTerminalText(activePage, 'Enter a valid rotation angle.')
+    await typeTerminalValue(activePage, '90')
+    await activePage.waitForFunction(id => {
+      const rotated = document.getElementById(id)
+      return rotated?.localName === 'polygon'
+        && document.getElementById('terminalLog')?.textContent?.includes(
+          'Elements rotated by 90.00 degrees.',
+        )
+        && !window.editor.isInteracting
+        && !window.editor.suppressHandlers
+        && !window.editor.selectSingleElement
+    }, {}, original.id)
+
+    const rotated = await activePage.evaluate((id) => {
+      const element = document.getElementById(id)
+      if (!element) return null
+      const bounds = element.getBoundingClientRect()
+      const coordinates = (element.getAttribute('points') || '')
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number)
+      const xs = coordinates.filter((_value, index) => index % 2 === 0)
+      const ys = coordinates.filter((_value, index) => index % 2 === 1)
+      return {
+        centerX: bounds.left + bounds.width / 2,
+        centerY: bounds.top + bounds.height / 2,
+        geometryHeight: Math.max(...ys) - Math.min(...ys),
+        geometryWidth: Math.max(...xs) - Math.min(...xs),
+        height: bounds.height,
+        markup: element.outerHTML,
+        terminal: document.getElementById('terminalLog')?.textContent || '',
+        width: bounds.width,
+      }
+    }, original.id)
+    assert(rotated, 'ROTATE removed the moved rectangle without a replacement.')
+    trace('move-rotate', { original, rotated })
+    assert(rotated.markup !== original.markup, 'ROTATE did not change the rectangle geometry.')
+    assert(
+      !rotated.terminal.includes(
+        'ROTATE does not support transformed primitive geometry or geometry inside transformed groups.',
+      ),
+      'ROTATE reported the retired transformed-primitive rejection.',
+    )
+    const geometryTolerance = 1e-8
+    assert(
+      Math.abs(rotated.geometryWidth - TEST_RECTANGLE_HEIGHT) <= geometryTolerance
+        && Math.abs(rotated.geometryHeight - TEST_RECTANGLE_WIDTH) <= geometryTolerance,
+      'ROTATE did not swap the moved rectangle geometry bounds at 90 degrees.',
+    )
+    const pixelTolerance = 2
+    assert(
+      Math.abs(rotated.centerX - original.centerX) <= pixelTolerance
+        && Math.abs(rotated.centerY - original.centerY) <= pixelTolerance,
+      'ROTATE did not preserve the selected rectangle center.',
+    )
+    const transients = await transientCounts(activePage)
+    assert(transients.previews === 0, `ROTATE left ${transients.previews} preview helper(s).`)
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    await activePage.waitForFunction(({ id, x, y }) => {
+      const rect = document.getElementById(id)
+      return rect?.localName === 'rect'
+        && Number(rect.getAttribute('x')) === x
+        && Number(rect.getAttribute('y')) === y
+        && !rect.hasAttribute('transform')
+        && !rect.hasAttribute('selected')
+        && !rect.classList.contains('elementHover')
+        && !rect.classList.contains('elementSelected')
+    }, {}, original)
+
+    // A non-identity authored SVG transform exercises computed-style matrix
+    // rounding in the real engine. It must rotate, round-trip, and never be
+    // mistaken for an overriding CSS transform.
+    const authored = await activePage.evaluate((id) => {
+      const element = window.editor.drawing.findOne(`[id="${id}"]`)
+      const rect = element?.node
+      if (!element || !rect) return null
+      const cx = Number(rect.getAttribute('x')) + Number(rect.getAttribute('width')) / 2
+      const cy = Number(rect.getAttribute('y')) + Number(rect.getAttribute('height')) / 2
+      const transform = `rotate(37 ${cx} ${cy})`
+      window.editor.documentState.runWithoutTracking(() => element.attr('transform', transform))
+      const ctm = rect.getScreenCTM()
+      const center = new DOMPoint(cx, cy).matrixTransform(ctm)
+      window.editor.selected = [element]
+      return {
+        centerX: center.x,
+        centerY: center.y,
+        historyDepth: window.editor.history.undos.length,
+        revision: window.editor.documentState.revision,
+        transform,
+      }
+    }, original.id)
+    assert(authored, 'Could not prepare the authored affine ROTATE browser check.')
+
+    await runTerminalCommand(activePage, 'r')
+    await waitForTerminalText(activePage, 'Specify center point.')
+    await activePage.mouse.click(authored.centerX, authored.centerY)
+    await waitForTerminalText(activePage, 'Specify reference point or an angle to rotate.')
+    await typeTerminalValue(activePage, '13')
+    await activePage.waitForFunction(({ historyDepth, id, revision, transform }) => {
+      const rect = document.getElementById(id)
+      return rect?.localName === 'rect'
+        && rect.getAttribute('transform') !== transform
+        && window.editor.history.undos.length === historyDepth + 1
+        && window.editor.documentState.revision === revision + 1
+        && document.getElementById('terminalLog')?.textContent?.includes(
+          'Elements rotated by 13.00 degrees.',
+        )
+    }, {}, { ...authored, id: original.id })
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    await activePage.waitForFunction(({ id, transform }) => (
+      document.getElementById(id)?.getAttribute('transform') === transform
+    ), {}, { ...authored, id: original.id })
+    const authoredCleanupRevision = await activePage.evaluate((id) => {
+      const element = window.editor.drawing.findOne(`[id="${id}"]`)
+      window.editor.documentState.runWithoutTracking(() => element.node.removeAttribute('transform'))
+      window.editor.documentState.flushObservedMutations()
+      return window.editor.documentState.revision
+    }, original.id)
+    assert(
+      authoredCleanupRevision === authored.revision + 2,
+      'Authored-transform browser cleanup changed DocumentState outside History.',
+    )
+
+    // ROTATE stores the prior selection for the normal Previous-selection UI.
+    // Reapply and clear it so later pointer-selection steps start from a clean state.
+    await runTerminalCommand(activePage, 'p')
+    await activePage.keyboard.press('Escape')
   })
 
   await step('cancel repeated active commands without helpers', async () => {
