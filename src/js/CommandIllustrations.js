@@ -300,6 +300,14 @@ const drawIllustration = Object.freeze({
     point(90, 39, 'base-point', 2.5)
     point(119, 79, 'base-point', 2.5)
   },
+
+  IMAGE: ({ rect, circle, polyline, arrow, point }) => {
+    rect(48, 25, 91, 57)
+    circle(113, 40, 6)
+    polyline('49,72 73,46 92,66 107,54 138,78')
+    arrow(20, 14, 44, 25, 'guide')
+    point(48, 25, 'base-point')
+  },
 })
 
 const COMMAND_ILLUSTRATION_NAMES = Object.freeze(Object.keys(drawIllustration))

@@ -9,6 +9,7 @@
  */
 import RBush from 'rbush'
 import { getSelectableElements } from './Collection'
+import { getImageVisibleBounds, readImageGripBounds } from './utils/imageGrips'
 
 /**
  * Transform a point from element-local space to SVG root (viewBox) space.
@@ -32,7 +33,8 @@ function localToRoot(x, y, elCTM, svgInv) {
  */
 function getElementBBox(el, svgEl) {
     try {
-        const bbox = el.node.getBBox()
+        const bbox = el.type === 'image' ? getImageVisibleBounds(readImageGripBounds(el)) : el.node.getBBox()
+        if (!bbox) return null
         if (bbox.width === 0 && bbox.height === 0 && bbox.x === 0 && bbox.y === 0) {
             return null
         }

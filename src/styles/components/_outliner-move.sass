@@ -1,0 +1,81 @@
+.outliner-move-dialog
+  box-sizing: border-box
+  width: min(420px, calc(100vw - 32px))
+  max-height: calc(100vh - 32px)
+  padding: 24px
+  overflow-y: auto
+  border: 1px solid var(--panel-border-color)
+  border-radius: 10px
+  color: var(--app-foreground-color)
+  background: var(--surface-1)
+  box-shadow: var(--elevation-dialog)
+  font-family: var(--font-ui)
+
+  &::backdrop
+    background: color-mix(in srgb, var(--surface-0) 65%, transparent)
+    backdrop-filter: blur(7px)
+
+  h2
+    margin: 0 0 8px
+    font-family: var(--font-display)
+    font-size: 18px
+
+  p
+    margin: 0 0 18px
+    color: var(--app-muted-foreground-color)
+    line-height: 1.5
+
+  label
+    display: block
+    margin-bottom: 6px
+
+  select,
+  input,
+  button
+    box-sizing: border-box
+    min-height: 34px
+    padding: 7px 10px
+    border: 1px solid var(--panel-border-color)
+    border-radius: 5px
+    color: var(--app-foreground-color)
+    background: var(--surface-0)
+    font: inherit
+
+    &:focus-visible
+      outline: 2px solid var(--accent-color)
+      outline-offset: 2px
+
+    &:disabled
+      opacity: .55
+
+  select,
+  input
+    width: 100%
+
+  button
+    cursor: pointer
+
+    &:hover:not(:disabled)
+      background: var(--hover-surface)
+
+    &[type='submit']
+      border-color: var(--accent-color)
+      background: var(--selected-surface)
+
+  [hidden]
+    display: none
+
+.outliner-move-name-field
+  margin-top: 16px
+
+.outliner-move-dialog .outliner-move-message
+  margin: 12px 0 0
+
+  &:empty
+    display: none
+
+.outliner-move-actions
+  display: flex
+  justify-content: flex-end
+  gap: 8px
+  margin-top: 24px

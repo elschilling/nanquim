@@ -170,6 +170,26 @@ describe('untrusted SVG sanitizer', () => {
     expect(wall.hasAttribute('mask')).toBe(false)
   })
 
+  test('preserves bounded image inset crops while rejecting URL and active-content clip payloads', () => {
+    const clip = 'inset(10% 20% 30% 15%) fill-box'
+    const root = sanitize(`
+      <svg xmlns="${SVG_NS}">
+        <image id="crop" width="80" height="45" clip-path="${clip}"/>
+        <image id="inline-crop" width="80" height="45" style="clip-path:${clip}"/>
+        <image id="external" width="80" height="45" clip-path="url(https://example.test/clip.svg#crop)"/>
+        <image id="active" width="80" height="45" style="clip-path:expression(alert(1))"/>
+        <image id="hidden-url" width="80" height="45" clip-path="inset(10% 20% 30% 15%) fill-box url(//example.test/crop)"/>
+      </svg>
+    `)
+
+    expect(root.querySelector('#crop').getAttribute('clip-path')).toBe(clip)
+    expect(root.querySelector('#inline-crop').getAttribute('style')).toBe(`clip-path:${clip}`)
+    expect(root.querySelector('#external').hasAttribute('clip-path')).toBe(false)
+    expect(root.querySelector('#active').hasAttribute('style')).toBe(false)
+    expect(root.querySelector('#hidden-url').hasAttribute('clip-path')).toBe(false)
+    expect(root.querySelectorAll('image')).toHaveLength(5)
+  })
+
   test('preserves safe CAD geometry, text and referenced defs without changing IDs', () => {
     const root = sanitize(`
       <svg xmlns="${SVG_NS}" viewBox="0 0 100 100">

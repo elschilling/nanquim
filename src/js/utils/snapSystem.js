@@ -3,6 +3,7 @@ import { calculateDistance } from './calculateDistance'
 import { getPreferences } from '../Preferences'
 import { getAllDrawingElements } from '../Collection'
 import { pointOnEllipse } from './ellipseArcUtils'
+import { getImageVisibleBounds, readImageGripBounds } from './imageGrips'
 
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
@@ -618,6 +619,26 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         ;['topMidpoint', 'rightMidpoint', 'bottomMidpoint', 'leftMidpoint'].forEach(key => {
           pushWorldTarget(rectPoints[key], 'midpoint')
         })
+      }
+    } else if (el.type === 'image') {
+      if (!st.endpoint && !st.midpoint && !st.center) return
+      const bounds = getImageVisibleBounds(readImageGripBounds(el))
+      if (!bounds) return
+      const { x, y, width, height } = bounds
+      if (st.endpoint) {
+        ;[
+          { x, y }, { x: x + width, y },
+          { x: x + width, y: y + height }, { x, y: y + height },
+        ].forEach(point => pushLocalTarget(el, point, 'endpoint'))
+      }
+      if (st.midpoint) {
+        ;[
+          { x: x + width / 2, y }, { x: x + width, y: y + height / 2 },
+          { x: x + width / 2, y: y + height }, { x, y: y + height / 2 },
+        ].forEach(point => pushLocalTarget(el, point, 'midpoint'))
+      }
+      if (st.center) {
+        pushLocalTarget(el, { x: x + width / 2, y: y + height / 2 }, 'center')
       }
     } else if (el.type === 'path' && el.data('arcData')) {
       const arcData = el.data('arcData')

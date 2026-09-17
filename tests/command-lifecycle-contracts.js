@@ -169,6 +169,11 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
     modes: MODEL_MODE,
     prompt: 'INSERT ',
   }),
+  IMAGE: contract({
+    input: ['dialog', 'pointer', 'coordinate'],
+    modes: MODEL_MODE,
+    prompt: 'Choose a PNG',
+  }),
 })
 
 export { COMMAND_LIFECYCLE_CONTRACTS }

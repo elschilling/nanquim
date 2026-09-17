@@ -56,6 +56,48 @@ describe('secure SVG clipboard paste', () => {
     globalThis.SVG = SVG
   })
 
+  test('retains image cropping, embedded pixels and transforms through paste and Undo/Redo', () => {
+    const editor = createEditor()
+    const href = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
+    const clip = 'inset(10% 20% 30% 15%) fill-box'
+    const original = editor.activeCollection.image().attr({
+      id: 'original-image',
+      href,
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 45,
+      transform: 'translate(5 8) rotate(15)',
+      'clip-path': clip,
+    })
+    const command = new PasteCommand(editor, {
+      nanquimClipboard: true,
+      elements: [{ svg: original.svg() }],
+    })
+
+    command.execute()
+
+    const pasted = command.pastedElements[0]
+    expect(pasted.type).toBe('image')
+    expect(pasted.id()).not.toBe(original.id())
+    expect(pasted.attr('clip-path')).toBe(clip)
+    expect(pasted.attr('href')).toBe(href)
+    expect(pasted.attr('transform')).toBe(original.attr('transform'))
+    expect(['x', 'y', 'width', 'height'].map(name => pasted.attr(name)))
+      .toEqual([10, 20, 80, 45])
+    expect(editor.activeCollection.find('image')).toHaveLength(2)
+
+    command.undo()
+    expect(editor.activeCollection.find('image')).toHaveLength(1)
+    expect(original.attr('clip-path')).toBe(clip)
+
+    command.redo()
+    expect(editor.activeCollection.find('image')).toHaveLength(2)
+    expect(pasted.attr('clip-path')).toBe(clip)
+    expect(pasted.attr('href')).toBe(href)
+    expect(pasted.node.isConnected).toBe(true)
+  })
+
   test('removes active content while preserving safe defs, geometry, styles and local references', () => {
     const editor = createEditor()
     const command = new PasteCommand(editor, {

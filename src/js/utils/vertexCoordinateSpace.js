@@ -1,3 +1,5 @@
+import { getImageGripPoints } from './imageGrips'
+
 function applyMatrix(matrix, point) {
   return {
     x: matrix.a * point.x + matrix.c * point.y + matrix.e,
@@ -29,6 +31,17 @@ function getScreenMatrix(target) {
   }
 }
 
+function isInvertibleCoordinateMatrix(matrix) {
+  if (!matrix || !['a', 'b', 'c', 'd', 'e', 'f'].every(key => Number.isFinite(matrix[key]))) return false
+  const determinant = matrix.a * matrix.d - matrix.b * matrix.c
+  return Number.isFinite(determinant) && Math.abs(determinant) >= 1e-10
+}
+
+function canEditImageGrips(element, activeSvg) {
+  return isInvertibleCoordinateMatrix(getScreenMatrix(element))
+    && isInvertibleCoordinateMatrix(getScreenMatrix(activeSvg))
+}
+
 /**
  * Convert a point in the active SVG root/viewBox to an element's local space.
  * Paper viewport geometry is already stored in the Paper root, rather than in
@@ -40,6 +53,9 @@ function rootPointToElementLocal(point, element, activeSvg) {
 
   const rootMatrix = getScreenMatrix(activeSvg)
   const elementMatrix = getScreenMatrix(element)
+  if (element?.type === 'image' && (!isInvertibleCoordinateMatrix(rootMatrix) || !isInvertibleCoordinateMatrix(elementMatrix))) {
+    return null
+  }
   if (!rootMatrix || !elementMatrix) return { x: point.x, y: point.y }
 
   const local = applyInverseMatrix(elementMatrix, applyMatrix(rootMatrix, point))
@@ -91,6 +107,10 @@ function getVertexLocalAnchor(vertexData) {
   }
   if (element.type === 'rect' || element._paperVp) {
     return getRectGripPoint(originalPosition, vertexIndex)
+  }
+  if (element.type === 'image') {
+    const point = getImageGripPoints(originalPosition).find(point => point.index === vertexIndex)
+    return point ? { x: point.x, y: point.y } : null
   }
   if (element.type === 'ellipse') {
     return { x: originalPosition.cx, y: originalPosition.cy }
@@ -149,6 +169,7 @@ function constrainVertexPointInRoot(point, vertexData, activeSvg) {
 }
 
 export {
+  canEditImageGrips,
   constrainVertexPointInRoot,
   elementLocalPointToRoot,
   getVertexLocalAnchor,

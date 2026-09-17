@@ -12,6 +12,8 @@ const TERMINAL_SHORTCUTS = [
   { keys: ['Ctrl/⌘ + C', 'Ctrl/⌘ + V'], description: 'Copy or paste selected Nanquim geometry.' },
   { keys: ['↑ / ↓', 'Tab'], description: 'Navigate and accept terminal autocomplete suggestions.' },
   { keys: ['P'], description: 'Restore the previous selection when one is available.' },
+  { keys: ['M over Outliner'], description: 'Move selected elements to an existing or new collection.' },
+  { keys: ['Shift + click in Outliner'], description: 'Select the visible range from the last clicked row.' },
   { keys: ['@x,y', '#x,y'], description: 'Enter relative or absolute coordinates.' },
   { keys: ['F2'], description: 'Expand or restore the terminal.' },
   { keys: ['F3'], description: 'Toggle all viewport overlays.' },

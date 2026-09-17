@@ -4,6 +4,7 @@ import { EditCircleCommand } from './EditCircleCommand.js'
 import { EditDimensionCommand } from './EditDimensionCommand.js'
 import { EditEllipseArcCommand } from './EditEllipseArcCommand.js'
 import { EditEllipseCommand } from './EditEllipseCommand.js'
+import { EditImageCommand } from './EditImageCommand.js'
 import { EditPolylineCommand } from './EditPolylineCommand.js'
 import { EditRectangleCommand } from './EditRectangleCommand.js'
 import { EditSplineCommand } from './EditSplineCommand.js'
@@ -41,6 +42,13 @@ const UPDATE_GROUPS = [
   {
     CommandClass: EditRectangleCommand,
     key: 'rectangleUpdates',
+    makeOne: (CommandClass, editor, update) => (
+      new CommandClass(editor, update.element, update.oldValues, update.newValues)
+    ),
+  },
+  {
+    CommandClass: EditImageCommand,
+    key: 'imageUpdates',
     makeOne: (CommandClass, editor, update) => (
       new CommandClass(editor, update.element, update.oldValues, update.newValues)
     ),

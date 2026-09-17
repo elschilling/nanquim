@@ -42,6 +42,7 @@ const expectedCommands = [
   'AREA',
   'BLOCK',
   'INSERT',
+  'IMAGE',
 ]
 
 describe('help command registry', () => {
@@ -235,6 +236,7 @@ describe('HelpSession', () => {
     )
     expect(availability.LINE).toBe('Available in Model and Paper Space')
     expect(availability.BLOCK).toBe('Available in Model Space only')
+    expect(availability.IMAGE).toBe('Available in Model Space only')
     expect(availability.VIEWPORT).toBe('Available in Paper Space only')
   })
 

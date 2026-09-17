@@ -23,15 +23,19 @@ function initCollections(editor) {
  * Create a new collection (SVG <g> group) inside editor.drawing.
  * @param {object} editor
  * @param {string} name
+ * @param {object} options - Activation and UI notification controls for transactions.
  * @returns {SVG.G} the svg.js group element
  */
-function createCollection(editor, name) {
+function createCollection(editor, name, { activate = true, notify = true } = {}) {
     if (!Number.isSafeInteger(editor.collectionIndex) || editor.collectionIndex < 0) {
         editor.collectionIndex = 0
     }
+    const root = editor.drawing.node.ownerSVGElement || editor.drawing.node
     do {
-        editor.collectionIndex++
-    } while (editor.collections.has('collection-' + editor.collectionIndex))
+        editor.collectionIndex = editor.collectionIndex === Number.MAX_SAFE_INTEGER ? 1 : editor.collectionIndex + 1
+    } while (editor.collections.has('collection-' + editor.collectionIndex)
+        || root.id === 'collection-' + editor.collectionIndex
+        || root.querySelector('[id="collection-' + editor.collectionIndex + '"]'))
     const group = editor.drawing.group()
     const id = 'collection-' + editor.collectionIndex
     group.attr('id', id)
@@ -55,10 +59,12 @@ function createCollection(editor, name) {
     applyCollectionStyle(group, data.style)
 
     editor.collections.set(id, data)
-    editor.activeCollection = group
+    if (activate) editor.activeCollection = group
 
-    editor.signals.updatedCollections.dispatch()
-    editor.signals.updatedOutliner.dispatch()
+    if (notify) {
+        editor.signals.updatedCollections.dispatch()
+        editor.signals.updatedOutliner.dispatch()
+    }
 
     return group
 }

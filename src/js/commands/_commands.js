@@ -28,6 +28,7 @@ import { areaCommand } from './AreaCommand'
 import { blockCommand } from './BlockCommand'
 import { insertCommand } from './InsertCommand'
 import { helpCommand } from './HelpCommand'
+import { imageCommand } from './ImageCommand'
 
 const commandCategories = Object.freeze([
   'General',
@@ -90,7 +91,7 @@ const commands = {
     execute: copyCommand,
     aliases: ['co'],
     category: 'Modify',
-    description: 'Copy selected geometry from a base point to one or more destinations.',
+    description: 'Copy geometry to one or more destinations; an existing selection starts at the base point.',
     modes: MODEL_ONLY,
   },
   ROTATE: {
@@ -252,6 +253,13 @@ const commands = {
     aliases: ['i', 'insert'],
     category: 'Organize',
     description: 'Insert one or more instances of a saved block.',
+    modes: MODEL_ONLY,
+  },
+  IMAGE: {
+    execute: imageCommand,
+    aliases: ['img', 'imageattach'],
+    category: 'Draw',
+    description: 'Import an embedded image, then click or enter its position; or drop an image onto the viewport.',
     modes: MODEL_ONLY,
   },
   // Add more commands and functions as needed

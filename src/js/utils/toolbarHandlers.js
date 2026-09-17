@@ -73,6 +73,8 @@ export function initToolbarHandlers(editor) {
     editor.isSnapping = !Boolean(editor.isSnapping)
     setToggleButtonState(snapButton, editor.isSnapping)
     editor.signals.terminalLogged.dispatch({ type: 'strong', msg: `Snap ${editor.isSnapping ? 'ON' : 'OFF'}` })
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    activeSvg?.fire('snapChange')
   }
 
   function handleTogglePolarTracking() {

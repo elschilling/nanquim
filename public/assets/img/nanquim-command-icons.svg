@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="96" viewBox="0 0 192 96">
   <title>Nanquim command icon mask sheet</title>
-  <desc>Project-authored technical drafting icons for the thirty registered commands, arranged in an eight by four grid of 24 pixel cells.</desc>
+  <desc>Project-authored technical drafting icons for the registered commands, arranged in an eight by four grid of 24 pixel cells.</desc>
   <g fill="none" stroke="#fff" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <!-- Row 0: General and Draw commands. -->
     <g id="command-help" transform="translate(0 0)">
@@ -140,7 +140,7 @@
       <path d="M2 20h4M4 18v4"/>
     </g>
 
-    <!-- Row 3: remaining Organize, Measure, and Paper Space commands. -->
+    <!-- Row 3: remaining Organize, Measure, Paper Space, and Image commands. -->
     <g id="command-insert" transform="translate(0 72)">
       <rect x="3" y="3" width="9" height="9" rx=".5"/>
       <path d="M7.5 3v9M3 7.5h9M11 11l6 6M13 17h4v-4"/>
@@ -174,6 +174,11 @@
       <rect x="7" y="9" width="10" height="8" rx=".4"/>
       <path d="M12 9v8M7 13h10" opacity=".65"/>
       <circle cx="12" cy="13" r="1" fill="#fff" stroke="none"/>
+    </g>
+    <g id="command-image" transform="translate(144 72)">
+      <rect x="4" y="5" width="16" height="14" rx=".5"/>
+      <circle cx="15.5" cy="9.5" r="1.5"/>
+      <path d="m4 17 5-7 5 6 2-3 4 5M2 5h4M4 3v4"/>
     </g>
   </g>
 </svg>

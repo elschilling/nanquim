@@ -86,6 +86,9 @@ limitations.
   collections, specialized geometry, styles, blocks, Paper Space, and Geometry
   Nodes. Historical schema-v1/v2 documents migrate on Open.
 - Import supported DXF geometry and export common DXF entities, including lines, circles, ellipses, arcs, polylines, and text. DXF text import is not supported yet.
+- Insert local PNG, JPEG, GIF, and WebP images with `IMAGE` (`IMG`, `IMAGEATTACH`)
+  or drop an image into the Model viewport. Images are embedded in the drawing;
+  see the [image workflow and limits](docs/file-interoperability.md#raster-image-insertion).
 - Copy and paste Nanquim SVG elements with ID cleanup.
 - Welcome screen and recent disk files where the browser supports persistent file handles.
 - `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` cover New, Open, Save, and
@@ -122,11 +125,15 @@ category. Use **Tools** in the application bar or press `F4` to show or hide it.
 | Area | Commands |
 | --- | --- |
 | General | `HELP (?)` |
-| Draw | `LINE (L)`, `CIRCLE (C)`, `ELLIPSE (EL)`, `RECTANGLE (REC)`, `ARC (A)`, `POLYLINE (PL)`, `SPLINE (SP)`, `TEXT (T)`, `HATCH (H)` |
+| Draw | `LINE (L)`, `CIRCLE (C)`, `ELLIPSE (EL)`, `RECTANGLE (REC)`, `ARC (A)`, `POLYLINE (PL)`, `SPLINE (SP)`, `TEXT (T)`, `HATCH (H)`, `IMAGE (IMG, IMAGEATTACH)` |
 | Modify | `MOVE (M)`, `COPY (CO)`, `ROTATE (R)`, `SCALE (S)`, `OFFSET (O)`, `FILLET (F)`, `MIRROR (MI)`, `TRIM (TR)`, `EXTEND (EX)`, `ERASE (E)` |
 | Organize | `GROUP (G)`, `UNGROUP (UG)`, `BLOCK (B)`, `INSERT (I)`, `MATCH_PROPERTIES (MA)` |
 | Measure and annotate | `DIST (D)`, `AREA (AR)`, `DIMLINEAR (DM)`, `DIMALIGNED (DA)` |
 | Paper Space | `VIEWPORT (VP)` |
+
+`MOVE` and `COPY` use the current selection and immediately ask for a base point.
+With no preselection, select the elements and press `Enter` first. Object Snap
+(`F9` or the viewport button) is available when choosing the base and destination points.
 
 ### Useful keys
 

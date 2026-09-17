@@ -1,7 +1,10 @@
 import { Matrix } from '@svgdotjs/svg.js'
+import { stylesheetPropertyState } from './stylesheetPropertyState.js'
 
 const MATRIX_EPSILON = 1e-12
 const CSS_MATRIX_EPSILON = 1e-6
+// Firefox serializes computed transform coefficients with six significant digits.
+const CSS_SERIALIZATION_EPSILON = 5e-6
 
 function computedTransform(node) {
   const view = node?.ownerDocument?.defaultView
@@ -9,82 +12,12 @@ function computedTransform(node) {
   return String(style?.getPropertyValue?.('transform') || style?.transform || '').trim()
 }
 
-function mediaMatches(media, view) {
-  const query = String(media?.mediaText || media || '').trim()
-  if (!query || query === 'all') return true
-  if (typeof view?.matchMedia !== 'function') return null
-  return Boolean(view.matchMedia(query).matches)
-}
-
-function nestedRuleIsActive(rule, view) {
-  const type = rule?.constructor?.name
-  if (type === 'CSSMediaRule') return mediaMatches(rule.media, view)
-  if (type === 'CSSSupportsRule') {
-    if (typeof view?.CSS?.supports !== 'function') return null
-    return Boolean(view.CSS.supports(rule.conditionText))
-  }
-  if (type === 'CSSContainerRule') return null
-  if (type === 'CSSImportRule') return mediaMatches(rule.media, view)
-  return true
-}
-
-function rulesSetTransform(rules, node, view) {
-  for (const rule of Array.from(rules || [])) {
-    const declaration = rule?.style?.getPropertyValue?.('transform')
-    if (declaration && rule.selectorText) {
-      try {
-        if (node.matches(rule.selectorText)) return true
-      } catch (_error) {
-        // A selector unsupported by the current browser cannot match here.
-      }
-    }
-
-    const active = nestedRuleIsActive(rule, view)
-    if (active === null) return null
-    if (!active) continue
-    try {
-      if (rule.cssRules) {
-        const result = rulesSetTransform(rule.cssRules, node, view)
-        if (result !== false) return result
-      }
-      if (rule.styleSheet?.cssRules) {
-        const result = rulesSetTransform(rule.styleSheet.cssRules, node, view)
-        if (result !== false) return result
-      }
-    } catch (_error) {
-      return null
-    }
-  }
-  return false
-}
-
-function stylesheetTransformState(node) {
-  const view = node?.ownerDocument?.defaultView
-  let inaccessible = false
-  for (const sheet of Array.from(node?.ownerDocument?.styleSheets || [])) {
-    const active = mediaMatches(sheet.media, view)
-    if (active === null) {
-      inaccessible = true
-      continue
-    }
-    if (sheet.disabled || !active) continue
-    try {
-      const result = rulesSetTransform(sheet.cssRules, node, view)
-      if (result === true) return { inaccessible, matched: true }
-      if (result === null) inaccessible = true
-    } catch (_error) {
-      inaccessible = true
-    }
-  }
-  return { inaccessible, matched: false }
-}
-
-function matricesEqual(left, right) {
+function matricesEqual(left, right, epsilon = CSS_MATRIX_EPSILON) {
   return ['a', 'b', 'c', 'd', 'e', 'f'].every((key) => {
     const leftValue = Number(left[key])
     const rightValue = Number(right[key])
     const scale = Math.max(1, Math.abs(leftValue), Math.abs(rightValue))
-    return Math.abs(leftValue - rightValue) <= CSS_MATRIX_EPSILON * scale
+    return Math.abs(leftValue - rightValue) <= epsilon * scale
   })
 }
 
@@ -106,7 +39,7 @@ function hasOwnCssTransform(element) {
 
   const attribute = node.getAttribute?.('transform')
   const computed = computedTransform(node)
-  const stylesheetState = stylesheetTransformState(node)
+  const stylesheetState = stylesheetPropertyState(node, 'transform')
   if (stylesheetState.matched || stylesheetState.inaccessible) return true
   if (!attribute) return Boolean(computed && computed !== 'none')
 
@@ -120,7 +53,7 @@ function hasOwnCssTransform(element) {
   }
 
   const computedMatrix = parseComputedMatrix(computed)
-  return !computedMatrix || !matricesEqual(computedMatrix, element.matrixify())
+  return !computedMatrix || !matricesEqual(computedMatrix, element.matrixify(), CSS_SERIALIZATION_EPSILON)
 }
 
 function matrixValues(source) {
@@ -251,4 +184,5 @@ function composeRootRotation(context, angle, centerPoint) {
 export {
   captureRootTransformContext,
   composeRootRotation,
+  getParentToRootMatrix,
 }

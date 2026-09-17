@@ -16,6 +16,7 @@ documented conversion boundaries below.
 | --- | --- | --- |
 | Native Nanquim SVG | Editable schema-v3 document, with tested schema-v1/v2 migration and atomic rejection of unsupported future schemas. | **Stable** |
 | Foreign/presentation SVG | Sanitized vector import/export for the qualified profile; active content, external resources, and unsupported foreign content are removed and reported. | **Partial** |
+| Local raster images | Embedded PNG, JPEG, GIF, or WebP images inserted into Model Space through `IMAGE` or file drop. | **Partial** |
 | ASCII DXF import/export | Centimetre-based Model exchange for the supported entity and layer profile, with bounded diagnostics for skipped or approximated content. | **Partial** |
 | Paper SVG/PDF | Vector output for one configured sheet containing annotations and one or more Model viewports. | **Partial** |
 
@@ -23,6 +24,42 @@ documented conversion boundaries below.
 tests, not that it is lossless for arbitrary files from another authoring
 tool. A native Save and an interchange Export must never be treated as the
 same operation.
+
+## Raster image insertion
+
+In Model Space, run `IMAGE` (aliases `IMG` and `IMAGEATTACH`), choose a local
+PNG, JPEG, GIF, or WebP file, then click its upper-left insertion point or enter
+coordinates. `@x,y` is relative and `#x,y` is absolute. Alternatively, drag a
+single image file from your file manager onto the Model viewport; the drop
+position becomes its upper-left corner. Escape cancels command placement.
+
+The image enters the active collection, and insertion supports Undo/Redo.
+Its initial size preserves proportions and fits within half the current
+viewport's width and height, without enlarging beyond its original pixel
+dimensions in drawing units. Select the image to show four corner grips, four
+side grips, and a center grip. Click a corner and then its destination to resize
+proportionally, keeping the opposite corner fixed; use the center grip to move
+the image. Click a side grip and then its destination to crop that edge without
+stretching the image. Moving a cropped edge outward reveals the original pixels
+again, up to the image's original extent. Escape cancels a grip edit, and
+completed edits support Undo/Redo. `SCALE` is also available for setting the
+desired size. Import one image at a time, with at most 8 MiB and 40 million
+decoded pixels per file.
+Unsupported, invalid, or multiple files are rejected without changing the drawing.
+Side crop grips support unclipped images and rectangular inset crops controlled
+by the image itself. Existing CSS-controlled or other clipping shapes are preserved.
+
+Object Snap (`F9` or the viewport button) can target image corners, side midpoints,
+and centers. These targets follow the visible rectangular crop and image transforms;
+they do not trace objects inside the bitmap. Snap can be toggled during `COPY`,
+updating the point indicator and copy preview without another mouse movement.
+
+Images and their crop are preserved in native SVG saves, so moving or deleting
+the original file does not break the saved drawing. Cropping only hides pixels:
+the complete original image remains embedded in the document and clipboard
+copies. Image insertion is currently available only in Model Space. It does not
+trace pixels into editable vectors, and raster DXF/PDF interchange is outside
+the qualified profile.
 
 ## Paper beta scope
 
