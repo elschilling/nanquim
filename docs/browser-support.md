@@ -1,6 +1,6 @@
 # Browser and file API support
 
-Last reviewed: 2026-08-22
+Last reviewed: 2026-09-20
 
 This document defines the intended `v0.1` desktop-browser support contract. It
 does not claim that a browser has passed release qualification unless the exact
@@ -43,6 +43,11 @@ passed all four matrix targets: current and previous-stable Chromium plus
 stable and ESR Firefox. Direct persistent-file-handle and Safari checks remain
 manual candidate gates.
 
+The 2026-09-20 alpha.2 candidate passed all 43 workflows on all four targets
+in [run 35543929819](https://github.com/elschilling/nanquim/actions/runs/35543929819).
+The [alpha.2 release record](releases/v0.1.0-alpha.2.md) records exact browser
+versions, local and production checks, and the remaining manual gates.
+
 Run the same production-build checks locally with:
 
 ```bash
@@ -70,7 +75,7 @@ semantics, not a polyfill for direct disk access.
 | Direct `Ctrl+S` overwrite | Available only for a writable retained file handle | Not available | Not available |
 | Recent disk-file handles | Available when a picker returns a serializable handle; permission may need to be granted again | Not available | Not available |
 | SVG, DXF, and Paper SVG download | Blob URL plus an anchor `download` action | Same fallback target | Same fallback target |
-| Paper PDF export | Implemented, but requires release-candidate rendering checks | Implemented, not yet qualified | Best effort, not yet qualified |
+| Paper PDF export | Representative vector/font/page-size workflows pass; broader external rendering equivalence remains partial | Representative vector/font/page-size workflows pass; broader external rendering equivalence remains partial | Best effort, not yet qualified |
 | Copy selected Nanquim geometry | Partial: Async Clipboard requires HTTPS/localhost; permission, site policy, and transient-activation behavior can vary by Chromium version | Partial: Async Clipboard requires HTTPS/localhost and engine-specific activation/prompt behavior | Partial: Async Clipboard requires HTTPS and engine-specific activation/prompt behavior |
 | Paste Nanquim geometry | Native paste-event path first, then permitted Async Clipboard read | Same intended path | Same intended path |
 | Preferences | `localStorage`, when storage is available | Same | Same |

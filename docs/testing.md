@@ -28,8 +28,14 @@ The first Phase 2 report was recorded on 2026-08-21 with Node.js 22.22.2,
 Vitest 4.1.11, and the V8 provider 4.1.11. Before the command lifecycle
 contracts landed, all 348 tests across 38 files passed. The same-day Phase 2
 ratchet report first passed all 437 tests across 43 files. The settled Phase
-2+3 coverage report recorded on 2026-08-21 passes all 771 tests across 70
-files.
+2+3 coverage report recorded on 2026-08-21 passed all 771 tests across 70
+files. The table below retains that historical ratchet record.
+
+The 2026-09-20 alpha.2 suite passes 1,259 tests across 97 files, with 67.93%
+statements, 60.07% branches, 75.74% functions, and 70.59% lines. Configured
+global and per-file gates pass; this release keeps the existing floors.
+See the [release record](releases/v0.1.0-alpha.2.md) for exact source, browser,
+external-tool, performance, and deployment evidence.
 
 | Metric | Initial result | Recorded covered / total | Ratcheted floor |
 | --- | ---: | ---: | ---: |
@@ -130,8 +136,8 @@ degradation, DXF unit/layer conversion, bounded `INSERT` expansion, DXF export
 mappings/diagnostics, Paper physical sizes and scale, reference closure, and
 vector SVG/PDF output.
 
-The settled local production harness also passes all ten workflows in both
-Chromium 151.0.7922.137 and Firefox 154.0. Its exchange checks cover
+The alpha.2 local production harness passes all 43 workflows in both
+Chrome 153.0.8010.36 and Firefox 156.0. Its exchange checks cover
 sanitized foreign SVG import, centimetre/layer-aware DXF import and re-export,
 and intercepted vector Paper SVG/PDF downloads with physical page size,
 reference closure, no raster image fallback, and a nonempty embedded font.
@@ -144,12 +150,14 @@ and Blender 5.2.1 LTS, refreshing the original 5.2.0 LTS pin with the same
 import inventory. Inkscape retained the exact physical size, viewBox,
 entity inventory, local references, and all 21 queried geometry bounds with
 maximum delta 0 against the `0.01` limit. Blender imported 17 objects, 14
-curves, and 14 splines. LibreCAD 2.2.1.2 remains a manual-required gate; a
-version query is not a DXF round-trip result.
+curves, and 14 splines. A separate LibreCAD 2.2.1.2 GUI round trip covers a
+five-entity sample through Nanquim reopen, preserving its units, geometry and
+layer states while recording the external Hidden-layer color rewrite.
+Broader color parity and Paper visual-equivalence gates remain open.
 
 The command writes small ignored evidence below
 `test-results/interoperability/local-profile/` by default; the alpha.2 run is
-recorded in `test-results/interoperability/alpha2-external/summary.json`.
+recorded in `test-results/interoperability/alpha2-external-1a6665d4/summary.json`.
 It requires Inkscape and
 Blender on `PATH`, records their exact versions and the installed LibreCAD
 package version, and exits non-zero when an automated profile check fails.
