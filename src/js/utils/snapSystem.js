@@ -520,6 +520,20 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     pushWorldTarget(localPointToWorld(el, point, activeSvg, ctm), snapType)
   }
 
+  // In-progress drawing geometry is excluded from the spatial indexes so its
+  // moving preview cannot snap to itself. Commands may separately expose only
+  // their committed root-space vertices, which keeps endpoint closure precise
+  // without making the preview segment a snap candidate.
+  const drawingSnapPoints = editor.activeDrawingSnapPoints?.points
+  if (editor.isDrawing && st.endpoint && Array.isArray(drawingSnapPoints)) {
+    drawingSnapPoints.forEach((point) => {
+      const normalized = Array.isArray(point)
+        ? { x: Number(point[0]), y: Number(point[1]) }
+        : { x: Number(point?.x), y: Number(point?.y) }
+      pushWorldTarget(normalized, 'endpoint')
+    })
+  }
+
   snapCandidates.forEach((el) => {
     if (el.type === 'line') {
       const pts = el.array()

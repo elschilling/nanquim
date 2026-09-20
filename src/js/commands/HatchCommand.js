@@ -16,6 +16,21 @@ import { ensurePattern, getPatternId, HATCH_PATTERNS } from '../utils/hatchPatte
 import { MAX_SVG_GEOMETRY_MAGNITUDE } from '../utils/svgNumericBounds'
 
 const RECTANGLE_EPSILON = 1e-9
+const DEFAULT_HATCH_PATTERN = 'ANSI31'
+const DEFAULT_HATCH_SCALE = 10
+const DEFAULT_SOLID_HATCH_OPACITY = 0.3
+const PATH_COMMAND_LENGTHS = Object.freeze({
+  A: 7,
+  C: 6,
+  H: 1,
+  L: 2,
+  M: 2,
+  Q: 4,
+  S: 4,
+  T: 2,
+  V: 1,
+  Z: 0,
+})
 
 function finiteRectangleValue(value) {
   return Number.isFinite(value) && Math.abs(value) <= MAX_SVG_GEOMETRY_MAGNITUDE
@@ -68,9 +83,78 @@ function rectangleHatchBoundary(rectangle) {
   }
 }
 
-function selectedRectangles(selection) {
+function pathFillRule(path) {
+  const values = [
+    path.attr('fill-rule'),
+    path.node.style?.fillRule,
+  ]
+  try {
+    values.push(path.node.ownerDocument?.defaultView?.getComputedStyle?.(path.node)?.fillRule)
+  } catch (_) {
+    // An explicit or inline value is sufficient when computed style is unavailable.
+  }
+  return values.some(value => String(value).toLowerCase() === 'evenodd')
+    ? 'evenodd'
+    : 'nonzero'
+}
+
+function closedPathHatchBoundary(path) {
+  if (path.hasClass('hatch-fill')) return null
+
+  let commands
+  try {
+    commands = path.array().map(segment => [...segment])
+  } catch (_) {
+    return null
+  }
+  if (commands.length < 3) return null
+
+  let boundaryCount = 0
+  let firstPoint = null
+  let subpathOpen = false
+  let subpathSegments = 0
+  let subpathCount = 0
+  const normalized = []
+
+  for (const raw of commands) {
+    const type = String(raw[0]).toUpperCase()
+    const expectedLength = PATH_COMMAND_LENGTHS[type]
+    if (expectedLength === undefined || raw.length !== expectedLength + 1) return null
+    const values = raw.slice(1).map(Number)
+    if (!values.every(finiteRectangleValue)) return null
+
+    if (type === 'M') {
+      if (subpathOpen) return null
+      subpathOpen = true
+      subpathSegments = 0
+      if (!firstPoint) firstPoint = { x: values[0], y: values[1] }
+    } else if (type === 'Z') {
+      if (!subpathOpen || subpathSegments === 0) return null
+      subpathOpen = false
+      subpathCount += 1
+      boundaryCount += 1
+    } else {
+      if (!subpathOpen) return null
+      if (type === 'A' && (values[0] < 0 || values[1] < 0
+        || ![0, 1].includes(values[3]) || ![0, 1].includes(values[4]))) return null
+      subpathSegments += 1
+      boundaryCount += 1
+    }
+    normalized.push([type, ...values])
+  }
+
+  if (subpathOpen || subpathCount === 0 || !firstPoint) return null
+  return {
+    boundaryCount,
+    fillRule: pathFillRule(path),
+    pathD: normalized.map(command => command.join(' ')).join(' '),
+    point: firstPoint,
+  }
+}
+
+function selectedBoundaryShapes(selection) {
   if (!Array.isArray(selection) || selection.length === 0
-    || selection.some(element => element?.type !== 'rect')) return null
+    || selection.some(element => element?.type !== 'rect' && element?.type !== 'path')) return null
   return [...new Map(selection.map(element => [element.node, element])).values()]
 }
 
@@ -101,8 +185,10 @@ class HatchCommand extends Command {
     this.patternIndex = -1
     this.createdPattern = false
     this.interactiveExecutionDone = false
-    this.patternType = editor.lastHatchPattern || 'SOLID'
-    this.hatchScale = editor.lastHatchScale || 10
+    this.patternType = HATCH_PATTERNS[editor.lastHatchPattern]
+      ? editor.lastHatchPattern
+      : DEFAULT_HATCH_PATTERN
+    this.hatchScale = editor.lastHatchScale || DEFAULT_HATCH_SCALE
     this.pendingHatch = null
   }
 
@@ -114,14 +200,14 @@ class HatchCommand extends Command {
 
     const patternLabel = HATCH_PATTERNS[this.patternType]?.label || this.patternType
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'HATCH ' })
-    const rectangles = selectedRectangles(this.editor.selected)
-    if (rectangles) {
-      this.hatchSelectedRectangles(rectangles)
+    const shapes = selectedBoundaryShapes(this.editor.selected)
+    if (shapes) {
+      this.hatchSelectedShapes(shapes)
       return
     }
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
-      msg: `[${patternLabel} / scale ${this.hatchScale}] Select rectangles first or click inside a closed region to hatch.`,
+      msg: `[${patternLabel} / scale ${this.hatchScale}] Select rectangles or closed paths first, or click inside a closed region to hatch.`,
     })
 
     this.editor.isInteracting = true
@@ -131,28 +217,37 @@ class HatchCommand extends Command {
     this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
   }
 
-  hatchSelectedRectangles(rectangles) {
-    if (rectangles.some(rectangle => (
-      hasUnsupportedGeometryTransform(rectangle, this.editor.drawing)
+  hatchSelectedShapes(shapes) {
+    if (shapes.some(shape => (
+      hasUnsupportedGeometryTransform(shape, this.editor.drawing)
     ))) {
       this.editor.signals.terminalLogged.dispatch({ msg: HATCH_TRANSFORM_DIAGNOSTIC })
       this.cleanup()
       return
     }
 
-    const boundaries = rectangles.map(rectangleHatchBoundary)
-    if (boundaries.some(boundary => !boundary)) {
+    const boundaries = shapes.map(shape => (
+      shape.type === 'rect' ? rectangleHatchBoundary(shape) : closedPathHatchBoundary(shape)
+    ))
+    const invalidIndex = boundaries.findIndex(boundary => !boundary)
+    if (invalidIndex >= 0) {
       this.editor.signals.terminalLogged.dispatch({
-        msg: 'HATCH requires selected rectangles with finite positive dimensions.',
+        msg: shapes[invalidIndex].type === 'rect'
+          ? 'HATCH requires selected rectangles with finite positive dimensions.'
+          : 'HATCH requires selected paths whose finite subpaths are explicitly closed.',
       })
       this.cleanup()
       return
     }
 
     this.pendingHatch = {
-      boundaryCount: rectangles.length * 4,
+      boundaryCount: boundaries.reduce((total, boundary) => (
+        total + (boundary.boundaryCount || 4)
+      ), 0),
       fillColor: this.getFillColor(),
-      fillRule: 'nonzero',
+      fillRule: boundaries.some(boundary => boundary.fillRule === 'evenodd')
+        ? 'evenodd'
+        : 'nonzero',
       parent: this.editor.activeCollection || this.editor.drawing,
       pathD: boundaries.map(boundary => boundary.pathD).join(' '),
       point: { ...boundaries[0].point },
@@ -245,7 +340,8 @@ class HatchCommand extends Command {
       : getPatternId(this.patternType, this.pendingHatch.fillColor, this.hatchScale)
     const existingPattern = patternId ? defs.findOne(`#${patternId}`) : null
     try {
-      let fillValue = { color: this.pendingHatch.fillColor, opacity: 1 }
+      const hatchOpacity = this.patternType === 'SOLID' ? DEFAULT_SOLID_HATCH_OPACITY : 1
+      let fillValue = { color: this.pendingHatch.fillColor, opacity: hatchOpacity }
       if (patternId) {
         const ensuredId = ensurePattern(
           editor.svg,
@@ -275,7 +371,7 @@ class HatchCommand extends Command {
         clickPoint: { ...this.pendingHatch.point },
         fillColor: this.pendingHatch.fillColor,
         hatchScale: this.hatchScale,
-        opacity: 1,
+        opacity: hatchOpacity,
         patternType: this.patternType,
       })
       this.hatchElement.back()

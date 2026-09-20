@@ -129,7 +129,7 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
   HATCH: contract({
     input: ['pointer', 'selection'],
     modes: MODEL_MODE,
-    prompt: 'Select rectangles first or click inside a closed region',
+    prompt: 'Select rectangles or closed paths first, or click inside a closed region',
   }),
   TEXT: contract({
     input: ['pointer', 'coordinate', 'text'],

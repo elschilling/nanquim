@@ -1347,6 +1347,16 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
+    // A pointer move is evaluated on requestAnimationFrame, but a fast click
+    // can arrive before that frame. Resolve the pending move synchronously so
+    // drawing commands capture the snap under the pointer instead of the raw
+    // or previous-frame coordinate.
+    if (e.button === 0 && _moveRafId !== null && _pendingMoveEvent) {
+      cancelAnimationFrame(_moveRafId)
+      _moveRafId = null
+      _doHandleMove(_pendingMoveEvent)
+    }
+
     if (e.button === 0) closeDisambiguationMenu()
 
     if (editor.isDrawing || editor.isInteracting) {

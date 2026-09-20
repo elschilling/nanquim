@@ -197,7 +197,7 @@ const commands = {
     execute: hatchCommand,
     aliases: ['h', 'hatch'],
     category: 'Draw',
-    description: 'Hatch selected rectangles or the closed region under a point.',
+    description: 'Hatch selected rectangles, closed paths, or the closed region under a point.',
     modes: MODEL_ONLY,
   },
   TEXT: {

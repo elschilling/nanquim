@@ -1366,6 +1366,147 @@ async function runRectangleHatchWorkflows(activePage) {
     'Redo did not restore the same selected-rectangle hatch.')
     trace('rectangle-hatch', { before, hatched, undone, redone })
   })
+
+  await step('hatch an exact closed curve path with an even-odd hole', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70"
+        data-nanquim-version="3" data-element-index="944" data-active-collection-id="hatch-paths">
+        <g id="hatch-paths" data-collection="true" name="Hatch paths"
+          style="stroke:#ffffff;stroke-width:.3;fill:none">
+          <path id="943" name="Closed curve" fill-rule="evenodd"
+            d="M 15 35 C 15 12 65 12 70 35 A 28 18 0 0 1 15 35 Z M 35 31 A 7 5 0 1 0 49 31 A 7 5 0 1 0 35 31 Z"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'hatch-paths.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.lastHatchPattern = null
+      editor.lastHatchScale = null
+      editor.selected = [editor.drawing.findOne('[id="943"]')]
+      editor.signals.updatedSelection.dispatch()
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the selected closed-path HATCH fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const source = editor.drawing.findOne('[id="943"]')
+      const hatch = editor.drawing.findOne('.hatch-fill')
+      return {
+        fill: hatch?.attr('fill') || null,
+        fillRule: hatch?.attr('fill-rule') || null,
+        hatchData: hatch?.data('hatchData') || null,
+        hatchId: hatch ? String(hatch.attr('id')) : null,
+        hatchPath: hatch?.array().map(segment => [...segment]) || null,
+        history: editor.history.undos.length,
+        revision: editor.documentState.revision,
+        sourceConnected: Boolean(source?.node.isConnected),
+        sourcePath: source?.array().map(segment => [...segment]) || null,
+      }
+    })
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'h')
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.findOne('.hatch-fill')
+      && !window.editor.isInteracting)
+    const hatched = await readState()
+    assert(JSON.stringify(hatched.hatchPath) === JSON.stringify(hatched.sourcePath),
+      'HATCH flattened or changed the selected closed path commands.')
+    assert(hatched.hatchPath.filter(segment => segment[0] === 'Z').length === 2
+      && hatched.fillRule === 'evenodd',
+    'HATCH did not retain both closed subpaths and their even-odd hole.')
+    assert(/^url\(["']?#hatch-ansi31-/.test(hatched.fill || '')
+      && hatched.hatchData?.patternType === 'ANSI31' && hatched.hatchData?.hatchScale === 10,
+    'HATCH did not apply the visible first-use pattern to the selected closed path.')
+    assert(hatched.sourceConnected && hatched.history === before.history + 1
+      && hatched.revision === before.revision + 1,
+    'Closed-path HATCH did not commit one mutation while retaining its source.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(!undone.hatchId && undone.sourceConnected,
+      'Undo did not remove only the selected closed-path hatch.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(redone.hatchId === hatched.hatchId
+      && JSON.stringify(redone.hatchPath) === JSON.stringify(hatched.hatchPath)
+      && redone.sourceConnected,
+    'Redo did not restore the same selected closed-path hatch.')
+    trace('closed-path-hatch', { before, hatched, undone, redone })
+  })
+
+  await step('click inside a closed path to create a visible default hatch', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70"
+        data-nanquim-version="3" data-element-index="946" data-active-collection-id="hatch-click">
+        <g id="hatch-click" data-collection="true" name="Click hatch"
+          style="stroke:#d67d36;stroke-width:.3;fill:none">
+          <path id="945" name="Boundary"
+            d="M 20 10 H 80 A 10 10 0 0 1 90 20 V 50 Q 90 60 80 60 H 20 C 14 60 10 56 10 50 V 20 A 10 10 0 0 1 20 10 Z M 40 25 H 60 V 45 H 40 Z"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'hatch-click.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.lastHatchPattern = null
+      editor.lastHatchScale = null
+      editor.selected = []
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the click-inside HATCH fixture.')
+
+    const inside = await activePage.evaluate(() => {
+      const point = new DOMPoint(25, 35).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(point.x), y: Math.round(point.y) }
+    })
+    await runTerminalCommand(activePage, 'h')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.pointCaptured.getNumListeners() > 0)
+    await activePage.mouse.click(inside.x, inside.y)
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.findOne('.hatch-fill')
+      && !window.editor.isInteracting)
+
+    const hatched = await activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const hatch = editor.drawing.findOne('.hatch-fill')
+      const patternReference = hatch.attr('fill').match(/#([^\)"']+)/)?.[1] || null
+      const pattern = patternReference ? editor.svg.defs().findOne(`[id="${patternReference}"]`) : null
+      const line = pattern?.findOne('line')
+      const hatchStyle = getComputedStyle(hatch.node)
+      const lineStyle = line ? getComputedStyle(line.node) : null
+      return {
+        fill: hatch.attr('fill'),
+        fillOpacity: Number(hatchStyle.fillOpacity),
+        hatchData: hatch.data('hatchData'),
+        history: editor.history.undos.length,
+        pathSubpaths: hatch.array().filter(segment => segment[0] === 'M').length,
+        lineStroke: lineStyle?.stroke || null,
+        patternConnected: Boolean(pattern?.node.isConnected),
+        revision: editor.documentState.revision,
+        sourceConnected: Boolean(editor.drawing.findOne('[id="945"]')?.node.isConnected),
+      }
+    })
+    assert(/^url\(["']?#hatch-ansi31-/.test(hatched.fill || '')
+      && hatched.patternConnected && hatched.lineStroke !== 'none',
+    'Click-inside HATCH did not render a visible ANSI31 pattern.')
+    assert(hatched.hatchData?.patternType === 'ANSI31' && hatched.hatchData?.hatchScale === 10
+      && hatched.fillOpacity === 1 && hatched.sourceConnected
+      && hatched.pathSubpaths === 2 && hatched.history === 1 && hatched.revision === 1,
+    'Click-inside HATCH did not retain the closed path hole or commit one mutation.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'hatch-click-default-pattern.png') })
+    trace('hatch-click-default', hatched)
+  })
 }
 
 async function runJoinWorkflows(activePage) {
@@ -1449,9 +1590,9 @@ async function runJoinWorkflows(activePage) {
         <g id="join-curves" data-collection="true" name="Joined curves"
           style="stroke:#ffffff;stroke-width:.25;fill:none">
           <line id="990" name="Line" x1="0" y1="0" x2="10" y2="0"/>
-          <path id="991" name="Arc" d="M 10 0 A 10 10 0 0 1 20 10"/>
-          <path id="992" name="Spline" d="M 30 10 C 28 10 24 10 20 10"/>
-          <path id="993" name="Imported path" d="M 30 10 Q 35 15 40 10"/>
+          <path id="991" name="Arc" d="M 10.006 0.004 A 10 10 0 0 1 20 10"/>
+          <path id="992" name="Spline" d="M 30 10 C 28 10 24 10 20.006 10.004"/>
+          <path id="993" name="Imported path" d="M 30.006 10.004 Q 35 15 40 10"/>
         </g></svg>`
       const result = await window.editor.documents.openFile(
         new File([source], 'join-curves.svg', { type: 'image/svg+xml' }),
@@ -2296,6 +2437,114 @@ async function runRectangleNearestSnapWorkflows(activePage) {
     assertNear(line.x2, 50, 1e-5, 'Rectangle nearest-snap line end x')
     assertNear(line.y2, 30, 1e-5, 'Rectangle nearest-snap line end y')
     trace('rectangle-nearest-snap', { line })
+  })
+
+  await step('snap POLYLINE vertices and its live segment to endpoints', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"
+        data-nanquim-version="3" data-element-index="924" data-active-collection-id="polyline-snap">
+        <g id="polyline-snap" data-collection="true" name="Polyline snap"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <line id="923" x1="70" y1="50" x2="80" y2="50"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'polyline-snap.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.isSnapping = true
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      for (const type of Object.keys(editor.snapTypes)) editor.snapTypes[type] = type === 'endpoint'
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the POLYLINE snap fixture.')
+
+    const pointerAt = async (x, y) => activePage.evaluate(point => {
+      const transformed = new DOMPoint(point.x, point.y)
+        .matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: transformed.x, y: transformed.y }
+    }, { x, y })
+    const pointerNear = async (x, y) => {
+      const screen = await pointerAt(x, y)
+      return { x: screen.x + 6, y: screen.y + 4 }
+    }
+    const moveNear = async (x, y) => {
+      const pointer = await pointerNear(x, y)
+      await activePage.mouse.move(pointer.x, pointer.y)
+      await activePage.waitForFunction(point => (
+        Math.abs(window.editor.snapPoint?.x - point.x) < 1e-5
+        && Math.abs(window.editor.snapPoint?.y - point.y) < 1e-5
+      ), {}, { x, y })
+      return pointer
+    }
+    const rapidClick = async (pointer) => {
+      await activePage.evaluate(({ clientX, clientY }) => {
+        const svg = window.editor.svg.node
+        svg.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, clientX, clientY,
+        }))
+        // Remain in the same task so requestAnimationFrame cannot resolve the
+        // move before the click. Viewport must flush the pending snap itself.
+        svg.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, button: 0, clientX, clientY,
+        }))
+      }, { clientX: pointer.x, clientY: pointer.y })
+    }
+    const rapidClickNear = async (x, y) => rapidClick(await pointerNear(x, y))
+
+    await runTerminalCommand(activePage, 'pl')
+    await rapidClick(await pointerAt(20, 20))
+    const firstVertex = await activePage.evaluate(() => {
+      const node = window.editor.drawing.node.querySelector('polyline[data-nanquim-transient="true"]')
+      const point = node?.points.getItem(0)
+      return point ? { x: point.x, y: point.y } : null
+    })
+    assert(firstVertex, 'POLYLINE did not retain its first in-progress vertex.')
+    await moveNear(70, 50)
+    await activePage.waitForFunction(() => {
+      const node = window.editor.drawing.node.querySelector('polyline[data-nanquim-transient="true"]')
+      if (!node || node.points.numberOfItems < 2) return false
+      const end = node.points.getItem(node.points.numberOfItems - 1)
+      return Math.abs(end.x - 70) < 1e-5 && Math.abs(end.y - 50) < 1e-5
+    })
+    await rapidClickNear(80, 50)
+    await moveNear(firstVertex.x, firstVertex.y)
+    await activePage.waitForFunction(first => {
+      const node = window.editor.drawing.node.querySelector('polyline[data-nanquim-transient="true"]')
+      if (!node || node.points.numberOfItems < 3) return false
+      const end = node.points.getItem(node.points.numberOfItems - 1)
+      return Math.abs(end.x - first.x) < 1e-5 && Math.abs(end.y - first.y) < 1e-5
+    }, {}, firstVertex)
+    await activePage.screenshot({ path: join(artifactsDirectory, 'polyline-self-close-snap-preview.png') })
+    await rapidClickNear(firstVertex.x, firstVertex.y)
+    await activePage.keyboard.press('Enter')
+    await activePage.waitForFunction(() => !window.editor.isDrawing
+      && !window.editor.drawing.node.querySelector('[data-nanquim-transient="true"]'))
+
+    const result = await activePage.evaluate(() => {
+      const polyline = window.editor.drawing.node.querySelector('polyline')
+      return {
+        history: window.editor.history.undos.length,
+        points: polyline ? Array.from(
+          { length: polyline.points.numberOfItems },
+          (_, index) => {
+            const point = polyline.points.getItem(index)
+            return [point.x, point.y]
+          },
+        ) : [],
+        revision: window.editor.documentState.revision,
+      }
+    })
+    assert(result.points.length === 3,
+      'POLYLINE did not commit all snapped endpoint coordinates.')
+    assertNear(result.points[0][0], result.points[2][0], 1e-5, 'POLYLINE self-snap closing x')
+    assertNear(result.points[0][1], result.points[2][1], 1e-5, 'POLYLINE self-snap closing y')
+    assertNear(result.points[1][0], 80, 1e-5, 'POLYLINE external endpoint snap x')
+    assertNear(result.points[1][1], 50, 1e-5, 'POLYLINE external endpoint snap y')
+    assert(result.history === 1 && result.revision === 1,
+      'POLYLINE snapping did not commit exactly one document mutation.')
+    trace('polyline-endpoint-snap', result)
   })
 }
 

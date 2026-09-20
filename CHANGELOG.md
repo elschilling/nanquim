@@ -101,9 +101,12 @@ directly here until merged.
   and metadata. Radius zero restores square corners, and repeated rectangle or
   line-pair operations remain active until Escape.
 - **Pending commit:** `HATCH` immediately fills preselected rectangles, keeps
-  rounded corners as exact elliptical arcs, supports multiple rectangles in one
-  reversible hatch, and retains click-inside boundary detection when no
-  rectangle-only preselection exists.
+  rounded corners as exact elliptical arcs, and now accepts explicitly closed
+  SVG paths without flattening their curves, arcs, compound subpaths, or
+  even-odd holes. Mixed selections form one reversible hatch, while click-inside
+  boundary detection remains available without a supported preselection. First
+  use now renders ANSI31 lines instead of an opaque solid cover; explicit solid
+  hatches default to 30% opacity, and Properties choices carry to the next hatch.
 - Native schema-v1 and schema-v2 documents now migrate through a bounded,
   detached preparation pipeline before the live editor is replaced.
 - Opening or creating a document now resets command helpers, selection,
@@ -174,6 +177,15 @@ directly here until merged.
 
 ### Fixed
 
+- **Pending commit:** JOIN treats endpoint seams up to 0.1 mm as coincident,
+  allowing every element in a visually connected line/curve chain or loop to
+  be combined without bridging a visible gap.
+- **Pending commit:** POLYLINE live segments follow the viewport's resolved
+  object/grid snap point, and snapped coordinates are retained by committed
+  vertices even when a click arrives before the next animation frame. Its
+  committed in-progress vertices remain endpoint targets so the final segment
+  can snap closed to the first point, without exposing the moving preview or
+  leaking coordinate listeners after finish or cancellation.
 - **Pending commit:** DIMLINEAR and DIMALIGNED show a live baseline and measured
   value while choosing the second point, even when optional F3 overlays are
   hidden, and remove the transient preview on handoff or cancellation.

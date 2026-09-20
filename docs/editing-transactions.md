@@ -161,12 +161,19 @@ a transformed scope, a detected untransformed region overlaps one, or the
 transformed bounds cannot be qualified; transformed geometry that is provably
 remote does not prevent an ordinary hatch. These guards are documented support
 boundaries, not claims that the operations were performed approximately.
-When every preselected element is a rectangle, HATCH bypasses point tracing and
-creates one immediate History mutation from their exact rectangle outlines.
-Rounded `rx`/`ry` corners remain elliptical SVG arc commands, multiple selected
-rectangles share one pattern-backed hatch, and transformed or non-finite
-rectangles are rejected before mutation. With no rectangle-only preselection,
-the existing click-inside boundary workflow remains active.
+When every preselected element is a rectangle or SVG path, HATCH bypasses point
+tracing and creates one immediate History mutation from the exact selected
+outlines. Rounded rectangle `rx`/`ry` corners remain elliptical SVG arc commands.
+Paths retain their line, cubic, quadratic, and elliptical-arc commands; every
+finite subpath must be explicitly closed with `Z`, and an even-odd fill rule is
+carried to the hatch so compound-path holes remain open. Mixed rectangle/path
+selections share one pattern-backed hatch. Transformed, malformed, open, or
+non-finite selected boundaries are rejected before mutation. With no supported
+preselection, the existing click-inside boundary workflow remains active. A
+first-use hatch defaults to the visible ANSI31 line pattern at scale 10 rather
+than an opaque fill. Explicit SOLID hatches default to 30% opacity, and pattern
+or scale changes in Properties become the defaults for the next hatch in the
+session.
 After a successful FILLET, the command returns to selection and stays active
 until Escape. Selecting one rectangle applies the radius to all four corners
 while preserving the semantic `<rect>` and its metadata; radius zero removes

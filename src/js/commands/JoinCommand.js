@@ -5,7 +5,10 @@ import { invalidateSpatialIndexes } from '../utils/invalidateSpatialIndexes'
 import { MAX_SVG_GEOMETRY_MAGNITUDE } from '../utils/svgNumericBounds'
 import { copyTrimSemantics } from './TrimTransaction'
 
-const JOIN_TOLERANCE = 1e-6
+// Native drawing units are centimetres. Treat endpoint seams up to 0.1 mm as
+// coincident so geometry that is visually connected at drafting precision can
+// be joined without bridging a visible gap.
+const JOIN_TOLERANCE = 1e-2
 const MAX_JOIN_ELEMENTS = 1000
 const MAX_JOIN_SEGMENTS = 10000
 const SUPPORTED_TYPES = new Set(['line', 'path', 'polyline'])

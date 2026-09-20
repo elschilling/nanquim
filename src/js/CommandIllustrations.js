@@ -223,13 +223,13 @@ const drawIllustration = Object.freeze({
     arrow(116, 76, 136, 85, 'guide')
   },
 
-  HATCH: ({ rect, line, circle }) => {
-    rect(24, 18, 112, 62, 'boundary', {
+  HATCH: ({ path, line, circle }) => {
+    path('M 24 76 C 18 48 30 18 59 18 H 124 Q 143 45 133 74 Q 84 86 24 76 Z', 'boundary', {
       fill: 'currentColor', 'fill-opacity': 0.08,
     })
     ;[
-      [26, 64, 62, 18], [38, 80, 87, 18], [62, 80, 111, 18],
-      [86, 80, 135, 18], [111, 80, 136, 48],
+      [26, 64, 62, 18], [38, 80, 87, 18], [62, 81, 111, 18],
+      [86, 80, 135, 18], [111, 79, 136, 47],
     ].forEach((segment) => line(...segment, 'fill'))
     circle(84, 49, 10, 'island', { fill: 'var(--command-help-illustration-background, transparent)' })
   },

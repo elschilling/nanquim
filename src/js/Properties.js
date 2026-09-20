@@ -2016,7 +2016,10 @@ function Properties(editor) {
       }
 
       element.fill(fillValue)
+      if (type !== 'SOLID') element.attr('fill-opacity', 1)
       element.data('hatchData', { ...hd, patternType: type, fillColor: color, hatchScale: scale, opacity: safeOpacity })
+      editor.lastHatchPattern = type
+      editor.lastHatchScale = scale
       opacityRow.style.display = type === 'SOLID' ? '' : 'none'
       safeDispatch('refreshHandlers')
     }

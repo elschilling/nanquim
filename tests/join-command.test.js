@@ -245,6 +245,29 @@ describe('JOIN command', () => {
     expect(editor.selected[0].type).toBe('path')
   })
 
+  test('joins every element in a visually closed mixed-curve loop with sub-millimetre seams', () => {
+    const { activeCollection, editor } = createFixture()
+    const line = activeCollection.line(0, 0, 10, 20).attr('id', 'closing-line')
+    const curvedSide = activeCollection.path(
+      'M 10.006 20.004 C 18 20 20 10 16 4 C 12 -2 4 -1 0.004 0.003',
+    ).attr('id', 'curved-side')
+    editor.selected = [line, curvedSide]
+
+    joinCommand(editor)
+
+    expect(editor.history.undos).toHaveLength(1)
+    expect(editor.selected).toHaveLength(1)
+    expect(editor.selected[0].array().map(segment => [...segment])).toEqual([
+      ['M', 0, 0],
+      ['L', 10, 20],
+      ['C', 18, 20, 20, 10, 16, 4],
+      ['C', 12, -2, 4, -1, 0.004, 0.003],
+      ['Z'],
+    ])
+    expect(line.node.isConnected).toBe(false)
+    expect(curvedSide.node.isConnected).toBe(false)
+  })
+
   test('waits for an interactive selection and joins it on Enter', () => {
     const { activeCollection, editor } = createFixture()
     const first = activeCollection.line(0, 0, 4, 0)
