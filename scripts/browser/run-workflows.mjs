@@ -2766,9 +2766,16 @@ async function runPolylineOffsetWorkflows(activePage) {
       const preview = window.editor.overlays.node.querySelector('polyline[data-nanquim-transient="true"]')
       if (!preview) return false
       const style = getComputedStyle(preview)
+      const expectedPoints = [[20, 45], [55, 45], [55, 80]]
+      // The source-click preview can already be painted before the side move's frame.
+      const atDestination = preview.points.numberOfItems === expectedPoints.length
+        && expectedPoints.every(([x, y], index) => {
+          const point = preview.points.getItem(index)
+          return Math.abs(point.x - x) <= 1e-5 && Math.abs(point.y - y) <= 1e-5
+        })
       return style.display !== 'none' && style.visibility !== 'hidden'
         && Number(style.opacity) > 0 && style.stroke !== 'none'
-        && Number.parseFloat(style.strokeWidth) > 0
+        && Number.parseFloat(style.strokeWidth) > 0 && atDestination
     })
     const previewState = await readState()
     const preview = previewState.polylines.find(polyline => polyline.directPreview)
