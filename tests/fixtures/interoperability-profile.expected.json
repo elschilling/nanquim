@@ -31,7 +31,7 @@
   },
   "toolVersions": {
     "inkscape": "^Inkscape 1\\.4\\.4(?:[ (]|$)",
-    "blender": "^Blender 5\\.2\\.0 LTS(?:[ (]|$)"
+    "blender": "^Blender 5\\.2\\.1 LTS(?:[ (]|$)"
   },
   "tolerances": {
     "boundsAbsolute": 0.01

@@ -23,10 +23,21 @@ describe('Welcome changelog', () => {
   test('shows every canonical commit with its date and summary in newest-first order', () => {
     renderWelcomeChangelog(container)
 
-    const expectedRows = changelog.split('\n').filter(line => /^\| \d{4}-\d{2}-\d{2} \|/.test(line))
+    const expectedRows = []
+    let sectionVersion
+    for (const line of changelog.split('\n')) {
+      const heading = line.match(/^## \[([^\]]+)\]/)
+      if (heading) sectionVersion = heading[1]
+      if (!/^\| \d{4}-\d{2}-\d{2} \|/.test(line)) continue
+      expect(sectionVersion).toBeTruthy()
+      expectedRows.push({
+        row: line,
+        status: sectionVersion === 'Unreleased' ? 'Unreleased' : `Released · v${sectionVersion}`,
+      })
+    }
     const items = [...container.querySelectorAll('.ws-changelog-entry')]
     expect(items).toHaveLength(expectedRows.length + 1)
-    for (const [index, row] of expectedRows.entries()) {
+    for (const [index, { row, status }] of expectedRows.entries()) {
       const [, date, linkedCommit, summary] = row.split('|').map(value => value.trim())
       const [, commit, url] = linkedCommit.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       expect(items[index].querySelector('time').dateTime).toBe(date)
@@ -34,7 +45,7 @@ describe('Welcome changelog', () => {
       expect(items[index].querySelector('a').textContent).toBe(commit)
       expect(items[index].querySelector('a').href).toBe(url)
       expect(items[index].querySelector('.ws-changelog-summary').textContent).toBe(summary)
-      expect(items[index].querySelector('.ws-changelog-meta').textContent).toContain('Unreleased')
+      expect(items[index].querySelector('.ws-changelog-meta span').textContent).toBe(status)
     }
 
     const release = items.at(-1)

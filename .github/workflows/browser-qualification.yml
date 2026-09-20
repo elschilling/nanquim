@@ -29,7 +29,7 @@ jobs:
           # Refresh this major at each release boundary so it remains the
           # immediately preceding stable Chromium named by the support policy.
           - channel: previous-stable
-            version: '150'
+            version: '152'
 
     steps:
       - name: Check out repository

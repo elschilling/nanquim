@@ -139,15 +139,18 @@ These results do not replace the direct persistent-handle, external-renderer,
 Safari, or exact-release-candidate records.
 
 `pnpm qualify:interoperability` then runs the standalone SVG profile through
-locally installed external tools. The 2026-08-21 record used Inkscape 1.4.4
-and Blender 5.2.0 LTS. Inkscape retained the exact physical size, viewBox,
+locally installed external tools. The 2026-09-20 alpha.2 record used Inkscape 1.4.4
+and Blender 5.2.1 LTS, refreshing the original 5.2.0 LTS pin with the same
+import inventory. Inkscape retained the exact physical size, viewBox,
 entity inventory, local references, and all 21 queried geometry bounds with
 maximum delta 0 against the `0.01` limit. Blender imported 17 objects, 14
 curves, and 14 splines. LibreCAD 2.2.1.2 remains a manual-required gate; a
 version query is not a DXF round-trip result.
 
 The command writes small ignored evidence below
-`test-results/interoperability/local-profile/`. It requires Inkscape and
+`test-results/interoperability/local-profile/` by default; the alpha.2 run is
+recorded in `test-results/interoperability/alpha2-external/summary.json`.
+It requires Inkscape and
 Blender on `PATH`, records their exact versions and the installed LibreCAD
 package version, and exits non-zero when an automated profile check fails.
 Candidate qualification must use the pinned profile versions and preserve the
