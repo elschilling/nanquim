@@ -102,6 +102,14 @@ as endpoint targets; referenced shadow-tree geometry is not traversed as if it
 were editable instance content. Spline nearest snap is sampled rather than an
 analytic curve solution.
 
+MIRROR accepts an existing selection immediately and asks for the first axis
+point. With no selection, select the objects and press Enter first. Both axis
+points can snap to the source or other drawing geometry. The reflected preview
+uses the current snapped point, including when Snap is toggled with F9 or the
+toolbar without moving the pointer. Axis-point clicks do not select nearby
+objects. Editing handles stay hidden through axis input and the delete-source
+prompt, including when zooming or refreshing the viewport.
+
 When a non-uniform or skew transform turns a circle or circular arc into a
 non-circular curve, the circle-only intersection, tangent, and perpendicular
 solvers do not return an unsafe target. Direct transformed snap points remain
@@ -114,6 +122,13 @@ Block instance that has untransformed ancestors, but rejects transformed
 primitives and any selection inside a transformed ancestor. MIRROR rejects any
 selected element with its own transform or a transformed ancestor before it
 creates preview clones.
+
+TRIM boundary selection supports individual clicks and selection rectangles:
+left-to-right windows include fully enclosed elements, while right-to-left
+crossing rectangles also include intersecting elements. Rectangles add to the
+chosen boundaries; clicking a boundary again removes it. Press Enter to confirm,
+or press Enter with no boundaries to use Auto-Trim. Confirmation and cancellation
+clear boundary highlights and any unfinished selection rectangle.
 
 TRIM and EXTEND currently reject a transformed target or boundary, and FILLET
 rejects transformed lines, with an explicit terminal diagnostic before

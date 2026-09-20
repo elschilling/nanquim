@@ -2525,6 +2525,12 @@ function Properties(editor) {
   // Focus management
   const propertiesPanelContainer = document.querySelector('.properties-panel-container')
   const viewport = document.querySelector('.viewport')
+  const focusTerminalFromPointer = () => {
+    // Closing a modal can expose the viewport beneath a stationary pointer.
+    // Preserve focus restored to a navigation control instead of stealing it.
+    if (document.activeElement?.closest('button, a[href], [role="dialog"], dialog')) return
+    document.getElementById('terminalInput')?.focus()
+  }
 
   if (propertiesPanelContainer) {
     propertiesPanelContainer.addEventListener('mouseenter', () => {
@@ -2532,16 +2538,14 @@ function Properties(editor) {
     })
     propertiesPanelContainer.addEventListener('mouseleave', () => {
       editor.isEditingProperties = false
-      const terminalInput = document.getElementById('terminalInput')
-      if (terminalInput) terminalInput.focus()
+      focusTerminalFromPointer()
     })
   }
 
   if (viewport) {
     viewport.addEventListener('mouseenter', () => {
       editor.isEditingProperties = false
-      const terminalInput = document.getElementById('terminalInput')
-      if (terminalInput) terminalInput.focus()
+      focusTerminalFromPointer()
     })
   }
 }

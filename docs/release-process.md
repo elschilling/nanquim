@@ -61,7 +61,10 @@ release deliberately changes that format and includes migration tests.
    and create or update `docs/releases/v<version>.md` with user impact,
    compatibility, limitations, and backup guidance. While qualification is in
    progress, keep the changelog heading marked `Unreleased` and the release
-   note marked `Prepared`.
+   note marked `Prepared`. Include the Git committer date and a full-hash commit
+   link for each dated changelog entry; distinguish development dates from the
+   release date. When merging a feature branch, update any pending branch/PR
+   note and record the merged commit if its hash changed.
 5. Confirm that the native SVG and Geometry Nodes schema versions changed only
    when the release intentionally includes a tested schema migration.
 6. Install and qualify the exact source tree.

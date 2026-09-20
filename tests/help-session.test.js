@@ -3,6 +3,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { HelpSession } from '../src/js/HelpSession.js'
+import { WelcomeScreen } from '../src/js/WelcomeScreen.js'
 import {
   COMMAND_ILLUSTRATION_NAMES,
   createCommandIllustration,
@@ -249,10 +250,39 @@ describe('HelpSession', () => {
     })
 
     document.body.dispatchEvent(event)
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'F1', code: 'F1', bubbles: true }))
 
     expect(event.defaultPrevented).toBe(true)
     expect(helpSession.isOpen).toBe(true)
     await vi.waitFor(() => expect(document.activeElement).toBe(helpSession.searchInput))
+  })
+
+  test('leaves F1 to Welcome without opening a second dialog or browser Help', async () => {
+    const welcome = new WelcomeScreen(editor, { getRecentFiles: async () => [] })
+    try {
+      await vi.waitFor(() => expect(welcome.isVisible()).toBe(true))
+      const closeButton = document.getElementById('ws-dismiss')
+      const event = new KeyboardEvent('keydown', {
+        key: 'F1', code: 'F1', bubbles: true, cancelable: true,
+      })
+      closeButton.dispatchEvent(event)
+      closeButton.dispatchEvent(new KeyboardEvent('keyup', { key: 'F1', code: 'F1', bubbles: true }))
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(helpSession.isOpen).toBe(false)
+      expect(welcome.isVisible()).toBe(true)
+      expect(document.activeElement).toBe(closeButton)
+
+      welcome.dismiss()
+      welcome._overlay.dispatchEvent(new Event('animationend', { bubbles: true }))
+      opener.dispatchEvent(new KeyboardEvent('keydown', { key: 'F1', code: 'F1', bubbles: true, cancelable: true }))
+      opener.dispatchEvent(new KeyboardEvent('keyup', { key: 'F1', code: 'F1', bubbles: true }))
+      expect(helpSession.isOpen).toBe(true)
+    } finally {
+      const overlay = welcome._overlay
+      welcome.dismiss()
+      overlay?.dispatchEvent(new Event('animationend', { bubbles: true }))
+    }
   })
 
   test('filters by search and category while keeping result counts accurate', () => {

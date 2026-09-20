@@ -90,7 +90,9 @@ limitations.
   or drop an image into the Model viewport. Images are embedded in the drawing;
   see the [image workflow and limits](docs/file-interoperability.md#raster-image-insertion).
 - Copy and paste Nanquim SVG elements with ID cleanup.
-- Welcome screen and recent disk files where the browser supports persistent file handles.
+- Click the Nanquim icon in the top bar to reopen Welcome and browse the dated
+  changelog with commit links. Recent disk files are also available where the
+  browser supports persistent file handles.
 - `Ctrl+N`, `Ctrl+O`, `Ctrl+S`, and `Ctrl+Shift+S` cover New, Open, Save, and
   Save As, with download/upload fallbacks when direct file access is
   unavailable. Because browsers cannot confirm a portable download was kept,

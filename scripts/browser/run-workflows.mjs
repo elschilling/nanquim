@@ -1257,12 +1257,719 @@ async function runWorkflows(activePage) {
   })
 
   await runCopySnapWorkflows(activePage)
+  await runMirrorSnapWorkflows(activePage)
+  await runTrimBoundarySelectionWorkflows(activePage)
   await runImageImportWorkflows(activePage)
   await runImageCropWorkflows(activePage)
   await runOutlinerReorderWorkflows(activePage)
   await runOutlinerCollectionDropWorkflows(activePage)
   await runOutlinerMoveDialogWorkflows(activePage)
   await runOutlinerRangeSelectionWorkflows(activePage)
+  await runWelcomeScreenWorkflows(activePage)
+}
+
+async function runWelcomeScreenWorkflows(activePage) {
+  await step('reopen Welcome from the Nanquim icon and read dated history without changing the drawing', async () => {
+    const changelog = await readFile(join(ROOT, 'CHANGELOG.md'), 'utf8')
+    const expectedCommits = [...changelog.matchAll(/^\| (\d{4}-\d{2}-\d{2}) \| \[([a-f0-9]+)\]\((https:\/\/github\.com\/elschilling\/nanquim\/commit\/[a-f0-9]{40})\) \| (.+) \|$/gm)]
+      .map(([, date, commit, href, summary]) => ({ date, commit, href, summary }))
+    assert(expectedCommits.length > 0, 'The canonical changelog has no dated commit entries.')
+    const originalPreferences = await activePage.evaluate(() => localStorage.getItem('nanquim-preferences'))
+    const scenarios = browserName === 'chromium'
+      ? [{ width: BROWSER_VIEWPORT.width, light: false }, { width: 720, light: true }, { width: 390, light: false }]
+      : [{ width: BROWSER_VIEWPORT.width, light: false }, { width: BROWSER_VIEWPORT.width, light: true }]
+    const initialized = await activePage.evaluate(() => window.editor.documents.newDocument())
+    assert(initialized?.ok, 'Could not prepare a drawing for the Welcome workflow.')
+    await runTerminalCommand(activePage, 'l')
+    await typeTerminalValue(activePage, '#0,0')
+    await typeTerminalValue(activePage, '#30,20')
+    await activePage.keyboard.press('Escape')
+    const lineId = await activePage.evaluate(() => window.editor.drawing.node.querySelector('line').id)
+    await activePage.click(`[data-outliner-id="${lineId}"] .collection-name`)
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      return {
+        drawing: editor.drawing.node.outerHTML,
+        undo: editor.history.undos.map(command => command.type),
+        redo: editor.history.redos.map(command => command.type),
+        revision: editor.documentState.revision,
+        savedRevision: editor.documentState.savedRevision,
+        dirty: editor.documentState.isDirty,
+        session: editor.documentState.sessionId,
+        name: editor.documentState.fileName,
+        selected: editor.selected.map(element => element.node?.id),
+        activeCollection: editor.activeCollection.node.id,
+        mode: editor.mode,
+        snapping: editor.isSnapping,
+        drawingCommand: editor.isDrawing,
+        interacting: editor.isInteracting,
+        pointListeners: editor.signals.pointCaptured.getNumListeners(),
+        helpOpen: Boolean(document.getElementById('command-help-dialog')?.open),
+        terminal: document.getElementById('terminalInput').value,
+        log: document.getElementById('terminalLog').textContent,
+      }
+    })
+
+    try {
+      for (const scenario of scenarios) {
+        if (browserName === 'chromium') await activePage.setViewport({ ...BROWSER_VIEWPORT, width: scenario.width })
+        await activePage.evaluate(({ light }) => {
+          window.openPreferences()
+          const background = document.getElementById('prefs-background-color')
+          background.value = light ? '#f3f1ea' : '#20252a'
+          background.dispatchEvent(new Event('input', { bubbles: true }))
+          const accent = document.getElementById('prefs-accent-color')
+          accent.value = light ? '#3456a1' : '#62a7e8'
+          accent.dispatchEvent(new Event('input', { bubbles: true }))
+          document.querySelector('.prefs-btn-save').click()
+          document.getElementById('terminalInput').value = 'unfinished draft'
+        }, scenario)
+        await activePage.hover('#navbar-welcome-open')
+        const before = await readState()
+        assert(before.dirty && before.undo.length > 0 && before.selected.includes(lineId),
+          'The Welcome fixture must contain a dirty drawing, selection, and undo history.')
+
+        for (const [openWith, closeWith] of [['click', 'Escape'], ['Enter', 'backdrop'], ['Space', 'Close']]) {
+          await activePage.focus('#navbar-welcome-open')
+          if (openWith === 'click') await activePage.click('#navbar-welcome-open')
+          else await activePage.keyboard.press(openWith === 'Space' ? ' ' : openWith)
+          await activePage.waitForSelector('#ws-dialog')
+          await activePage.waitForFunction(() => document.getElementById('ws-dialog')?.contains(document.activeElement))
+          await activePage.waitForFunction(() => getComputedStyle(document.getElementById('ws-dialog')).opacity === '1'
+            && getComputedStyle(document.getElementById('welcome-overlay')).opacity === '1')
+          await activePage.evaluate(() => Promise.all([window.welcomeScreen.show(), window.welcomeScreen.show()]))
+          const content = await activePage.evaluate(() => ({
+            overlays: document.querySelectorAll('#welcome-overlay').length,
+            label: document.getElementById('navbar-welcome-open').getAttribute('aria-label'),
+            modal: document.getElementById('ws-dialog').getAttribute('aria-modal'),
+            entries: [...document.querySelectorAll('#ws-changelog .ws-changelog-entry')].map(entry => ({
+              date: entry.querySelector('time')?.getAttribute('datetime'),
+              text: entry.textContent,
+              links: [...entry.querySelectorAll('a')].map(link => ({
+                href: link.href, text: link.textContent.trim(), target: link.target, rel: link.rel,
+              })),
+            })),
+          }))
+          assert(content.overlays === 1 && content.modal === 'true' && content.label === 'Open welcome screen',
+            'The Nanquim icon did not open exactly one accessible Welcome modal.')
+          for (const expected of expectedCommits) {
+            const entry = content.entries.find(candidate => candidate.links.some(link => link.href === expected.href))
+            const link = entry?.links.find(candidate => candidate.href === expected.href)
+            assert(entry?.date === expected.date && entry.text.includes(expected.summary) && link.text === expected.commit,
+              `Welcome history differs from the canonical changelog for ${expected.commit}.`)
+            assert(link.target === '_blank' && link.rel.includes('noopener') && link.rel.includes('noreferrer'),
+              `Welcome commit ${expected.commit} does not open safely in a new tab.`)
+          }
+
+          if (openWith === 'click') {
+            const appearance = await activePage.evaluate(() => {
+              const dialog = document.getElementById('ws-dialog')
+              const history = document.getElementById('ws-changelog')
+              const bounds = dialog.getBoundingClientRect()
+              const style = getComputedStyle(dialog)
+              const context = document.createElement('canvas').getContext('2d')
+              const color = value => {
+                context.clearRect(0, 0, 1, 1)
+                context.fillStyle = value
+                context.fillRect(0, 0, 1, 1)
+                return '#' + [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+                  .map(channel => channel.toString(16).padStart(2, '0')).join('')
+              }
+              const backgroundOf = element => {
+                while (element) {
+                  const background = getComputedStyle(element).backgroundColor
+                  if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') return background
+                  element = element.parentElement
+                }
+                return '#ffffff'
+              }
+              return {
+                fits: bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight,
+                visible: bounds.width > 0 && bounds.height > 0 && style.display !== 'none' && style.visibility !== 'hidden',
+                noHorizontalOverflow: dialog.scrollWidth <= dialog.clientWidth + 1 && history.scrollWidth <= history.clientWidth + 1,
+                text: [...history.querySelectorAll('time, a, p')].map(element => ({
+                  foreground: color(getComputedStyle(element).color), background: color(backgroundOf(element)),
+                })),
+                focusableCount: [...dialog.querySelectorAll('a[href], button, [tabindex="0"]')]
+                  .filter(element => element.getBoundingClientRect().height > 0).length,
+              }
+            })
+            assert(appearance.fits && appearance.visible && appearance.noHorizontalOverflow,
+              `Welcome or its history overflows the ${scenario.width}px viewport.`)
+            assert(appearance.text.length > 0 && appearance.text.every(value => themeColorContrast(value.foreground, value.background) >= 4.5),
+              'Welcome history text has insufficient contrast against the custom theme.')
+            await activePage.screenshot({ path: join(artifactsDirectory, `welcome-${scenario.width}-${scenario.light ? 'light' : 'dark'}.png`) })
+            for (let index = 0; index <= appearance.focusableCount; index += 1) {
+              await activePage.keyboard.press('Tab')
+              assert(await activePage.evaluate(() => document.getElementById('ws-dialog').contains(document.activeElement)),
+                'Tab escaped the Welcome dialog.')
+            }
+            await activePage.keyboard.down('Shift')
+            for (let index = 0; index <= appearance.focusableCount; index += 1) {
+              await activePage.keyboard.press('Tab')
+              assert(await activePage.evaluate(() => document.getElementById('ws-dialog').contains(document.activeElement)),
+                'Shift+Tab escaped the Welcome dialog.')
+            }
+            await activePage.keyboard.up('Shift')
+            for (const key of ['KeyL', 'Delete', 'F1', 'F3']) await activePage.keyboard.press(key)
+            await activePage.keyboard.down(controlKey())
+            await activePage.keyboard.press('KeyZ')
+            await activePage.keyboard.up(controlKey())
+            assert(JSON.stringify(await readState()) === JSON.stringify(before),
+              'Typing or an editor shortcut in Welcome changed the drawing, selection, terminal, or history.')
+            if (scenario === scenarios[0]) {
+              await activePage.evaluate(() => {
+                window.__nanquimWelcomePickerCalls = 0
+                window.showOpenFilePicker = async () => {
+                  window.__nanquimWelcomePickerCalls += 1
+                  throw new DOMException('Cancelled by the browser workflow.', 'AbortError')
+                }
+              })
+              try {
+                await activePage.keyboard.down(controlKey())
+                await activePage.keyboard.press('KeyO')
+                await activePage.keyboard.up(controlKey())
+                await activePage.waitForFunction(() => window.__nanquimWelcomePickerCalls === 1)
+                assert(await activePage.evaluate(() => Boolean(document.getElementById('ws-dialog'))),
+                  'Cancelling the Welcome Open shortcut dismissed the dialog.')
+                assert(JSON.stringify(await readState()) === JSON.stringify(before),
+                  'Cancelling the Welcome Open shortcut changed the active document.')
+              } finally {
+                await activePage.evaluate(() => {
+                  window.showOpenFilePicker = undefined
+                  delete window.__nanquimWelcomePickerCalls
+                })
+              }
+            }
+            trace('welcome-appearance', { ...scenario, ...appearance })
+          }
+
+          if (closeWith === 'Escape') await activePage.keyboard.press('Escape')
+          else if (closeWith === 'Close') await activePage.click('#ws-dismiss')
+          else await activePage.mouse.click(2, 2)
+          await activePage.waitForFunction(() => !document.getElementById('welcome-overlay'))
+          assert(await activePage.evaluate(() => document.activeElement?.id === 'navbar-welcome-open'),
+            `${closeWith} did not restore focus to the Nanquim icon.`)
+          assert(JSON.stringify(await readState()) === JSON.stringify(before),
+            `${openWith}/${closeWith} changed the active document or editor state.`)
+        }
+      }
+
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await runTerminalCommand(activePage, 'co')
+      await activePage.waitForFunction(() => window.editor.isInteracting
+        && window.editor.signals.pointCaptured.getNumListeners() > 0)
+      await activePage.hover('#navbar-welcome-open')
+      const copying = await readState()
+      await activePage.click('#navbar-welcome-open')
+      await activePage.waitForSelector('#ws-dialog')
+      await activePage.keyboard.press('Escape')
+      await activePage.waitForFunction(() => !document.getElementById('welcome-overlay'))
+      assert(JSON.stringify(await readState()) === JSON.stringify(copying),
+        'Escape from Welcome cancelled or changed the active COPY command.')
+      const basePoint = await canvasScreenPoint(activePage, 0.4, 0.4)
+      await activePage.mouse.click(basePoint.x, basePoint.y)
+      await waitForTerminalText(activePage, 'Base point:')
+      await activePage.keyboard.press('Escape')
+      await activePage.waitForFunction(() => !window.editor.isInteracting
+        && window.editor.signals.pointCaptured.getNumListeners() === 0)
+    } finally {
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await activePage.evaluate(previous => {
+        if (previous === null) localStorage.removeItem('nanquim-preferences')
+        else localStorage.setItem('nanquim-preferences', previous)
+      }, originalPreferences)
+    }
+  })
+}
+
+async function runMirrorSnapWorkflows(activePage) {
+  await step('snap MIRROR axis points and previews with preselection, live toggles, Undo/Redo, and cancellation', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 90"
+        data-nanquim-version="3" data-element-index="710" data-active-collection-id="browser-mirror-collection">
+        <g id="browser-mirror-collection" data-collection="true" name="Mirror collection"
+          style="stroke:#ffffff;stroke-width:0.2;fill:none">
+          <line id="701" x1="20" y1="20" x2="50" y2="20"/>
+          <line id="702" x1="80" y1="60" x2="110" y2="60"/>
+          <circle id="703" cx="95" cy="25" r="8"/>
+        </g>
+      </svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'browser-mirror.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      for (const type of Object.keys(editor.snapTypes)) editor.snapTypes[type] = ['endpoint', 'center'].includes(type)
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the MIRROR snap fixture.')
+    await activePage.keyboard.press('Escape')
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: screen.x, y: screen.y }
+    }, { x, y })
+    const moveNear = async (x, y) => {
+      const screen = await screenPoint(x, y)
+      // Native MouseEvent page coordinates are whole CSS pixels in Chromium.
+      const pointer = { x: Math.round(screen.x + 6), y: Math.round(screen.y + 4) }
+      await activePage.mouse.move(pointer.x, pointer.y)
+      await activePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+      return pointer
+    }
+    const selectSource = async () => {
+      const middle = await screenPoint(35, 20)
+      await activePage.mouse.move(middle.x, middle.y)
+      await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '701'))
+      await activePage.mouse.click(middle.x, middle.y)
+      await activePage.waitForFunction(() => window.editor.selected.some(element => element.node.id === '701'))
+    }
+    const assertSnap = async (x, y) => activePage.waitForFunction(point => {
+      const editor = window.editor
+      const marker = document.querySelector('#Snap > *')
+      if (!marker || !editor.isInteracting) return false
+      const style = getComputedStyle(marker)
+      const bounds = marker.getBoundingClientRect()
+      return Math.abs(editor.snapPoint?.x - point.x) < 1e-5
+        && Math.abs(editor.snapPoint?.y - point.y) < 1e-5
+        && bounds.width > 0 && bounds.height > 0 && style.visibility === 'visible'
+        && style.display !== 'none' && style.stroke !== 'none' && Number.parseFloat(style.strokeWidth) > 0
+    }, {}, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const points = node => ['x1', 'y1', 'x2', 'y2'].map(name => Number(node.getAttribute(name)))
+      const axis = editor.svg.node.querySelector('.mirror-axis-helper')
+      const preview = [...editor.svg.node.querySelectorAll('line')].find(node =>
+        node.closest('[data-nanquim-transient="true"]') && !node.matches('.mirror-axis-helper'))
+      return {
+        lines: [...editor.drawing.node.querySelectorAll('line')]
+          .filter(node => !node.closest('[data-nanquim-transient="true"]'))
+          .map(node => ({ id: node.id, points: points(node), parent: node.parentElement.id })),
+        axis: axis && points(axis), preview: preview && points(preview),
+        history: editor.history.undos.length, revision: editor.documentState.revision,
+        interacting: editor.isInteracting, single: editor.selectSingleElement, suppressed: editor.suppressHandlers,
+        selected: editor.selected.map(element => element.node.id), handlers: editor.handlers.node.childElementCount,
+        pointListeners: editor.signals.pointCaptured.getNumListeners(), inputListeners: editor.signals.inputValue.getNumListeners(),
+        coordinateListeners: editor.signals.updatedCoordinates.getNumListeners(),
+        transient: editor.svg.node.querySelectorAll('[data-nanquim-transient="true"]').length,
+      }
+    })
+    const assertAxis = async (base, end) => {
+      const state = await readState()
+      assert(state.axis, 'MIRROR did not expose its axis preview.')
+      for (const [index, expected] of [base.x, base.y, end.x, end.y].entries()) {
+        assertNear(state.axis[index], expected, 1e-5, `MIRROR axis coordinate ${index}`)
+      }
+      return state
+    }
+    const assertClean = state => {
+      assert(!state.axis && !state.preview && !state.transient && !state.interacting
+        && !state.single && !state.suppressed && !state.pointListeners && !state.inputListeners,
+      'MIRROR left a preview, listener, or interaction flag active.')
+      assert(state.coordinateListeners === original.coordinateListeners, 'MIRROR left its coordinate listener active.')
+    }
+    const assertIsolated = async phase => {
+      const state = await readState()
+      assert(state.interacting && state.suppressed && state.handlers === 0
+        && JSON.stringify(state.selected) === '["701"]',
+      `MIRROR ${phase} exposed grips or changed its source selection: ${JSON.stringify(state)}`)
+    }
+    const reflected = [20, 20, 410 / 13, 620 / 13]
+    const base = { x: 20, y: 20 }
+    const destination = { x: 80, y: 60 }
+    const assertSnappedPreview = async () => {
+      await assertSnap(destination.x, destination.y)
+      const state = await assertAxis(base, destination)
+      assert(state.preview, 'MIRROR did not create a reflected line preview.')
+      reflected.forEach((value, index) => assertNear(state.preview[index], value, 1e-5, `MIRROR reflected preview coordinate ${index}`))
+      return state
+    }
+
+    await selectSource()
+    const original = await readState()
+    await runTerminalCommand(activePage, 'mi')
+    // Preselection must enter axis capture without an extra confirming Enter.
+    await activePage.waitForFunction(() => window.editor.isInteracting && window.editor.signals.pointCaptured.getNumListeners() > 0)
+    const firstPointer = await moveNear(base.x, base.y)
+    await activePage.keyboard.press('F9')
+    await assertSnap(base.x, base.y)
+    await moveNear(destination.x, destination.y)
+    await assertSnap(destination.x, destination.y)
+    await moveNear(base.x, base.y)
+    await assertSnap(base.x, base.y)
+    await activePage.mouse.click(firstPointer.x, firstPointer.y)
+    await assertIsolated('first axis point')
+    const secondPointer = await moveNear(destination.x, destination.y)
+    const snappedPreview = await assertSnappedPreview()
+    assert(snappedPreview.history === original.history && snappedPreview.revision === original.revision,
+      'A MIRROR preview changed History or dirtied the document.')
+
+    // The stationary pointer must drive the axis and geometry when snap changes.
+    await activePage.keyboard.press('F9')
+    await activePage.waitForFunction(() => !window.editor.isSnapping && !window.editor.snapPoint)
+    const rawPoint = await activePage.evaluate(pointer => {
+      const point = window.editor.svg.point(pointer.x, pointer.y)
+      return { x: point.x, y: point.y }
+    }, secondPointer)
+    const unsnappedPreview = await assertAxis(base, rawPoint)
+    assert(JSON.stringify(unsnappedPreview.preview) !== JSON.stringify(snappedPreview.preview),
+      'Disabling snap did not update the reflected geometry at the stationary pointer.')
+    await activePage.focus('#object-snap-toggle')
+    await activePage.keyboard.press(' ')
+    await assertSnappedPreview()
+
+    // Transient reflected endpoints must never become snap targets themselves.
+    await moveNear(reflected[2], reflected[3])
+    assert(await activePage.evaluate(() => !window.editor.snapPoint && document.querySelector('#Snap').childElementCount === 0),
+      'MIRROR snapped to its own reflected preview.')
+    await moveNear(destination.x, destination.y)
+    await assertSnappedPreview()
+    await activePage.mouse.click(secondPointer.x, secondPointer.y)
+    await waitForTerminalText(activePage, 'Delete source objects?')
+    await assertIsolated('second axis point')
+    await typeTerminalValue(activePage, 'n')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    const placed = await readState()
+    assertClean(placed)
+    assert(placed.history === original.history + 1 && placed.lines.length === original.lines.length + 1,
+      'MIRROR did not commit exactly one reflected copy and History entry.')
+    const copy = placed.lines.find(line => !original.lines.some(source => source.id === line.id))
+    assert(copy?.parent === 'browser-mirror-collection', 'MIRROR changed the copy collection.')
+    reflected.forEach((value, index) => assertNear(copy.points[index], value, 1e-5, `MIRROR committed coordinate ${index}`))
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    assert(JSON.stringify((await readState()).lines) === JSON.stringify(original.lines), 'Undo did not restore the original MIRROR geometry.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    assert(JSON.stringify((await readState()).lines) === JSON.stringify(placed.lines), 'Redo changed the snapped MIRROR result.')
+
+    await activePage.keyboard.press('Escape')
+    const beforeCancel = await readState()
+    await runTerminalCommand(activePage, 'mirror')
+    assert(await activePage.evaluate(() => !window.editor.isInteracting && window.editor.selected.length === 0),
+      'MIRROR without a preselection did not wait for selection.')
+    await selectSource()
+    await activePage.keyboard.press('Enter')
+    await activePage.waitForFunction(() => window.editor.isInteracting)
+    const circlePointer = await moveNear(95, 25)
+    await assertSnap(95, 25)
+    await activePage.mouse.click(circlePointer.x, circlePointer.y)
+    await moveNear(50, 20)
+    await assertSnap(50, 20)
+    await assertAxis({ x: 95, y: 25 }, { x: 50, y: 20 })
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    const cancelled = await readState()
+    assertClean(cancelled)
+    assert(JSON.stringify(cancelled.lines) === JSON.stringify(beforeCancel.lines)
+      && cancelled.history === beforeCancel.history && cancelled.revision === beforeCancel.revision,
+    'Cancelling MIRROR changed permanent geometry, History, or the document revision.')
+
+    const zoomDuringMirror = async deltaY => {
+      const before = await activePage.evaluate(() => window.editor.svg.zoom())
+      const pointer = await screenPoint(70, 45)
+      await activePage.mouse.move(pointer.x, pointer.y)
+      await activePage.mouse.wheel({ deltaY })
+      await activePage.waitForFunction(previous => Math.abs(window.editor.svg.zoom() - previous) > 1e-6, {}, before)
+      await activePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    }
+    const clickGeometry = async (x, y, id) => {
+      const point = await screenPoint(x, y)
+      await activePage.mouse.move(Math.round(point.x), Math.round(point.y))
+      await activePage.waitForFunction(expected => window.editor.hoveredElements.some(element => element.node.id === expected), {}, id)
+      await activePage.mouse.click(Math.round(point.x), Math.round(point.y))
+    }
+    await selectSource()
+    await runTerminalCommand(activePage, 'mi')
+    await zoomDuringMirror(-80)
+    await assertIsolated('zoom before the first axis point')
+    await clickGeometry(80, 60, '702')
+    await assertIsolated('first axis point on another line')
+    await zoomDuringMirror(80)
+    await assertIsolated('zoom before the second axis point')
+    await clickGeometry(103, 25, '703')
+    await activePage.waitForFunction(() => window.editor.signals.inputValue.getNumListeners() > 0
+      && window.editor.signals.pointCaptured.getNumListeners() === 0)
+    await assertIsolated('second axis point on another circle')
+    await zoomDuringMirror(-80)
+    await assertIsolated('zoom during the source-deletion prompt')
+    await clickGeometry(90, 60, '702')
+    await assertIsolated('prompt click on another line')
+    await clickGeometry(103, 25, '703')
+    await assertIsolated('prompt click on another circle')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'mirror-handlers-suppressed.png') })
+    // Zoom changes the saved viewBox; capture the revision after those changes.
+    const beforePromptCancel = await readState()
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    const promptCancelled = await readState()
+    assertClean(promptCancelled)
+    assert(JSON.stringify(promptCancelled.lines) === JSON.stringify(beforePromptCancel.lines)
+      && promptCancelled.history === beforePromptCancel.history && promptCancelled.revision === beforePromptCancel.revision,
+    'Cancelling the MIRROR source-deletion prompt changed the drawing.')
+
+    await selectSource()
+    const beforeInvalid = await readState()
+    await runTerminalCommand(activePage, 'mi')
+    const coincidentPointer = await moveNear(80, 60)
+    await assertSnap(80, 60)
+    await activePage.mouse.click(coincidentPointer.x, coincidentPointer.y)
+    await assertIsolated('first snapped point before an invalid axis')
+    await activePage.mouse.click(coincidentPointer.x, coincidentPointer.y)
+    await waitForTerminalText(activePage, 'Mirror axis requires two different points.')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    const invalid = await readState()
+    assertClean(invalid)
+    assert(JSON.stringify(invalid.selected) === JSON.stringify(beforeInvalid.selected),
+      'Cancelling a zero-length MIRROR axis selected the element under the same click.')
+    assert(JSON.stringify(invalid.lines) === JSON.stringify(beforeInvalid.lines)
+      && invalid.history === beforeInvalid.history && invalid.revision === beforeInvalid.revision,
+    'An invalid MIRROR axis changed geometry, History, or the document revision.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'mirror-invalid-axis-selection.png') })
+    await clickGeometry(90, 60, '702')
+    await activePage.waitForFunction(() => window.editor.selected.some(element => element.node.id === '702')
+      && window.editor.handlers.node.childElementCount > 0)
+    await activePage.keyboard.press('Escape')
+    trace('mirror-snap', { original, placed, cancelled, promptCancelled, invalid })
+  })
+
+  await step('keep the MIRROR axis thin and readable across zoom levels and themes', async () => {
+    const previous = await activePage.evaluate(() => ({ preferences: localStorage.getItem('nanquim-preferences'),
+      nonScaling: window.editor.svg.node.classList.contains('non-scaling-stroke') }))
+    try {
+      for (const light of [false, true]) {
+        const width = browserName === 'chromium' && light ? 720 : BROWSER_VIEWPORT.width
+        if (browserName === 'chromium') await activePage.setViewport({ ...BROWSER_VIEWPORT, width })
+        let nearScale
+        for (const span of [8, 80]) {
+          const loaded = await activePage.evaluate(async ({ light, span }) => {
+            window.openPreferences()
+            const background = document.getElementById('prefs-background-color')
+            background.value = light ? '#f3f1ea' : '#20252a'
+            background.dispatchEvent(new Event('input', { bubbles: true }))
+            document.querySelector('.prefs-btn-save').click()
+            const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${span} ${span * .75}"
+              data-nanquim-version="3" data-element-index="810" data-active-collection-id="mirror-style">
+              <g id="mirror-style" data-collection="true" name="Mirror styles" style="stroke:#999999;stroke-width:.003;fill:none">
+                <rect id="801" x="1" y="1" width="1" height="1" style="stroke:#999999;stroke-width:.003;fill:none"/>
+                <circle id="802" cx="2.75" cy="1.5" r=".35" style="stroke:#999999;stroke-width:.003;fill:none"/>
+              </g></svg>`
+            const result = await window.editor.documents.openFile(new File([source], 'mirror-style.svg', { type: 'image/svg+xml' }))
+            const editor = window.editor
+            editor.isSnapping = false
+            editor.gridSnap = false
+            editor.polarTracking = false
+            editor.ortho = false
+            editor.svg.node.classList.remove('non-scaling-stroke')
+            return result
+          }, { light, span })
+          assert(loaded?.ok, 'Could not load the MIRROR helper appearance fixture.')
+          await activePage.click('[data-outliner-id="802"] .collection-name')
+          // M belongs to the Outliner while the pointer is over its rows.
+          await activePage.mouse.move(60, 80)
+          await runTerminalCommand(activePage, 'mi')
+          const points = await activePage.evaluate(() => [3, 6].map(x => {
+            const point = new DOMPoint(x, 3).matrixTransform(window.editor.svg.node.getScreenCTM())
+            return { x: Math.round(point.x), y: Math.round(point.y) }
+          }))
+          await activePage.mouse.click(points[0].x, points[0].y)
+          await activePage.mouse.move(points[1].x, points[1].y)
+          await activePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+          const appearance = await activePage.evaluate(() => {
+            const axis = document.querySelector('.mirror-axis-helper')
+            if (!axis) return null
+            const style = getComputedStyle(axis)
+            const transform = axis.getScreenCTM()
+            return { stroke: style.stroke, strokeWidth: parseFloat(style.strokeWidth), effect: style.vectorEffect,
+              dashes: style.strokeDasharray.split(/[ ,]+/).map(parseFloat), pointerEvents: style.pointerEvents,
+              opacity: Number(style.opacity), scale: Math.hypot(transform.a, transform.b),
+              bounds: axis.getBoundingClientRect().toJSON() }
+          })
+          assert(appearance?.effect === 'non-scaling-stroke', 'The MIRROR axis stroke scales with drawing zoom.')
+          assertNear(appearance.strokeWidth, 1.5, 1e-6, 'MIRROR helper screen stroke width')
+          if (span === 8) nearScale = appearance.scale
+          else assertNear(nearScale / appearance.scale, 10, 1e-5, 'MIRROR helper test zoom range')
+          assert(JSON.stringify(appearance.dashes) === '[6,4]', 'MIRROR helper dashes do not use screen-space lengths.')
+          assert(appearance.opacity > 0 && appearance.stroke !== 'none' && appearance.pointerEvents === 'none'
+            && appearance.bounds.width > 10, 'The MIRROR axis is hidden or intercepts drawing input.')
+          await activePage.screenshot({ path: join(artifactsDirectory, `mirror-axis-${width}-${light ? 'light' : 'dark'}-${span}.png`) })
+          trace('mirror-axis-appearance', { width, light, span, ...appearance })
+          await activePage.keyboard.press('Escape')
+          await activePage.waitForFunction(() => !document.querySelector('.mirror-axis-helper') && !window.editor.isInteracting)
+        }
+      }
+    } finally {
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await activePage.evaluate(previous => {
+        window.editor.svg.node.classList.toggle('non-scaling-stroke', previous.nonScaling)
+        if (previous.preferences === null) localStorage.removeItem('nanquim-preferences')
+        else localStorage.setItem('nanquim-preferences', previous.preferences)
+      }, previous)
+    }
+  })
+}
+
+async function runTrimBoundarySelectionWorkflows(activePage) {
+  await step('box-select TRIM boundaries, trim with Undo/Redo, and cancel unfinished selection boxes', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100"
+        data-nanquim-version="3" data-element-index="870" data-active-collection-id="trim-box">
+        <g id="trim-box" data-collection="true" name="Trim boundaries" style="stroke:#aaaaaa;stroke-width:.2;fill:none">
+          <line id="861" x1="40" y1="20" x2="40" y2="80"/>
+          <line id="862" x1="80" y1="20" x2="80" y2="80"/>
+          <line id="863" x1="10" y1="50" x2="110" y2="50"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'trim-box.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      return result
+    })
+    assert(loaded?.ok, 'Could not load the TRIM boundary selection fixture.')
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      return { lines: [...editor.drawing.node.querySelectorAll('line')].map(node => ({
+        id: node.id, parent: node.parentElement.id,
+        points: ['x1', 'y1', 'x2', 'y2'].map(name => Number(node.getAttribute(name))),
+      })), history: editor.history.undos.length, revision: editor.documentState.revision }
+    })
+    const assertBoundaries = async ids => activePage.waitForFunction(expected => {
+      const selected = [...document.querySelectorAll('#trim-box > .elementSelected')].map(node => node.id).sort()
+      return JSON.stringify(selected) === JSON.stringify(expected)
+    }, {}, [...ids].sort())
+    const selectOneBoundary = async () => {
+      const point = await screenPoint(40, 35)
+      await activePage.mouse.move(point.x, point.y)
+      await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '861'))
+      await activePage.mouse.click(point.x, point.y)
+      await assertBoundaries(['861'])
+    }
+    const beginBox = async (crossing = false) => {
+      const start = await screenPoint(crossing ? 85 : 35, crossing ? 25 : 15)
+      const end = await screenPoint(crossing ? 35 : 85, crossing ? 30 : 85)
+      await activePage.mouse.move(start.x, start.y)
+      await activePage.waitForFunction(() => window.editor.hoveredElements.length === 0)
+      // Viewport's rectangle tool uses two corner clicks and a moving preview.
+      await activePage.mouse.click(start.x, start.y)
+      await activePage.waitForSelector('.selectionRectangle')
+      await activePage.mouse.move(end.x, end.y, { steps: 5 })
+      await activePage.waitForFunction(expected => {
+        const rectangle = document.querySelector('.selectionRectangle')
+        const bounds = rectangle?.getBoundingClientRect()
+        return bounds?.width > 0 && bounds.height > 0
+          && rectangle.classList.contains('selectionRectangleRight') === expected
+      }, {}, crossing)
+      const visible = await activePage.$eval('.selectionRectangle', rectangle => {
+        const style = getComputedStyle(rectangle)
+        return style.display !== 'none' && style.visibility === 'visible'
+          && style.stroke !== 'none' && Number.parseFloat(style.strokeWidth) > 0
+      })
+      assert(visible, 'TRIM boundary selection has no visible rectangle outline.')
+      return end
+    }
+    const finishBox = async end => {
+      await activePage.mouse.click(end.x, end.y)
+      await activePage.waitForFunction(() => !document.querySelector('.selectionRectangle')
+        && !window.editor.isSelecting && !window.editor.isDrawing)
+      await assertBoundaries(['861', '862'])
+    }
+    const waitClean = async () => activePage.waitForFunction(() => {
+      const editor = window.editor
+      return !editor.isInteracting && !editor.isSelecting && !editor.isDrawing && !editor.selectSingleElement
+        && !editor.suppressPolarTracking && !document.querySelector('.selectionRectangle')
+        && !editor.svg.node.querySelector('.ghostLine') && !document.querySelector('#trim-box > .elementSelected')
+    })
+    const historyTravel = async redo => {
+      await activePage.keyboard.down(controlKey())
+      if (redo) await activePage.keyboard.down('Shift')
+      await activePage.keyboard.press('KeyZ')
+      if (redo) await activePage.keyboard.up('Shift')
+      await activePage.keyboard.up(controlKey())
+    }
+
+    for (const crossing of [false, true]) {
+      const before = await readState()
+      await runTerminalCommand(activePage, 'tr')
+      await selectOneBoundary()
+      const end = await beginBox(crossing)
+      await activePage.screenshot({ path: join(artifactsDirectory, `trim-boundary-${crossing ? 'crossing' : 'window'}.png`) })
+      await finishBox(end)
+      // Repeating a box adds its contents; it does not toggle prior boundaries.
+      await finishBox(await beginBox(crossing))
+      assert(JSON.stringify(await readState()) === JSON.stringify(before),
+        'Selecting TRIM boundaries changed geometry, History, or the document revision.')
+      const logLength = await activePage.$eval('#terminalLog', log => log.textContent.length)
+      await activePage.keyboard.press('Enter')
+      await activePage.waitForFunction(length => document.getElementById('terminalLog').textContent.slice(length)
+        .includes('Selected 2 boundary elements.'), {}, logLength)
+      await assertBoundaries([])
+      const target = await screenPoint(25, 50)
+      await activePage.mouse.move(target.x, target.y)
+      await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '863'))
+      await activePage.mouse.move(target.x + 1, target.y)
+      await activePage.waitForFunction(() => [...window.editor.svg.node.querySelectorAll('line.ghostLine')]
+        .some(node => getComputedStyle(node).display !== 'none' && node.getBoundingClientRect().width > 0))
+      await activePage.mouse.click(target.x + 1, target.y)
+      await activePage.waitForFunction(() => Number(document.getElementById('863').getAttribute('x1')) === 40)
+      await activePage.keyboard.press('Escape')
+      await waitClean()
+      const trimmed = await readState()
+      assert(trimmed.history === before.history + 1 && trimmed.lines.length === 3,
+        'TRIM did not record exactly one shortening operation.')
+      assert(JSON.stringify(trimmed.lines.find(line => line.id === '863').points) === '[40,50,110,50]',
+        'TRIM did not shorten the target to the selected cutting boundary.')
+      assert(JSON.stringify(trimmed.lines.filter(line => line.id !== '863'))
+        === JSON.stringify(before.lines.filter(line => line.id !== '863')), 'TRIM modified its cutting boundaries.')
+      await historyTravel(false)
+      assert(JSON.stringify((await readState()).lines) === JSON.stringify(before.lines), 'Undo did not restore the TRIM target.')
+      await historyTravel(true)
+      assert(JSON.stringify((await readState()).lines) === JSON.stringify(trimmed.lines), 'Redo changed the TRIM result.')
+      await historyTravel(false)
+      trace('trim-boundary-box', { crossing, before, trimmed })
+    }
+
+    for (const exit of ['Escape', 'right-click', 'Enter']) {
+      const before = await readState()
+      await runTerminalCommand(activePage, 'trim')
+      await selectOneBoundary()
+      const end = await beginBox()
+      if (exit === 'right-click') await activePage.mouse.click(end.x, end.y, { button: 'right' })
+      else await activePage.keyboard.press(exit)
+      if (exit === 'Enter') {
+        await activePage.waitForFunction(() => !document.querySelector('.selectionRectangle')
+          && !window.editor.isSelecting && !window.editor.isDrawing && window.editor.isInteracting)
+        await assertBoundaries([])
+      } else await waitClean()
+      // A removed draw-plugin element must not keep a mousemove listener alive.
+      const empty = await screenPoint(15, 15)
+      await activePage.mouse.move(empty.x, empty.y)
+      if (exit === 'Enter') {
+        await activePage.keyboard.press('Escape')
+        await waitClean()
+      }
+      assert(JSON.stringify(await readState()) === JSON.stringify(before), `${exit} from an unfinished TRIM box changed the document.`)
+      // Restart immediately to expose stale click.draw handlers as well.
+      await runTerminalCommand(activePage, 'tr')
+      await finishBox(await beginBox(true))
+      await activePage.keyboard.press('Escape')
+      await waitClean()
+    }
+  })
 }
 
 async function runCopySnapWorkflows(activePage) {
@@ -2084,6 +2791,9 @@ async function runOutlinerRangeSelectionWorkflows(activePage) {
         assert(beforeMove.revision === beforeSelection.revision, 'Selecting an Outliner range dirtied the drawing.')
 
         await activePage.focus('#terminalInput')
+        // Re-enter after the range selection replaces its rows. Firefox BiDi
+        // can retain pointer state for the detached row after those clicks.
+        await activePage.mouse.move(10, 10)
         await activePage.hover('[data-outliner-id="902"] .collection-name')
         await activePage.keyboard.press('KeyM')
         await activePage.waitForSelector('dialog.outliner-move-dialog[open]')

@@ -262,7 +262,15 @@ function Viewport(editor) {
 
   function clearSelectionRectangle() {
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
-    if (activeSvg) activeSvg.find('.selectionRectangle').each(el => el.remove())
+    if (activeSvg) activeSvg.find('.selectionRectangle').each(el => {
+      // Removing the node alone leaves the drawing plugin's mouse listeners active.
+      if (el.remember('_paintHandler')) el.draw('cancel')
+      el.remove()
+    })
+    if (editor.isSelecting) {
+      editor.isDrawing = false
+      editor.isSelecting = false
+    }
   }
 
   signals.requestHoverCheck.add(() => {
@@ -1575,12 +1583,15 @@ function Viewport(editor) {
           }
         }
 
-        if (hoveredElements.length > 1 && !editor.suppressHandlers && !hadPointListener) {
+        // Point input owns this click, even if its callback ends the command.
+        if (hadPointListener) return
+
+        if (hoveredElements.length > 1 && !editor.suppressHandlers) {
           showDisambiguationMenu(hoveredElements, e, 'interacting')
         } else if (hoveredElements.length === 1) {
           editor.lastClick = point
           signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
-        } else if (!editor.selectSingleElement && !hadPointListener) {
+        } else if (!editor.selectSingleElement) {
           handleRectSelection(e)
         }
         return
@@ -1607,7 +1618,7 @@ function Viewport(editor) {
     if (!editor.isDrawing) {
       const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
       if (activeSvg && !editor.isSelecting) {
-        const startX = coordinates.x
+        const startX = activeSvg.point(e.pageX, e.pageY).x
         editor.isDrawing = true
         editor.isSelecting = true
         activeSvg.rect()
@@ -1619,7 +1630,9 @@ function Viewport(editor) {
             rect.y = e.target.y.baseVal.value
             rect.width = e.target.width.baseVal.value
             rect.height = e.target.height.baseVal.value
-            if (coordinates.x < startX) {
+            const pointer = e.detail.event
+            // The queued viewport pointer frame may still describe the previous corner.
+            if (activeSvg.point(pointer.pageX, pointer.pageY).x < startX) {
               e.srcElement.classList.add('selectionRectangleRight')
               findElements(rect, 'inside')
             } else {

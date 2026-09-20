@@ -124,6 +124,32 @@ describe('Paper viewport properties', () => {
     vi.resetModules()
   })
 
+  test('returns property inputs to the terminal on hover while preserving focused navigation buttons', async () => {
+    document.body.insertAdjacentHTML('beforeend', `
+      <button id="navbar-welcome-open">Welcome</button>
+      <div class="properties-panel-container"><input id="property-input"></div>
+      <div class="viewport"></div>
+      <input id="terminalInput">
+    `)
+    const { editor } = await createFixture()
+    const viewport = document.querySelector('.viewport')
+    const properties = document.querySelector('.properties-panel-container')
+    const terminal = document.getElementById('terminalInput')
+    document.getElementById('property-input').focus()
+    properties.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(editor.isEditingProperties).toBe(true)
+    viewport.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(editor.isEditingProperties).toBe(false)
+    expect(document.activeElement).toBe(terminal)
+
+    const welcomeButton = document.getElementById('navbar-welcome-open')
+    welcomeButton.focus()
+    viewport.dispatchEvent(new MouseEvent('mouseenter'))
+    expect(document.activeElement).toBe(welcomeButton)
+    properties.dispatchEvent(new MouseEvent('mouseleave'))
+    expect(document.activeElement).toBe(welcomeButton)
+  })
+
   test('keeps common metric presets synchronized with the custom denominator', async () => {
     const { editor, viewport } = await createFixture()
     const expectedOptions = ['1:1', '1:2', '1:5', '1:10', '1:20', '1:25', '1:50', '1:100', '1:200', '1:500', 'Custom (1:N)']

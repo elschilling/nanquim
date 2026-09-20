@@ -303,6 +303,12 @@ class HelpSession {
   _guardKeyDown(event) {
     const isF1 = event.key === 'F1' || event.code === 'F1'
     if (!this.isOpen && !isF1) return
+    if (!this.isOpen && document.getElementById('welcome-overlay')) {
+      // Welcome installs its capture guard after Help. Let it own this key
+      // without opening a second modal or the browser's Help page.
+      event.preventDefault()
+      return
+    }
 
     this.suppressedKeyups.add(event.code || event.key)
     event.stopImmediatePropagation()

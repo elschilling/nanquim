@@ -61,7 +61,7 @@ class TrimCommand extends Command {
 
         this.editor.isInteracting = true
         this.editor.suppressPolarTracking = true
-        this.editor.selectSingleElement = true
+        this.editor.selectSingleElement = false
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
     }
 
@@ -80,6 +80,7 @@ class TrimCommand extends Command {
                 this.editor.signals.terminalLogged.dispatch({ msg: 'Select elements to trim.' })
 
                 this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
+                this.boundaryElements.forEach(element => element.removeClass('elementSelected'))
                 this.editor.signals.clearSelection.dispatch()
 
                 this.startTrimmingLines()
@@ -113,7 +114,7 @@ class TrimCommand extends Command {
         this.finishCommand()
     }
 
-    onElementSelected(el) {
+    onElementSelected(el, source) {
         if (!this.isTrimming) {
             if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
                 el?.removeClass?.('elementSelected')
@@ -122,10 +123,13 @@ class TrimCommand extends Command {
             }
             const index = this.boundaryElements.findIndex(b => b.node === el.node)
             if (index > -1) {
+                // Overlapping selection rectangles add boundaries without toggling them off.
+                if (source === 'selectHovered-multi') return
                 this.boundaryElements.splice(index, 1)
                 el.removeClass('elementSelected')
             } else {
                 this.boundaryElements.push(el)
+                el.addClass('elementSelected')
             }
         }
     }
@@ -1328,6 +1332,7 @@ class TrimCommand extends Command {
         this.ghostLine = null
         this.ghostArc = null
 
+        this.boundaryElements.forEach(element => element.removeClass('elementSelected'))
         this.boundaryElements = []
         this.isTrimming = false
         this.autoTrimMode = false

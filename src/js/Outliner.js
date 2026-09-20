@@ -653,6 +653,7 @@ function Outliner(editor) {
   function drawHandlers() {
     // Clear existing handlers
     editor.handlers.clear()
+    if (editor.suppressHandlers) return
 
     // Get current SVG and zoom level based on mode
     const isPaper = editor.mode === 'paper'

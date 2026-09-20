@@ -6,6 +6,8 @@
  * reads the file currently on disk.
  */
 
+import { renderWelcomeChangelog } from './WelcomeChangelog.js'
+
 const LEGACY_STORAGE_KEY = 'nanquim-recent-files'
 const DATABASE_NAME = 'nanquim-recent-files'
 const STORE_NAME = 'files'
@@ -16,6 +18,8 @@ function WelcomeScreen(editor, options = {}) {
   this._overlay = null
   this._dismissState = null
   this._documentActionId = 0
+  this._showId = 0
+  this._opening = false
   this._getRecentFiles = options.getRecentFiles || getRecentFiles
 
   // Remove snapshots written by versions that cached the file contents.
@@ -27,12 +31,24 @@ function WelcomeScreen(editor, options = {}) {
 // ── Public ──────────────────────────────────────────────────────────────────
 
 WelcomeScreen.prototype.show = async function () {
-  if (this._overlay) return           // already visible
+  if (this._overlay || this._opening) return
+  this._opening = true
+  const showId = ++this._showId
+  const previousFocus = document.activeElement
+  let recentFiles
+  try {
+    recentFiles = await this._getRecentFiles()
+  } catch {
+    // An unavailable recent-file database must not prevent opening Welcome.
+    recentFiles = []
+  }
+  if (showId !== this._showId) return
+  this._opening = false
   const overlay = document.createElement('div')
   overlay.id = 'welcome-overlay'
   overlay.className = 'welcome-overlay'
-  const recentFiles = await this._getRecentFiles()
   overlay.innerHTML = _buildHTML(recentFiles, _canPersistFileHandles())
+  renderWelcomeChangelog(overlay.querySelector('#ws-changelog'))
 
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) this.dismiss()
@@ -40,6 +56,7 @@ WelcomeScreen.prototype.show = async function () {
 
   document.body.appendChild(overlay)
   this._overlay = overlay
+  this._previousFocus = previousFocus
 
   // Wire buttons
   overlay.querySelector('#ws-new').addEventListener('click', async () => {
@@ -74,9 +91,55 @@ WelcomeScreen.prototype.show = async function () {
     })
   })
 
-  // Dismiss on Escape
-  this._keyHandler = (e) => { if (e.key === 'Escape') this.dismiss() }
-  document.addEventListener('keydown', this._keyHandler)
+  // Keep Welcome keystrokes out of the terminal and any active drawing command.
+  const pressedKeys = new Set()
+  const keyup = (event) => {
+    const key = event.code || event.key
+    if (!overlay.isConnected && !pressedKeys.has(key)) return
+    event.stopImmediatePropagation()
+    pressedKeys.delete(key)
+    if (!overlay.isConnected && !pressedKeys.size) window.removeEventListener('keyup', keyup, true)
+  }
+  const keydown = (event) => {
+    if (!overlay.isConnected) return
+    // Keep the existing New/Open/Save shortcuts routed through the document
+    // controller, including Welcome-aware cancellation and dirty-state guards.
+    if ((event.ctrlKey || event.metaKey) && ['n', 'o', 's'].includes(event.key.toLowerCase())) return
+    pressedKeys.add(event.code || event.key)
+    event.stopImmediatePropagation()
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      this.dismiss()
+    } else if (event.key === 'Tab') {
+      event.preventDefault()
+      const controls = [...overlay.querySelectorAll('button:not([disabled]), a[href]')]
+      const index = controls.indexOf(document.activeElement)
+      const next = index < 0 ? 0 : (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length
+      controls[next]?.focus()
+    } else if (['F2', 'F3', 'F4', 'F8', 'F9', 'F10'].includes(event.key)
+      || ((event.ctrlKey || event.metaKey) && ['v', 'z'].includes(event.key.toLowerCase()))) {
+      event.preventDefault()
+    }
+  }
+  const paste = (event) => {
+    if (!overlay.isConnected) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  const focus = (event) => {
+    if (overlay.isConnected && !overlay.contains(event.target)) overlay.querySelector('#ws-dismiss').focus()
+  }
+  window.addEventListener('keydown', keydown, true)
+  window.addEventListener('keyup', keyup, true)
+  window.addEventListener('paste', paste, true)
+  document.addEventListener('focusin', focus)
+  this._removeGuards = () => {
+    window.removeEventListener('keydown', keydown, true)
+    window.removeEventListener('paste', paste, true)
+    document.removeEventListener('focusin', focus)
+    if (!pressedKeys.size) window.removeEventListener('keyup', keyup, true)
+  }
+  overlay.querySelector('#ws-dismiss').focus({ preventScroll: true })
 }
 
 WelcomeScreen.prototype.isVisible = function () {
@@ -103,6 +166,9 @@ WelcomeScreen.prototype.runDocumentAction = async function (
 }
 
 WelcomeScreen.prototype.dismiss = function (onComplete) {
+  this._showId += 1
+  this._opening = false
+  this._documentActionId += 1
   const overlay = this._overlay
   if (!overlay) {
     if (onComplete) onComplete()
@@ -128,9 +194,15 @@ WelcomeScreen.prototype.dismiss = function (onComplete) {
     if (event && event.target !== overlay) return
 
     overlay.removeEventListener('animationend', finish)
+    clearTimeout(dismissal.timer)
     overlay.remove()
+    this._removeGuards?.()
+    this._removeGuards = null
     if (this._overlay === overlay) this._overlay = null
     if (this._dismissState === dismissal) this._dismissState = null
+    const previousFocus = this._previousFocus
+    this._previousFocus = null
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
 
     const callbacks = dismissal.callbacks.splice(0)
     callbacks.forEach(callback => callback())
@@ -139,8 +211,8 @@ WelcomeScreen.prototype.dismiss = function (onComplete) {
   this._dismissState = dismissal
 
   overlay.classList.add('ws-fade-out')
-  document.removeEventListener('keydown', this._keyHandler)
   overlay.addEventListener('animationend', finish)
+  dismissal.timer = setTimeout(finish, 300)
   if (!overlay.isConnected) finish()
 }
 
@@ -265,11 +337,11 @@ function _canPersistFileHandles() {
 function _buildHTML(recentFiles, canPersistFileHandles) {
   const recentHTML = recentFiles.length
     ? recentFiles.map((f, i) => /* html */`
-        <div class="ws-recent-item" data-index="${i}" title="${_esc(f.name)}">
-          <span class="ws-recent-icon icon icon-canvas"></span>
+        <button type="button" class="ws-recent-item" data-index="${i}" title="${_esc(f.name)}">
+          <span class="ws-recent-icon icon icon-canvas" aria-hidden="true"></span>
           <span class="ws-recent-name">${_esc(f.name)}</span>
           <span class="ws-recent-date">${_formatDate(f.timestamp)}</span>
-        </div>
+        </button>
       `).join('')
     : `<div class="ws-no-recent">${canPersistFileHandles
       ? 'No recent disk files. Files opened with Open File… or saved with Save SVG will appear here.'
@@ -277,15 +349,15 @@ function _buildHTML(recentFiles, canPersistFileHandles) {
     }</div>`
 
   return /* html */`
-    <div class="ws-dialog" id="ws-dialog">
+    <div class="ws-dialog" id="ws-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-title">
 
       <!-- Left: logo + actions -->
       <div class="ws-left">
         <div class="ws-logo-area">
           <div class="ws-logo-icon-wrap">
-            <span class="icon icon-nanquim-logo"></span>
+            <span class="icon icon-nanquim-logo" aria-hidden="true"></span>
           </div>
-          <span class="ws-app-name">nanquim</span>
+          <h1 class="ws-app-name" id="ws-title" aria-label="Welcome to Nanquim">nanquim</h1>
         </div>
         <p class="ws-tagline">SVG CAD editor</p>
 
@@ -329,15 +401,16 @@ function _buildHTML(recentFiles, canPersistFileHandles) {
         </button>
       </div>
 
-      <!-- Right: recent files -->
+      <!-- Right: recent files and change history -->
       <div class="ws-right">
-        <div class="ws-right-header">
-          <span class="icon icon-open_recent ws-section-icon"></span>
+        <h2 class="ws-right-header">
+          <span class="icon icon-open_recent ws-section-icon" aria-hidden="true"></span>
           Recent Files
-        </div>
+        </h2>
         <div class="ws-recent-list">
           ${recentHTML}
         </div>
+        <section class="ws-changelog" id="ws-changelog" aria-label="Changelog history"></section>
       </div>
 
     </div>
