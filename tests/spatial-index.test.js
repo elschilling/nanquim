@@ -92,11 +92,13 @@ describe('SpatialIndex bounding boxes', () => {
 
   test('skips empty or unreadable elements', () => {
     const empty = elementWithBBox({ x: 0, y: 0, width: 0, height: 0 })
+    const unavailable = elementWithBBox(null)
     const detached = {
       node: { getBBox: () => { throw new Error('not rendered') } },
     }
 
     expect(getElementBBox(empty, {})).toBeNull()
+    expect(getElementBBox(unavailable, {})).toBeNull()
     expect(getElementBBox(detached, {})).toBeNull()
   })
 })

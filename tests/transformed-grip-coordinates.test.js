@@ -8,6 +8,7 @@ import {
   restoreVertexPreviewState,
 } from '../src/js/Viewport.js'
 import {
+  canEditImageGrips,
   constrainVertexPointInRoot,
   elementLocalPointToRoot,
   getVertexLocalAnchor,
@@ -156,6 +157,7 @@ describe('transformed vertex grip coordinates', () => {
       originalPosition: {},
       vertexIndex: 0,
     }, root)).toEqual(point)
+    expect(canEditImageGrips(missing, root)).toBe(false)
   })
 
   test('commits a transformed text grip as one local-space History edit', () => {
