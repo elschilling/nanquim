@@ -119,6 +119,7 @@ function Editor() {
   this.offsetDX = null
   this.offsetDY = null
   this.snapPoint = null
+  this.activeDrawingSnapPoints = null
   this.lastCommand = null
   this.lastClick = null
   this.isEditingVertex = false
@@ -186,6 +187,7 @@ Editor.prototype = {
     if (value && !this.isDrawing) {
       this.lastClick = null // Clear base point from previous commands
     }
+    if (!value) this.activeDrawingSnapPoints = null
     this.isDrawing = value
   },
 

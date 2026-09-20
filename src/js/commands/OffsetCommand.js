@@ -1,8 +1,12 @@
 import { Command } from '../Command'
 import { AddElementCommand } from './AddElementCommand'
 import {
+  applyArcOffsetToElement,
   applyOffsetToElement,
+  applyPolylineOffsetToElement,
+  computeArcOffsetGeometry,
   computeOffsetVector,
+  computePolylineOffsetGeometry,
   getOffsetResultIssue,
   getOffsetSupportIssue,
 } from '../utils/offsetCalc'
@@ -13,7 +17,7 @@ const OFFSET_DIAGNOSTICS = {
   'outside-drawing': 'OFFSET can only modify geometry in the active drawing.',
   'rounded-rectangle': 'OFFSET does not yet support rounded rectangles.',
   transformed: 'OFFSET does not support transformed geometry or geometry inside transformed groups.',
-  'unsupported-type': 'OFFSET supports only lines, circles, and square-corner rectangles.',
+  'unsupported-type': 'OFFSET supports only lines, polylines, circular arcs, circles, and square-corner rectangles.',
 }
 
 class OffsetCommand extends Command {
@@ -79,7 +83,11 @@ class OffsetCommand extends Command {
     }
 
     // Start ghosting in viewport with fixed distance
-    this.editor.signals.offsetGhostingStarted.dispatch([this.selectedElement], this.distance)
+    this.editor.signals.offsetGhostingStarted.dispatch(
+      [this.selectedElement],
+      this.distance,
+      this.editor.coordinates || this.editor.lastClick,
+    )
 
     // Now capture click to confirm side
     this.editor.isInteracting = true
@@ -116,7 +124,7 @@ class OffsetCommand extends Command {
     }
 
     try {
-      // For circles/rects, resize instead of translate
+      // Circular geometry stays concentric; lines use a perpendicular translation.
       if (this.selectedElement.type === 'circle') {
         const cx = this.selectedElement.cx()
         const cy = this.selectedElement.cy()
@@ -128,6 +136,12 @@ class OffsetCommand extends Command {
         clone.center(cx, cy)
         if (clone.radius) clone.radius(newRadius)
         else clone.attr('r', newRadius)
+      } else if (this.selectedElement.type === 'path') {
+        const result = computeArcOffsetGeometry(this.selectedElement, point, this.distance)
+        applyArcOffsetToElement(clone, result)
+      } else if (this.selectedElement.type === 'polyline') {
+        const result = computePolylineOffsetGeometry(this.selectedElement, point, this.distance)
+        applyPolylineOffsetToElement(clone, result)
       } else if (this.selectedElement.type === 'rect') {
         const x = this.selectedElement.x()
         const y = this.selectedElement.y()

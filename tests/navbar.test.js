@@ -70,4 +70,25 @@ describe('Navbar document actions', () => {
   test('requires the controller to exist before installing file actions', () => {
     expect(() => Navbar({})).toThrow('DocumentController must be initialized')
   })
+
+  test('opens Welcome from the logo without invoking a document action or terminal keys', () => {
+    document.body.innerHTML = '<button id="navbar-welcome-open" type="button">Nanquim</button>'
+    const show = vi.fn()
+    const newDocument = vi.fn()
+    window.welcomeScreen = { show }
+    Navbar({ documents: { newDocument } })
+    const button = document.getElementById('navbar-welcome-open')
+    const terminalInput = vi.fn()
+    document.addEventListener('keydown', terminalInput)
+
+    button.click()
+    for (const key of ['Enter', ' ']) {
+      button.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    }
+
+    expect(show).toHaveBeenCalledTimes(3)
+    expect(newDocument).not.toHaveBeenCalled()
+    expect(terminalInput).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', terminalInput)
+  })
 })

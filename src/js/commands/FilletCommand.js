@@ -4,6 +4,124 @@ import { applyCollectionStyleToElement } from '../Collection'
 import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
 
 const TRANSFORMED_FILLET_DIAGNOSTIC = 'FILLET does not support transformed lines.'
+const TRANSFORMED_RECTANGLE_FILLET_DIAGNOSTIC = 'FILLET does not support transformed rectangles.'
+const FILLET_GEOMETRY_TOLERANCE = 0.001
+
+function captureAttributes(element) {
+  return [...element.node.attributes].map(attribute => [attribute.name, attribute.value])
+}
+
+function restoreAttributes(element, attributes) {
+  ;[...element.node.attributes].forEach(attribute => element.node.removeAttribute(attribute.name))
+  attributes.forEach(([name, value]) => element.node.setAttribute(name, value))
+}
+
+function formatGeometryNumber(value) {
+  return String(Number(value.toFixed(12)))
+}
+
+class RectangleFilletCommand extends Command {
+  constructor(editor, rectangle, radius) {
+    super(editor)
+    this.type = 'FilletCommand'
+    this.name = 'Fillet'
+    this.rectangle = rectangle
+    this.radius = radius
+    this.originalAttributes = captureAttributes(rectangle)
+    this.finalAttributes = null
+  }
+
+  execute() {
+    const boundary = captureAttributes(this.rectangle)
+    try {
+      if (this.finalAttributes) {
+        restoreAttributes(this.rectangle, this.finalAttributes)
+      } else {
+        if (this.radius === 0) {
+          this.rectangle.node.removeAttribute('rx')
+          this.rectangle.node.removeAttribute('ry')
+        } else {
+          this.rectangle.attr({ rx: this.radius, ry: this.radius })
+        }
+        this.finalAttributes = captureAttributes(this.rectangle)
+      }
+      this.invalidateGeometry()
+    } catch (error) {
+      this.rollback(boundary, error, 'Rectangle fillet failed and its previous geometry could not be restored.')
+    }
+  }
+
+  undo() {
+    const boundary = captureAttributes(this.rectangle)
+    try {
+      restoreAttributes(this.rectangle, this.originalAttributes)
+      this.invalidateGeometry()
+    } catch (error) {
+      this.rollback(boundary, error, 'Rectangle fillet Undo failed and its applied geometry could not be restored.')
+    }
+  }
+
+  redo() {
+    this.execute()
+  }
+
+  rollback(attributes, error, message) {
+    const rollbackErrors = []
+    try {
+      restoreAttributes(this.rectangle, attributes)
+    } catch (rollbackError) {
+      rollbackErrors.push(rollbackError)
+    }
+    try {
+      this.invalidateGeometry()
+    } catch (rollbackError) {
+      rollbackErrors.push(rollbackError)
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError([error, ...rollbackErrors], message, { cause: error })
+    }
+    throw error
+  }
+
+  invalidateGeometry() {
+    this.editor.spatialIndex?.markDirty()
+    this.editor.fullSpatialIndex?.markDirty()
+    this.dispatchSignal('updatedOutliner')
+  }
+}
+
+function getPickedLineRay(line, intersection, clickPoint) {
+  const equation = getLineEquation(line)
+  const startVector = {
+    x: equation.x1 - intersection.x,
+    y: equation.y1 - intersection.y,
+  }
+  const endVector = {
+    x: equation.x2 - intersection.x,
+    y: equation.y2 - intersection.y,
+  }
+  const clickVector = {
+    x: clickPoint.x - intersection.x,
+    y: clickPoint.y - intersection.y,
+  }
+  const startDot = startVector.x * clickVector.x + startVector.y * clickVector.y
+  const endDot = endVector.x * clickVector.x + endVector.y * clickVector.y
+  const clickLength = Math.hypot(clickVector.x, clickVector.y)
+
+  // The pick chooses a ray from the infinite-line intersection. Preserve the
+  // endpoint furthest along that ray, rather than the endpoint nearest the
+  // cursor. The latter mistakes a small corner gap for the usable line length.
+  const preserveStart = clickLength > Number.EPSILON
+    ? startDot > endDot
+    : Math.hypot(startVector.x, startVector.y) > Math.hypot(endVector.x, endVector.y)
+  const direction = preserveStart ? startVector : endVector
+
+  return {
+    availableLength: Math.hypot(direction.x, direction.y),
+    direction: { dx: direction.x, dy: direction.y },
+    preserveStart,
+  }
+}
 
 class FilletCommand extends Command {
   constructor(editor) {
@@ -63,7 +181,7 @@ class FilletCommand extends Command {
     }
 
     this.editor.cmdParams.filletRadius = radius
-    this.editor.signals.terminalLogged.dispatch({ msg: `Radius set to ${radius}. Select two lines.` })
+    this.editor.signals.terminalLogged.dispatch({ msg: `Radius set to ${radius}. Select a rectangle or two lines.` })
   }
 
   startSelection() {
@@ -80,8 +198,16 @@ class FilletCommand extends Command {
     }
     if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
       el.removeClass('elementSelected')
-      this.editor.signals.terminalLogged.dispatch({ msg: TRANSFORMED_FILLET_DIAGNOSTIC })
+      this.editor.signals.terminalLogged.dispatch({
+        msg: el.type === 'rect'
+          ? TRANSFORMED_RECTANGLE_FILLET_DIAGNOSTIC
+          : TRANSFORMED_FILLET_DIAGNOSTIC,
+      })
       this.startSelection()
+      return
+    }
+    if (el.type === 'rect') {
+      this.filletRectangle(el)
       return
     }
     this.selectedElements.push([el, this.editor.lastClick])
@@ -90,6 +216,48 @@ class FilletCommand extends Command {
     } else {
       this.filletElements()
     }
+  }
+
+  filletRectangle(rectangle) {
+    const radius = Number(this.editor.cmdParams.filletRadius)
+    if (!Number.isFinite(radius) || radius < 0) {
+      this.editor.signals.terminalLogged.dispatch({ msg: 'Fillet radius must be a finite number greater than or equal to zero.' })
+      this.cleanup()
+      return
+    }
+
+    const width = Number(rectangle.attr('width'))
+    const height = Number(rectangle.attr('height'))
+    if (!Number.isFinite(width) || !Number.isFinite(height)
+      || width <= FILLET_GEOMETRY_TOLERANCE || height <= FILLET_GEOMETRY_TOLERANCE) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'FILLET requires a rectangle with finite positive dimensions.',
+      })
+      this.startSelection()
+      return
+    }
+
+    const maximumRadius = Math.min(width, height) / 2
+    if (radius > maximumRadius) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: `Fillet radius ${formatGeometryNumber(radius)} is too large for this rectangle. Maximum radius is ${formatGeometryNumber(maximumRadius)}.`,
+      })
+      this.startSelection()
+      return
+    }
+
+    const mutation = new RectangleFilletCommand(this.editor, rectangle, radius)
+    try {
+      this.editor.execute(mutation)
+      this.dispatchSignal('terminalLogged', {
+        msg: `Rectangle filleted with radius ${formatGeometryNumber(radius)}. Select another rectangle or two lines, or press Esc to finish.`,
+      })
+    } catch (error) {
+      this.dispatchSignal('terminalLogged', { msg: `Fillet failed: ${error.message}` })
+      this.cleanup()
+      return
+    }
+    this.continueSession()
   }
 
   // Store original state before modification
@@ -111,6 +279,26 @@ class FilletCommand extends Command {
       }
       this.originalStates.push(originalState)
     }
+  }
+
+  createMutationCommand(radius) {
+    const mutation = new FilletCommand(this.editor)
+    mutation.selectedElements = this.selectedElements.map(([element, click]) => [
+      element,
+      click ? { x: click.x, y: click.y } : click,
+    ])
+    mutation.storeOriginalStates()
+    mutation.radius = radius
+    mutation._mutationPrepared = true
+    return mutation
+  }
+
+  continueSession() {
+    this.selectedElements = []
+    this.editor.signals.inputValue.remove(this.onRadiusParam, this)
+    this.editor.signals.inputValue.remove(this.onRadiusInput, this)
+    this.editor.signals.inputValue.addOnce(this.onRadiusParam, this)
+    this.startSelection()
   }
 
   filletElements() {
@@ -158,22 +346,25 @@ class FilletCommand extends Command {
       return
     }
 
-    // Freeze all mutation inputs before the command enters History.
-    this.storeOriginalStates()
-    this.radius = radius
-    this._mutationPrepared = true
+    // Each completed pair needs its own frozen History command. The interactive
+    // session stays alive so another pair can be selected without corrupting
+    // the Undo/Redo state of the fillet that just completed.
+    const mutation = this.createMutationCommand(radius)
     const initialElementIndex = this.editor.elementIndex
 
     try {
-      this.editor.execute(this)
-      this.dispatchSignal('terminalLogged', { msg: `Fillet completed with radius ${radius}.` })
+      this.editor.execute(mutation)
+      this.dispatchSignal('terminalLogged', {
+        msg: `Fillet completed with radius ${radius}. Select two more lines or another rectangle, or press Esc to finish.`,
+      })
     } catch (error) {
       this.dispatchSignal('terminalLogged', { msg: `Fillet failed: ${error.message}` })
-      this.undo()
+      mutation.undo()
       this.editor.elementIndex = initialElementIndex
-      this._mutationPrepared = false
+      this.cleanup()
+      return
     }
-    this.cleanup()
+    this.continueSession()
   }
 
   applyMutation() {
@@ -428,7 +619,7 @@ class FilletCommand extends Command {
     let line1FreeEnd = null
     let line2FreeEnd = null
 
-    const tolerance = 0.001
+    const tolerance = FILLET_GEOMETRY_TOLERANCE
 
     // Check all possible endpoint connections
     if (Math.abs(l1.x1 - l2.x1) < tolerance && Math.abs(l1.y1 - l2.y1) < tolerance) {
@@ -464,26 +655,13 @@ class FilletCommand extends Command {
     } else {
       // Lines are separate - find intersection by extending them
       intersection = getLineIntersection(line1, line2)
+      const ray1 = getPickedLineRay(line1, intersection, click1)
+      const ray2 = getPickedLineRay(line2, intersection, click2)
 
-      // Find which endpoints to preserve (those closer to click positions)
-      const dist1ToStartFromClick = Math.sqrt((click1.x - l1.x1) ** 2 + (click1.y - l1.y1) ** 2)
-      const dist1ToEndFromClick = Math.sqrt((click1.x - l1.x2) ** 2 + (click1.y - l1.y2) ** 2)
-      const dist2ToStartFromClick = Math.sqrt((click2.x - l2.x1) ** 2 + (click2.y - l2.y1) ** 2)
-      const dist2ToEndFromClick = Math.sqrt((click2.x - l2.x2) ** 2 + (click2.y - l2.y2) ** 2)
-
-      // Determine preserved endpoints and get their coordinates
-      const preserveStart1 = dist1ToStartFromClick < dist1ToEndFromClick
-      const preserveStart2 = dist2ToStartFromClick < dist2ToEndFromClick
-
-      const preservedPoint1 = preserveStart1 ? { x: l1.x1, y: l1.y1 } : { x: l1.x2, y: l1.y2 }
-      const preservedPoint2 = preserveStart2 ? { x: l2.x1, y: l2.y1 } : { x: l2.x2, y: l2.y2 }
-
-      // Get vectors FROM intersection TO preserved endpoints
-      dir1 = { dx: preservedPoint1.x - intersection.x, dy: preservedPoint1.y - intersection.y }
-      dir2 = { dx: preservedPoint2.x - intersection.x, dy: preservedPoint2.y - intersection.y }
-
-      availableLength1 = Math.sqrt(dir1.dx * dir1.dx + dir1.dy * dir1.dy)
-      availableLength2 = Math.sqrt(dir2.dx * dir2.dx + dir2.dy * dir2.dy)
+      dir1 = ray1.direction
+      dir2 = ray2.direction
+      availableLength1 = ray1.availableLength
+      availableLength2 = ray2.availableLength
     }
 
     if (availableLength1 < tolerance || availableLength2 < tolerance) {
@@ -658,19 +836,9 @@ class FilletCommand extends Command {
 
   // Helper function to trim a line to a specific point
   trimLineToPoint(line, trimPoint, intersection, clickPoint) {
-    const l = getLineEquation(line)
+    const { preserveStart } = getPickedLineRay(line, intersection, clickPoint)
 
-    // We need to determine which endpoint is on the same side of the intersection as the click
-    // Calculate vectors from intersection to each endpoint and to the click
-    const vecToStart = { x: l.x1 - intersection.x, y: l.y1 - intersection.y }
-    const vecToEnd = { x: l.x2 - intersection.x, y: l.y2 - intersection.y }
-    const vecToClick = { x: clickPoint.x - intersection.x, y: clickPoint.y - intersection.y }
-
-    // Calculate dot products to see which endpoint is more aligned with the click direction
-    const dotStart = vecToStart.x * vecToClick.x + vecToStart.y * vecToClick.y
-    const dotEnd = vecToEnd.x * vecToClick.x + vecToEnd.y * vecToClick.y
-
-    if (dotStart > dotEnd) {
+    if (preserveStart) {
       // Start is more aligned with click direction (same side), preserve start and trim end
       line.attr({ x2: trimPoint.x, y2: trimPoint.y })
     } else {

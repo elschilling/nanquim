@@ -11,11 +11,20 @@ import {
   calculateLocalDelta
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
-import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
+import {
+  applyArcOffsetToElement,
+  applyPolylineOffsetToElement,
+  computeArcOffsetGeometry,
+  computeOffsetVector,
+  computePolylineOffsetGeometry,
+  getOffsetResultIssue,
+} from './utils/offsetCalc'
 import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
 import { commitVertexEditUpdates } from './commands/VertexEditTransaction'
 import { dispatchSignalSafely } from './Command'
+import { initImageDrop } from './utils/imageDrop'
+import { canCropImageElement, getImageVisibleBounds, imageBoundsFromGrip, readImageGripBounds } from './utils/imageGrips'
 import { updateGrid as updateGridDraw } from './utils/gridDraw'
 import { checkSnap as checkSnapSystem, drawSnap, clearSnap, drawExtensionLines } from './utils/snapSystem'
 import { initToolbarHandlers } from './utils/toolbarHandlers'
@@ -126,6 +135,7 @@ function Viewport(editor) {
   const signals = editor.signals
   const svg = editor.svg
   const drawing = editor.drawing
+  initImageDrop(editor)
 
   function dispatchViewportSignal(name, ...args) {
     return dispatchSignalSafely(signals[name], args, error => {
@@ -243,6 +253,7 @@ function Viewport(editor) {
   // command listeners; this final reset also covers menus and ghost modes that
   // otherwise could retain references to nodes from the previous document.
   signals.documentSessionReset.add(() => {
+    resetPointerPosition()
     canvasNavigationResetters.forEach(reset => reset())
     closeDisambiguationMenu()
     if (isGhostingMove) onMoveGhostingStopped()
@@ -258,7 +269,15 @@ function Viewport(editor) {
 
   function clearSelectionRectangle() {
     const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
-    if (activeSvg) activeSvg.find('.selectionRectangle').each(el => el.remove())
+    if (activeSvg) activeSvg.find('.selectionRectangle').each(el => {
+      // Removing the node alone leaves the drawing plugin's mouse listeners active.
+      if (el.remember('_paintHandler')) el.draw('cancel')
+      el.remove()
+    })
+    if (editor.isSelecting) {
+      editor.isDrawing = false
+      editor.isSelecting = false
+    }
   }
 
   signals.requestHoverCheck.add(() => {
@@ -299,6 +318,7 @@ function Viewport(editor) {
     svgInstance
       .mousemove(handleMove)
       .mousedown(handleMousedown)
+      .on('snapChange', refreshSnapAtPointer)
       .panZoom({ zoomFactor, panButton: 1 })
       .on('zoom', updateGrid)
       .on('zoom', () => {
@@ -385,6 +405,12 @@ function Viewport(editor) {
   updateGrid()
 
   signals.editorModeChanged.add((mode) => {
+    resetPointerPosition()
+    if (editor.isEditingVertex && editor.editingVertices.some(vertex => vertex.element.type === 'image')) {
+      restoreVertexEditPreviews()
+      dispatchViewportSignal('vertexEditStopped')
+      dispatchViewportSignal('updatedSelection')
+    }
     if (mode === 'paper' && editor.paperSvg) {
       attachCanvasListeners(editor.paperSvg)
     }
@@ -524,12 +550,13 @@ function Viewport(editor) {
     rootRotationContexts.clear()
   }
 
-  function onOffsetGhostingStarted(element, distance) {
+  function onOffsetGhostingStarted(element, distance, point) {
     const el = element[0]
     initialTransforms.set(el, el.transform())
     ghostElements = el
     isGhostingOffset = true
     offsetDistance = distance
+    if (point) updateOffsetGhosts(point)
   }
 
   function onOffsetGhostingStopped() {
@@ -617,17 +644,19 @@ function Viewport(editor) {
     }
     if (ghostElements.length > 0) {
       if (isGhostingMove) {
-        let dx = coordinates.x - basePoint.x
-        let dy = coordinates.y - basePoint.y
+        // COPY and MOVE must preview the same snapped point captured on click.
+        const destination = editor.snapPoint || coordinates
+        let dx = destination.x - basePoint.x
+        let dy = destination.y - basePoint.y
         if (editor.distance) {
           if (editor.ortho) {
             if (Math.abs(dx) > Math.abs(dy)) {
-              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: coordinates.x, y: basePoint.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: destination.x, y: basePoint.y }, editor.distance))
             } else {
-              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: coordinates.y }, editor.distance))
+              ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, { x: basePoint.x, y: destination.y }, editor.distance))
             }
           } else {
-            ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, coordinates, editor.distance))
+            ; ({ dx, dy } = calculateDeltaFromBasepoint(basePoint, destination, editor.distance))
           }
         }
         if (editor.ortho) {
@@ -707,7 +736,8 @@ function Viewport(editor) {
       const v0 = editor.editingVertices[0]
       const isEllipseArcRadiusGrip = v0.element.type === 'path' &&
         v0.element.data('ellipseArcData') && v0.vertexIndex !== 0
-      if (editor.ortho && !isEllipseArcRadiusGrip) {
+      const isImageResizeGrip = v0.element.type === 'image' && v0.vertexIndex !== 8
+      if (editor.ortho && !isEllipseArcRadiusGrip && !isImageResizeGrip) {
         rootPoint = constrainVertexPointInRoot(rootPoint, v0, activeSvg)
       }
 
@@ -753,6 +783,9 @@ function Viewport(editor) {
             const newRy = Math.max(1e-3, Math.abs(point.y - original.cy))
             element.attr('ry', newRy)
           }
+        } else if (element.type === 'image') {
+          const values = imageBoundsFromGrip(vertexData.originalPosition, vertexIndex, point)
+          if (values) element.attr(values)
         } else if (element.type === 'rect') {
           const original = vertexData.originalPosition
           const values = resizeBoundsFromGrip(original, vertexIndex, point)
@@ -870,13 +903,32 @@ function Viewport(editor) {
   let _pendingMoveEvent = null
   let _moveRafId = null
   function handleMove(e) {
-    _pendingMoveEvent = e
+    // Keep the raw pointer and its canvas; currentTarget on a native event is
+    // cleared after dispatch, and editor.coordinates may already be snapped.
+    _pendingMoveEvent = { pageX: e.pageX, pageY: e.pageY, svgNode: e.currentTarget }
     if (_moveRafId === null) {
       _moveRafId = requestAnimationFrame(() => {
         _moveRafId = null
         _doHandleMove(_pendingMoveEvent)
       })
     }
+  }
+
+  function resetPointerPosition() {
+    if (_moveRafId !== null) cancelAnimationFrame(_moveRafId)
+    _moveRafId = null
+    _pendingMoveEvent = null
+  }
+
+  function refreshSnapAtPointer() {
+    const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
+    editor.snapPoint = null
+    editor.extensionHovers = []
+    clearSnap(editor, activeSvg)
+    if (!_pendingMoveEvent || _pendingMoveEvent.svgNode !== activeSvg?.node) return
+    if (_moveRafId !== null) cancelAnimationFrame(_moveRafId)
+    _moveRafId = null
+    _doHandleMove(_pendingMoveEvent)
   }
 
   function updateCoordinates(coordinates) {
@@ -1217,8 +1269,9 @@ function Viewport(editor) {
         } else {
           distance = calculateDistance(coordinates, center)
         }
-      } else if (el.type === 'text') {
-        const bbox = el.bbox()
+      } else if (el.type === 'text' || el.type === 'image') {
+        const bbox = el.type === 'image' ? getImageVisibleBounds(readImageGripBounds(el)) : el.bbox()
+        if (!bbox) return
         const pts = [
           toRootSpace(bbox.x, bbox.y),
           toRootSpace(bbox.x + bbox.width, bbox.y),
@@ -1294,6 +1347,16 @@ function Viewport(editor) {
   }
 
   function handleMousedown(e) {
+    // A pointer move is evaluated on requestAnimationFrame, but a fast click
+    // can arrive before that frame. Resolve the pending move synchronously so
+    // drawing commands capture the snap under the pointer instead of the raw
+    // or previous-frame coordinate.
+    if (e.button === 0 && _moveRafId !== null && _pendingMoveEvent) {
+      cancelAnimationFrame(_moveRafId)
+      _moveRafId = null
+      _doHandleMove(_pendingMoveEvent)
+    }
+
     if (e.button === 0) closeDisambiguationMenu()
 
     if (editor.isDrawing || editor.isInteracting) {
@@ -1310,11 +1373,14 @@ function Viewport(editor) {
 
     // Handle vertex editing commit
     if (editor.isEditingVertex) {
+      if (e.button !== 0 && editor.editingVertices.some(vertex => vertex.element.type === 'image')) return
       const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
       if (!activeSvg) return
       let rootPoint = editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
 
-      if (editor.ortho && editor.editingVertices.length > 0) {
+      const firstVertex = editor.editingVertices[0]
+      const isImageResizeGrip = firstVertex?.element.type === 'image' && firstVertex.vertexIndex !== 8
+      if (editor.ortho && firstVertex && !isImageResizeGrip) {
         rootPoint = constrainVertexPointInRoot(
           rootPoint,
           editor.editingVertices[0],
@@ -1327,6 +1393,8 @@ function Viewport(editor) {
       const circleUpdates = []
       const ellipseUpdates = []
       const rectangleUpdates = []
+      const imageUpdates = []
+      let invalidImageUpdate = false
       const ellipseArcUpdates = []
       const arcUpdates = []
       const splineUpdates = []
@@ -1383,6 +1451,15 @@ function Viewport(editor) {
             oldValues: { cx: original.cx, cy: original.cy, rx: original.rx, ry: original.ry },
             newValues: { cx: newCx, cy: newCy, rx: newRx, ry: newRy }
           })
+        } else if (v.element.type === 'image') {
+          const isCropGrip = v.vertexIndex >= 4 && v.vertexIndex <= 7
+          const values = isCropGrip && !canCropImageElement(v.element)
+            ? null : imageBoundsFromGrip(v.originalPosition, v.vertexIndex, point)
+          if (values) {
+            imageUpdates.push({ element: v.element, oldValues: v.originalPosition, newValues: values })
+          } else {
+            invalidImageUpdate = true
+          }
         } else if (v.element.type === 'rect') {
           const original = v.originalPosition
           rectangleUpdates.push({
@@ -1473,6 +1550,13 @@ function Viewport(editor) {
       // Stop edit mode immediately
       dispatchViewportSignal('vertexEditStopped')
 
+      if (invalidImageUpdate) {
+        restoreVertexEditPreviews()
+        dispatchViewportSignal('updatedSelection')
+        dispatchViewportSignal('terminalLogged', { msg: 'Image edit cancelled: the position, transform, or clipping cannot be edited safely.' })
+        return
+      }
+
       try {
         commitVertexEditUpdates(editor, {
           arcUpdates,
@@ -1480,6 +1564,7 @@ function Viewport(editor) {
           dimensionUpdates,
           ellipseArcUpdates,
           ellipseUpdates,
+          imageUpdates,
           lineUpdates,
           polylineUpdates,
           rectangleUpdates,
@@ -1516,12 +1601,15 @@ function Viewport(editor) {
           }
         }
 
-        if (hoveredElements.length > 1 && !editor.suppressHandlers && !hadPointListener) {
+        // Point input owns this click, even if its callback ends the command.
+        if (hadPointListener) return
+
+        if (hoveredElements.length > 1 && !editor.suppressHandlers) {
           showDisambiguationMenu(hoveredElements, e, 'interacting')
         } else if (hoveredElements.length === 1) {
           editor.lastClick = point
           signals.toogledSelect.dispatch(hoveredElements[0], 'mousedown-interacting')
-        } else if (!editor.selectSingleElement && !hadPointListener) {
+        } else if (!editor.selectSingleElement) {
           handleRectSelection(e)
         }
         return
@@ -1548,7 +1636,7 @@ function Viewport(editor) {
     if (!editor.isDrawing) {
       const activeSvg = editor.mode === 'paper' ? editor.paperSvg : editor.svg
       if (activeSvg && !editor.isSelecting) {
-        const startX = coordinates.x
+        const startX = activeSvg.point(e.pageX, e.pageY).x
         editor.isDrawing = true
         editor.isSelecting = true
         activeSvg.rect()
@@ -1560,7 +1648,9 @@ function Viewport(editor) {
             rect.y = e.target.y.baseVal.value
             rect.width = e.target.width.baseVal.value
             rect.height = e.target.height.baseVal.value
-            if (coordinates.x < startX) {
+            const pointer = e.detail.event
+            // The queued viewport pointer frame may still describe the previous corner.
+            if (activeSvg.point(pointer.pageX, pointer.pageY).x < startX) {
               e.srcElement.classList.add('selectionRectangleRight')
               findElements(rect, 'inside')
             } else {
@@ -1694,8 +1784,9 @@ function Viewport(editor) {
                 }
               }
             }
-          } else if (el.type === 'text') {
-            const bbox = el.bbox()
+          } else if (el.type === 'text' || el.type === 'image') {
+            const bbox = el.type === 'image' ? getImageVisibleBounds(readImageGripBounds(el)) : el.bbox()
+            if (!bbox) return
             const pts = [
               toRootSpace(bbox.x, bbox.y),
               toRootSpace(bbox.x + bbox.width, bbox.y),
@@ -1791,15 +1882,24 @@ function Viewport(editor) {
     }
   }
 
-  // Update offset ghosts: translate for lines/paths, resize for circles/rects
+  // Update offset ghosts: translate lines and rebuild or resize other geometry.
   function updateOffsetGhosts(point) {
     if (ghostElements) {
       if (!offsetGhostClone) {
         offsetGhostClone = ghostElements.clone()
-        offsetGhostClone.putIn(editor.drawing)
+        offsetGhostClone.putIn(editor.overlays)
+        offsetGhostClone.removeClass('elementHover')
+        offsetGhostClone.removeClass('elementSelected')
+        offsetGhostClone.addClass('ghostLine')
+        offsetGhostClone.fill('none')
+        offsetGhostClone.attr({
+          'data-nanquim-transient': 'true',
+          id: null,
+          'pointer-events': 'none',
+        })
       }
 
-      // For circles/rects, resize instead of translate
+      // Circular arcs/circles and rectangles resize instead of translating.
       if (ghostElements.type === 'circle') {
         offsetGhostClone.transform({}) // Reset transform
         const cx = ghostElements.cx()
@@ -1813,6 +1913,22 @@ function Viewport(editor) {
         offsetGhostClone.center(cx, cy)
         if (offsetGhostClone.radius) offsetGhostClone.radius(newR)
         else offsetGhostClone.attr('r', newR)
+      } else if (ghostElements.type === 'path' && ghostElements.data('arcData')) {
+        if (getOffsetResultIssue(ghostElements, point, offsetDistance)) {
+          offsetGhostClone.hide()
+          return
+        }
+        offsetGhostClone.show()
+        const result = computeArcOffsetGeometry(ghostElements, point, offsetDistance)
+        applyArcOffsetToElement(offsetGhostClone, result)
+      } else if (ghostElements.type === 'polyline') {
+        if (getOffsetResultIssue(ghostElements, point, offsetDistance)) {
+          offsetGhostClone.hide()
+          return
+        }
+        offsetGhostClone.show()
+        const result = computePolylineOffsetGeometry(ghostElements, point, offsetDistance)
+        applyPolylineOffsetToElement(offsetGhostClone, result)
       } else if (ghostElements.type === 'rect') {
         offsetGhostClone.transform({}) // Reset transform
         const x = ghostElements.x()

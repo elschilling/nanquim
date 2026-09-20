@@ -7,6 +7,7 @@ import { copyCommand } from './CopyCommand'
 import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
+import { joinCommand } from './JoinCommand'
 import { scaleCommand } from './ScaleCommand'
 import { matchPropertiesCommand } from './MatchPropertiesCommand'
 import { eraseCommand } from './EraseCommand'
@@ -28,6 +29,7 @@ import { areaCommand } from './AreaCommand'
 import { blockCommand } from './BlockCommand'
 import { insertCommand } from './InsertCommand'
 import { helpCommand } from './HelpCommand'
+import { imageCommand } from './ImageCommand'
 
 const commandCategories = Object.freeze([
   'General',
@@ -90,7 +92,7 @@ const commands = {
     execute: copyCommand,
     aliases: ['co'],
     category: 'Modify',
-    description: 'Copy selected geometry from a base point to one or more destinations.',
+    description: 'Copy geometry to one or more destinations; an existing selection starts at the base point.',
     modes: MODEL_ONLY,
   },
   ROTATE: {
@@ -118,7 +120,14 @@ const commands = {
     execute: filletCommand,
     aliases: ['f'],
     category: 'Modify',
-    description: 'Round the corner between two lines with a radius.',
+    description: 'Round rectangle corners or corners between line pairs until canceled.',
+    modes: MODEL_ONLY,
+  },
+  JOIN: {
+    execute: joinCommand,
+    aliases: ['j'],
+    category: 'Modify',
+    description: 'Join connected open lines, polylines, arcs, splines, and SVG paths.',
     modes: MODEL_ONLY,
   },
   MATCH_PROPERTIES: {
@@ -160,7 +169,7 @@ const commands = {
     execute: measureDistanceCommand,
     aliases: ['d', 'dist'],
     category: 'Measure & Annotate',
-    description: 'Measure distance and X and Y deltas between two points.',
+    description: 'Measure and display distance and X and Y deltas between two points.',
     modes: MODEL_ONLY,
   },
   MIRROR: {
@@ -188,7 +197,7 @@ const commands = {
     execute: hatchCommand,
     aliases: ['h', 'hatch'],
     category: 'Draw',
-    description: 'Fill the closed region under a point with the current hatch pattern.',
+    description: 'Hatch selected rectangles, closed paths, or the closed region under a point.',
     modes: MODEL_ONLY,
   },
   TEXT: {
@@ -252,6 +261,13 @@ const commands = {
     aliases: ['i', 'insert'],
     category: 'Organize',
     description: 'Insert one or more instances of a saved block.',
+    modes: MODEL_ONLY,
+  },
+  IMAGE: {
+    execute: imageCommand,
+    aliases: ['img', 'imageattach'],
+    category: 'Draw',
+    description: 'Import an embedded image, then click or enter its position; or drop an image onto the viewport.',
     modes: MODEL_ONLY,
   },
   // Add more commands and functions as needed

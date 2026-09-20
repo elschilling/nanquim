@@ -1,6 +1,7 @@
 import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { applyCollectionStyleToElement } from '../Collection'
+import { catmullRomToBezierPath } from './DrawSplineCommand'
 import { renderEllipseArc } from '../utils/ellipseArcUtils'
 import { remapSvgIds } from '../utils/sanitizeSvg'
 import {
@@ -114,14 +115,21 @@ class MirrorCommand extends Command {
         }
 
         this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+        this.editor.signals.commandCancelled.addOnce(this.cancelCommand, this)
+        this.editor.suppressHandlers = true
+        this.editor.handlers.clear()
+
+        if (this.editor.selected.length > 0) {
+            this.editor.isInteracting = true
+            this.onSelectionConfirmed()
+            return
+        }
+
         this.editor.signals.terminalLogged.dispatch({
             type: 'span',
             msg: `Select elements to mirror and press Enter to confirm.`,
         })
         document.addEventListener('keydown', this.boundOnKeyDown)
-        this.editor.signals.commandCancelled.addOnce(this.cancelCommand, this)
-        this.editor.suppressHandlers = true
-        this.editor.handlers.clear()
     }
 
     onKeyDown(event) {
@@ -142,9 +150,6 @@ class MirrorCommand extends Command {
         if (this.ghostLine) {
             this.ghostLine.remove()
             this.ghostLine = null
-        }
-        if (this.boundOnMouseMove) {
-            document.removeEventListener('mousemove', this.boundOnMouseMove)
         }
         if (this.boundOnEsc) {
             document.removeEventListener('keydown', this.boundOnEsc)
@@ -200,7 +205,7 @@ class MirrorCommand extends Command {
             .stroke({ color: '#fff', width: .1, dasharray: '.1,.1' })
             .attr('pointer-events', 'none')
 
-        // Create clones that will update during mousemove
+        // Create clones that will follow the viewport's resolved pointer.
         this.copiedElements = this.originalSelection.map((el, index) => {
             const originalPos = this.originalPositions[index]
             const parent = el.parent() || this.editor.activeCollection
@@ -249,15 +254,15 @@ class MirrorCommand extends Command {
             }
         })
 
-        this.boundOnMouseMove = this.onMouseMove.bind(this)
-        document.addEventListener('mousemove', this.boundOnMouseMove)
+        this.editor.signals.updatedCoordinates.add(this.onCoordinatesUpdated, this)
 
         this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
     }
 
-    onMouseMove(event) {
-        let currentPoint = this.editor.snapPoint || this.editor.coordinates
-        if (!currentPoint) return
+    onCoordinatesUpdated(currentPoint) {
+        // Viewport resolves snapping on its animation frame and when Snap is
+        // toggled. Use that payload instead of reading the previous mousemove.
+        if (!this.ghostLine || !currentPoint) return
 
         let p2 = { x: currentPoint.x, y: currentPoint.y }
 
@@ -305,8 +310,8 @@ class MirrorCommand extends Command {
                     // Spline: reflect all control points and rebuild with Catmull-Rom
                     const sd = originalPos.splineData
                     const reflectedPoints = sd.points.map(p => reflectPoint(p, this.basePoint, p2))
+                    clone.plot(catmullRomToBezierPath(reflectedPoints))
                     clone.data('splineData', { points: reflectedPoints })
-                    // Path array already handled by reflectPath above for visual
                 } else {
                     // General path (DXF import, etc.): reflect the path segments
                     clone.plot(reflectPath(originalPos.pathArray, this.basePoint, p2))
@@ -335,10 +340,10 @@ class MirrorCommand extends Command {
     }
 
     onSecondPoint(point) {
-        document.removeEventListener('mousemove', this.boundOnMouseMove)
+        this.editor.signals.updatedCoordinates.remove(this.onCoordinatesUpdated, this)
         if (this.boundOnEsc) document.removeEventListener('keydown', this.boundOnEsc)
 
-        this.secondPoint = point
+        this.secondPoint = { ...point }
         if (this.editor.ortho) {
             const dx = this.secondPoint.x - this.basePoint.x
             const dy = this.secondPoint.y - this.basePoint.y
@@ -503,7 +508,7 @@ class MirrorCommand extends Command {
     cleanup() {
         document.removeEventListener('keydown', this.boundOnKeyDown)
         if (this.boundOnEsc) document.removeEventListener('keydown', this.boundOnEsc)
-        if (this.boundOnMouseMove) document.removeEventListener('mousemove', this.boundOnMouseMove)
+        this.editor.signals.updatedCoordinates.remove(this.onCoordinatesUpdated, this)
         this.editor.signals.commandCancelled.remove(this.cancelCommand, this)
         this.editor.signals.pointCaptured.remove(this.onBasePoint, this)
         this.editor.signals.pointCaptured.remove(this.onSecondPoint, this)

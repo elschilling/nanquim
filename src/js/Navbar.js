@@ -15,6 +15,15 @@ function Navbar(editor) {
   const documents = editor.documents
   if (!documents) throw new TypeError('DocumentController must be initialized before Navbar.')
 
+  const welcomeButton = document.getElementById('navbar-welcome-open')
+  welcomeButton?.addEventListener('click', () => window.welcomeScreen?.show())
+  welcomeButton?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    welcomeButton.click()
+  })
+
   // Keep these globals as the declarative Pug menu and keyboard layer call
   // them directly. All editable document I/O is delegated to the one
   // controller/serializer boundary.

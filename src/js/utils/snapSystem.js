@@ -3,6 +3,7 @@ import { calculateDistance } from './calculateDistance'
 import { getPreferences } from '../Preferences'
 import { getAllDrawingElements } from '../Collection'
 import { pointOnEllipse } from './ellipseArcUtils'
+import { getImageVisibleBounds, readImageGripBounds } from './imageGrips'
 
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
@@ -519,6 +520,20 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
     pushWorldTarget(localPointToWorld(el, point, activeSvg, ctm), snapType)
   }
 
+  // In-progress drawing geometry is excluded from the spatial indexes so its
+  // moving preview cannot snap to itself. Commands may separately expose only
+  // their committed root-space vertices, which keeps endpoint closure precise
+  // without making the preview segment a snap candidate.
+  const drawingSnapPoints = editor.activeDrawingSnapPoints?.points
+  if (editor.isDrawing && st.endpoint && Array.isArray(drawingSnapPoints)) {
+    drawingSnapPoints.forEach((point) => {
+      const normalized = Array.isArray(point)
+        ? { x: Number(point[0]), y: Number(point[1]) }
+        : { x: Number(point?.x), y: Number(point?.y) }
+      pushWorldTarget(normalized, 'endpoint')
+    })
+  }
+
   snapCandidates.forEach((el) => {
     if (el.type === 'line') {
       const pts = el.array()
@@ -618,6 +633,48 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         ;['topMidpoint', 'rightMidpoint', 'bottomMidpoint', 'leftMidpoint'].forEach(key => {
           pushWorldTarget(rectPoints[key], 'midpoint')
         })
+      }
+      if (st.nearest) {
+        let nearestPoint = null
+        let nearestDistance = Infinity
+        getWorldSnapSegments(el, activeSvg, ctm).forEach(({ p1, p2 }) => {
+          const dx = p2.x - p1.x
+          const dy = p2.y - p1.y
+          const lengthSquared = dx * dx + dy * dy
+          if (lengthSquared <= 0) return
+          const projection = (
+            (cursorWorld.x - p1.x) * dx
+            + (cursorWorld.y - p1.y) * dy
+          ) / lengthSquared
+          const t = Math.max(0, Math.min(1, projection))
+          const point = { x: p1.x + t * dx, y: p1.y + t * dy }
+          const distance = Math.hypot(point.x - cursorWorld.x, point.y - cursorWorld.y)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestPoint = point
+          }
+        })
+        if (nearestPoint) pushWorldTarget(nearestPoint, 'nearest')
+      }
+    } else if (el.type === 'image') {
+      if (!st.endpoint && !st.midpoint && !st.center) return
+      const bounds = getImageVisibleBounds(readImageGripBounds(el))
+      if (!bounds) return
+      const { x, y, width, height } = bounds
+      if (st.endpoint) {
+        ;[
+          { x, y }, { x: x + width, y },
+          { x: x + width, y: y + height }, { x, y: y + height },
+        ].forEach(point => pushLocalTarget(el, point, 'endpoint'))
+      }
+      if (st.midpoint) {
+        ;[
+          { x: x + width / 2, y }, { x: x + width, y: y + height / 2 },
+          { x: x + width / 2, y: y + height }, { x, y: y + height / 2 },
+        ].forEach(point => pushLocalTarget(el, point, 'midpoint'))
+      }
+      if (st.center) {
+        pushLocalTarget(el, { x: x + width / 2, y: y + height / 2 }, 'center')
       }
     } else if (el.type === 'path' && el.data('arcData')) {
       const arcData = el.data('arcData')

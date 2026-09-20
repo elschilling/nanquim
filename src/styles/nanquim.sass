@@ -232,7 +232,10 @@ use[data-block-instance].elementSelected
     stroke-width: var(--helper-stroke-width, 0.2) !important
     opacity: 0.8 !important
 .mirror-axis-helper
-    stroke-width: var(--helper-stroke-width, 0.2) !important
+    // Keep the axis legible at every zoom, like the measurement guide.
+    vector-effect: non-scaling-stroke
+    stroke-width: 1.5px !important
+    stroke-dasharray: 6 4
 .svg_select_points_point
     vector-effect: non-scaling-stroke
     fill-opacity: .5

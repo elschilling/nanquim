@@ -87,9 +87,6 @@ hr
     background: linear-gradient(90deg, var(--accent-color), transparent 22%)
     opacity: .65
 
-  > .icon-nanquim-logo
-    margin-right: 5px
-
   ul > li
     padding: 6px 8px
 
@@ -410,6 +407,57 @@ main
   &.icon-on
     background: var(--surface-4)
 
+.outliner-move-handle
+  display: inline-flex
+  align-items: center
+  justify-content: center
+  flex: 0 0 18px
+  width: 18px
+  height: 22px
+  padding: 0
+  border: 0
+  border-radius: 3px
+  color: var(--app-muted-foreground-color)
+  background: transparent
+  cursor: grab
+
+  .icon
+    width: 14px
+    height: 14px
+    margin: 0
+
+  &:hover,
+  &:focus-visible
+    color: var(--app-foreground-color)
+    background: var(--hover-surface)
+
+  &:focus-visible
+    outline: 2px solid var(--accent-color)
+    outline-offset: -2px
+
+.collection-row.outliner-drag-source
+  opacity: .55
+
+.collection-row.outliner-drop-before
+  box-shadow: inset 0 2px 0 var(--accent-color)
+
+.collection-row.outliner-drop-after
+  box-shadow: inset 0 -2px 0 var(--accent-color)
+
+.collection-row.outliner-drop-inside
+  background: var(--selected-surface) !important
+  box-shadow: inset 0 0 0 2px var(--accent-color)
+
+.outliner-move-status
+  position: absolute
+  width: 1px
+  height: 1px
+  padding: 0
+  margin: -1px
+  overflow: hidden
+  clip-path: inset(50%)
+  white-space: nowrap
+
 button.collection-icon[data-paper-annotations-action],
 button.collection-icon[data-paper-viewport-action]
   appearance: none
@@ -616,6 +664,9 @@ button.collection-icon[data-paper-viewport-action]
 .measure-ghost,
 .measure-line
   stroke: var(--success-color)
+
+.measure-text
+  fill: var(--app-foreground-color)
 
 // Dialog family, including Preferences and block workflows.
 .prefs-overlay,

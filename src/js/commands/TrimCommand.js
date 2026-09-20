@@ -61,7 +61,7 @@ class TrimCommand extends Command {
 
         this.editor.isInteracting = true
         this.editor.suppressPolarTracking = true
-        this.editor.selectSingleElement = true
+        this.editor.selectSingleElement = false
         this.editor.signals.toogledSelect.add(this.boundOnElementSelected)
     }
 
@@ -80,6 +80,7 @@ class TrimCommand extends Command {
                 this.editor.signals.terminalLogged.dispatch({ msg: 'Select elements to trim.' })
 
                 this.editor.signals.toogledSelect.remove(this.boundOnElementSelected)
+                this.boundaryElements.forEach(element => element.removeClass('elementSelected'))
                 this.editor.signals.clearSelection.dispatch()
 
                 this.startTrimmingLines()
@@ -113,7 +114,7 @@ class TrimCommand extends Command {
         this.finishCommand()
     }
 
-    onElementSelected(el) {
+    onElementSelected(el, source) {
         if (!this.isTrimming) {
             if (hasUnsupportedGeometryTransform(el, this.editor.drawing)) {
                 el?.removeClass?.('elementSelected')
@@ -122,10 +123,13 @@ class TrimCommand extends Command {
             }
             const index = this.boundaryElements.findIndex(b => b.node === el.node)
             if (index > -1) {
+                // Overlapping selection rectangles add boundaries without toggling them off.
+                if (source === 'selectHovered-multi') return
                 this.boundaryElements.splice(index, 1)
                 el.removeClass('elementSelected')
             } else {
                 this.boundaryElements.push(el)
+                el.addClass('elementSelected')
             }
         }
     }
@@ -316,6 +320,19 @@ class TrimCommand extends Command {
                         }
                     })
                 }
+            } else if (boundary.type === 'path' && boundary.data('splineData')) {
+                getPathSegments(boundary).forEach(segment => {
+                    const intersect = getLineIntersection(lineEq, segment)
+                    if (!intersect) return
+                    const minX = Math.min(segment.x1, segment.x2) - 1e-4
+                    const maxX = Math.max(segment.x1, segment.x2) + 1e-4
+                    const minY = Math.min(segment.y1, segment.y2) - 1e-4
+                    const maxY = Math.max(segment.y1, segment.y2) + 1e-4
+                    if (intersect.x >= minX && intersect.x <= maxX
+                        && intersect.y >= minY && intersect.y <= maxY) {
+                        checkAndAddIntersection(intersect)
+                    }
+                })
             } else if (boundary.type === 'path') {
                 getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
@@ -1328,6 +1345,7 @@ class TrimCommand extends Command {
         this.ghostLine = null
         this.ghostArc = null
 
+        this.boundaryElements.forEach(element => element.removeClass('elementSelected'))
         this.boundaryElements = []
         this.isTrimming = false
         this.autoTrimMode = false

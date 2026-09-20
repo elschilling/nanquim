@@ -73,6 +73,11 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
     modes: MODEL_MODE,
     prompt: 'Select elements to fillet',
   }),
+  JOIN: contract({
+    input: ['selection'],
+    modes: MODEL_MODE,
+    prompt: 'Select connected open curves',
+  }),
   MATCH_PROPERTIES: contract({
     input: ['selection'],
     modes: MODEL_MODE,
@@ -122,9 +127,9 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
     prompt: 'No groups selected to ungroup',
   }),
   HATCH: contract({
-    input: ['pointer'],
+    input: ['pointer', 'selection'],
     modes: MODEL_MODE,
-    prompt: 'Click inside a closed region',
+    prompt: 'Select rectangles or closed paths first, or click inside a closed region',
   }),
   TEXT: contract({
     input: ['pointer', 'coordinate', 'text'],
@@ -168,6 +173,11 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
     input: ['pointer', 'dialog'],
     modes: MODEL_MODE,
     prompt: 'INSERT ',
+  }),
+  IMAGE: contract({
+    input: ['dialog', 'pointer', 'coordinate'],
+    modes: MODEL_MODE,
+    prompt: 'Choose a PNG',
   }),
 })
 

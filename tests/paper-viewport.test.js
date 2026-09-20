@@ -133,6 +133,34 @@ describe('Paper viewport transforms', () => {
     expect(use.getAttribute('href') || use.getAttribute('xlink:href')).toBe('#Collection')
   })
 
+  test('retains nondestructive raster cropping in standalone Paper SVG', () => {
+    const { editor, viewport } = createFixture()
+    const href = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
+    const clip = 'inset(10% 20% 30% 15%) fill-box'
+    const image = editor.drawing.image().attr({
+      id: 'cropped-reference',
+      href,
+      x: 10,
+      y: 20,
+      width: 80,
+      height: 45,
+      transform: 'translate(5 8) rotate(15)',
+      'clip-path': clip,
+    })
+    const original = image.node.outerHTML
+
+    const output = buildPaperSVGString(editor, [viewport])
+    const parsed = new DOMParser().parseFromString(output, 'image/svg+xml')
+    const exported = parsed.querySelector('defs #Collection #cropped-reference')
+
+    expect(exported.getAttribute('clip-path')).toBe(clip)
+    expect(exported.getAttribute('href')).toBe(href)
+    expect(exported.getAttribute('transform')).toBe('translate(5 8) rotate(15)')
+    expect(['x', 'y', 'width', 'height'].map(name => exported.getAttribute(name)))
+      .toEqual(['10', '20', '80', '45'])
+    expect(image.node.outerHTML).toBe(original)
+  })
+
   test('keeps physical 1:N scale and origin math independent of SVG units per centimetre', () => {
     const { editor, viewport } = createFixture({ unitsPerCm: 2.5 })
 

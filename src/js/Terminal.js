@@ -499,6 +499,12 @@ function Terminal(editor) {
     if (editor.activeEditor === 'geometry-nodes' || isGeometryNodesTarget(e.target)) return
     if (e.code === 'Escape') {
       if (editor.isEditingVertex) {
+        if (editor.editingVertices.some(vertex => vertex.element.type === 'image')) {
+          // Viewport owns exact snapshots of mixed grip previews, including the
+          // image's original SVG length attributes and transform metadata.
+          cancelCommandSession(editor, e)
+          return
+        }
         const restoreVertexPreviews = () => {
           editor.editingVertices.forEach((v) => {
             const element = v.element

@@ -725,6 +725,49 @@ function Properties(editor) {
       tsRow.appendChild(tsLabel)
       tsRow.appendChild(tsSelect)
       accordionBody.appendChild(tsRow)
+
+      const orientationRow = document.createElement('div')
+      orientationRow.className = 'property-row'
+      const orientationLabel = document.createElement('label')
+      orientationLabel.className = 'property-label'
+      orientationLabel.textContent = 'Orientation'
+      const orientationSelect = document.createElement('select')
+      orientationSelect.className = 'property-input property-select'
+      ;['horizontal', 'vertical', 'aligned'].forEach((orientation) => {
+        const opt = document.createElement('option')
+        opt.value = orientation
+        opt.textContent = orientation.charAt(0).toUpperCase() + orientation.slice(1)
+        if (orientation === (props.orientation || 'horizontal')) opt.selected = true
+        orientationSelect.appendChild(opt)
+      })
+      orientationSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { orientation: e.target.value })
+      })
+      orientationRow.appendChild(orientationLabel)
+      orientationRow.appendChild(orientationSelect)
+      accordionBody.appendChild(orientationRow)
+
+      const positionRow = document.createElement('div')
+      positionRow.className = 'property-row'
+      const positionLabel = document.createElement('label')
+      positionLabel.className = 'property-label'
+      positionLabel.textContent = 'Position'
+      const positionSelect = document.createElement('select')
+      positionSelect.className = 'property-input property-select'
+      ;['above', 'below'].forEach((position) => {
+        const opt = document.createElement('option')
+        opt.value = position
+        opt.textContent = position.charAt(0).toUpperCase() + position.slice(1)
+        if (position === (props.position || 'above')) opt.selected = true
+        positionSelect.appendChild(opt)
+      })
+      positionSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { position: e.target.value })
+      })
+      positionRow.appendChild(positionLabel)
+      positionRow.appendChild(positionSelect)
+      accordionBody.appendChild(positionRow)
+
       // Marker type dropdown
       const markerRow = document.createElement('div')
       markerRow.className = 'property-row'
@@ -1973,7 +2016,10 @@ function Properties(editor) {
       }
 
       element.fill(fillValue)
+      if (type !== 'SOLID') element.attr('fill-opacity', 1)
       element.data('hatchData', { ...hd, patternType: type, fillColor: color, hatchScale: scale, opacity: safeOpacity })
+      editor.lastHatchPattern = type
+      editor.lastHatchScale = scale
       opacityRow.style.display = type === 'SOLID' ? '' : 'none'
       safeDispatch('refreshHandlers')
     }
@@ -2525,6 +2571,12 @@ function Properties(editor) {
   // Focus management
   const propertiesPanelContainer = document.querySelector('.properties-panel-container')
   const viewport = document.querySelector('.viewport')
+  const focusTerminalFromPointer = () => {
+    // Closing a modal can expose the viewport beneath a stationary pointer.
+    // Preserve focus restored to a navigation control instead of stealing it.
+    if (document.activeElement?.closest('button, a[href], [role="dialog"], dialog')) return
+    document.getElementById('terminalInput')?.focus()
+  }
 
   if (propertiesPanelContainer) {
     propertiesPanelContainer.addEventListener('mouseenter', () => {
@@ -2532,16 +2584,14 @@ function Properties(editor) {
     })
     propertiesPanelContainer.addEventListener('mouseleave', () => {
       editor.isEditingProperties = false
-      const terminalInput = document.getElementById('terminalInput')
-      if (terminalInput) terminalInput.focus()
+      focusTerminalFromPointer()
     })
   }
 
   if (viewport) {
     viewport.addEventListener('mouseenter', () => {
       editor.isEditingProperties = false
-      const terminalInput = document.getElementById('terminalInput')
-      if (terminalInput) terminalInput.focus()
+      focusTerminalFromPointer()
     })
   }
 }

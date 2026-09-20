@@ -4,10 +4,59 @@ Notable changes to Nanquim are recorded in this file. The project follows
 [Semantic Versioning](https://semver.org/) while it is pre-1.0, so minor
 versions may still contain compatibility changes.
 
+The dated history starts with `v0.1.0-alpha.1`. Table dates use the Git committer
+date (`YYYY-MM-DD`, in the timezone recorded by Git), not a release or deployment
+date. Commit links identify the implementation; several changes can share one
+commit. Earlier development remains available in the Git history.
+
+When updating this file, add the newest dated entry first and describe the user
+impact under Added, Changed, Fixed, or Security. Use the actual full commit hash
+in the link; leave a change marked **Pending commit** until that hash exists.
+Keep changes under **Unreleased** until a version is published, then move their
+entries into the dated version section without rewriting past release records.
+The Welcome screen reads this dated table and the release-tag records directly;
+keep their date, commit-link, and summary columns when adding entries.
+
 ## [Unreleased]
+
+### Dated commits
+
+These entries describe development history, not production availability. The
+2026-09-17 entry is on `feat/image-outliner-editing`, proposed in
+[PR #31](https://github.com/elschilling/nanquim/pull/31). The Unreleased comparison
+link at the end of this file follows `master`; feature-branch commits are linked
+directly here until merged.
+
+| Commit date | Commit | Changes |
+| --- | --- | --- |
+| 2026-09-17 | [a656268](https://github.com/elschilling/nanquim/commit/a65626832de97487322e63720f2db58ca7499bcf) | Image import, resize, translation, and crop; Outliner drag-and-drop, M move dialog, and Shift-click ranges; COPY snapping fixes. |
+| 2026-08-22 | [25f6847](https://github.com/elschilling/nanquim/commit/25f6847e78385299d1334fca3610123a96ca62b1) | Rotate affine-transformed geometry while preserving its local geometry, metadata, and Undo/Redo. |
+| 2026-08-21 | [4c7d7c7](https://github.com/elschilling/nanquim/commit/4c7d7c78fd9d998b7b174c1e0b1eb042ea744763) | Qualify one-sheet Paper output and SVG/DXF/PDF exchange; add interoperability fixtures, diagnostics, and performance budgets. |
+| 2026-08-21 | [e727f91](https://github.com/elschilling/nanquim/commit/e727f91cb334497648e876ec781d6db09b75655d) | Support Firefox ESR in the production browser harness and record browser qualification. |
+| 2026-08-21 | [21ba97c](https://github.com/elschilling/nanquim/commit/21ba97cb275da0f867ba27f089172594baf684fb) | Make editing transactions, cancellation, Undo/Redo, and command lifecycle behavior predictable. |
+| 2026-08-20 | [1c469b4](https://github.com/elschilling/nanquim/commit/1c469b492e5e00f066e079c2044405b6858d2fd6) | Add the resizable command palette with registry-backed tools and an F4 toggle. |
+| 2026-08-20 | [45e775f](https://github.com/elschilling/nanquim/commit/45e775f69f98cf783c352ec743d801db56d7218a) | Add Nanquim's visual identity, original icons, appearance presets, and adaptive theme colors. |
+| 2026-08-20 | [18825e0](https://github.com/elschilling/nanquim/commit/18825e0097315184b1b2e7ecc31db8d437266598) | Add the schema-v3 document lifecycle, safe New/Open/Save/Save As, and dirty/session tracking. |
+| 2026-08-20 | [ec8d128](https://github.com/elschilling/nanquim/commit/ec8d128e68455addd3a64901e3b82a9b97ef5a21) | Record completion of the Phase 0 release baseline. |
 
 ### Added
 
+- **Pending commit:** Click the Nanquim icon in the top bar to reopen Welcome
+  without changing the drawing. Welcome includes dated changelog history and
+  commit links, keyboard navigation, and a layout that adapts to narrow windows.
+- Local PNG, JPEG, GIF, and WebP insertion with `IMAGE` (`IMG`, `IMAGEATTACH`)
+  or viewport file drop. Images are embedded in the active Model collection.
+- Image corner resize grips, a center translation grip, and flat side crop
+  grips, with cancellation and Undo/Redo. Cropping preserves the original
+  pixels and remains editable after native SVG save/reopen and clipboard copy.
+- Outliner drag-and-drop and keyboard moves for elements, groups, and
+  collections, preserving drawing positions, styles, and Undo/Redo.
+- An **M** shortcut while the pointer is over the Outliner to move selected
+  geometry into an existing or new collection. Creating the collection and
+  moving its contents form one Undo step.
+- Outliner **Shift-click** range selection in both directions, with an
+  adjustable endpoint, independent selections preserved, and hidden or locked
+  content excluded. See the [Outliner guide](docs/outliner.md).
 - A canonical schema-v3 native SVG serializer and documented document-format
   contract covering model geometry, imported definitions, collections, styles,
   blocks, Paper annotations and viewports, and Geometry Nodes metadata.
@@ -22,8 +71,17 @@ versions may still contain compatibility changes.
 - A resizable left command palette with distinct project-authored icons for all
   registered tools, compact and categorized labeled modes, and an `F4` toggle.
 - A V8 coverage ratchet, deterministic command fixture/leak harness, and an
-  explicit lifecycle and Model/Paper availability contract for all 30
+  explicit lifecycle and Model/Paper availability contract for all 32
   registered commands.
+- **Pending commit:** `JOIN` (`J`) combines a same-parent, connected,
+  non-branching selection of open lines, polylines, circular or elliptical
+  arcs, splines, and SVG paths. All-linear results remain semantic polylines;
+  mixed curves preserve their exact SVG commands in one path, with the leading
+  source style and exact Undo/Redo ordering.
+- **Pending commit:** Dimension styles include persisted Orientation
+  (Horizontal, Vertical, or Aligned) and text Position (Above or Below)
+  controls. DIMLINEAR follows the style, changing a style redraws its existing
+  dimensions, and DIMALIGNED remains explicitly aligned.
 - Production-build browser workflows for current Chromium on pull requests
   and scheduled/prerelease current/previous Chromium plus Firefox stable/ESR
   qualification, with isolated profiles and actionable failure artifacts.
@@ -38,6 +96,17 @@ versions may still contain compatibility changes.
 
 ### Changed
 
+- **Pending commit:** `FILLET` rounds all four corners of an untransformed
+  rectangle in one reversible mutation while preserving its semantic element
+  and metadata. Radius zero restores square corners, and repeated rectangle or
+  line-pair operations remain active until Escape.
+- **Pending commit:** `HATCH` immediately fills preselected rectangles, keeps
+  rounded corners as exact elliptical arcs, and now accepts explicitly closed
+  SVG paths without flattening their curves, arcs, compound subpaths, or
+  even-odd holes. Mixed selections form one reversible hatch, while click-inside
+  boundary detection remains available without a supported preselection. First
+  use now renders ANSI31 lines instead of an opaque solid cover; explicit solid
+  hatches default to 30% opacity, and Properties choices carry to the next hatch.
 - Native schema-v1 and schema-v2 documents now migrate through a bounded,
   detached preparation pipeline before the live editor is replaced.
 - Opening or creating a document now resets command helpers, selection,
@@ -66,11 +135,13 @@ versions may still contain compatibility changes.
   bounds edits, Delete/Erase, blocks, hatch, insert, match-properties, paste,
   grouping, and viewport creation now use deterministic History transactions
   for their qualified mutation paths.
-- ROTATE and SCALE now reject transformed primitives or selections beneath a
-  transformed ancestor while retaining lossless composition for selected
-  groups and Block instances whose ancestors are untransformed. MIRROR rejects
-  selected geometry with its own or an inherited transform before creating
-  previews.
+- ROTATE now composes rotations onto affine-transformed primitives, groups,
+  Block instances, and geometry inside transformed ancestors without flattening
+  local geometry or metadata. Unsupported CSS transforms and non-invertible
+  ancestor matrices are rejected before mutation. SCALE remains limited to
+  untransformed primitives and selected groups/Block instances whose ancestors
+  are untransformed. MIRROR rejects selected geometry with its own or an
+  inherited transform before creating previews.
 - Grouping now preserves same-parent document order, while Ungroup refuses
   transformed or presentation-styled groups that cannot yet be flattened
   without changing their appearance.
@@ -84,9 +155,12 @@ versions may still contain compatibility changes.
   intersection, and Block-instance bounds in root coordinates. Unsafe
   circle-only advanced snaps remain disabled when a transform makes a curve
   non-circular.
-- OFFSET now has an explicit support policy: untransformed lines, circles, and
-  square-corner rectangles use one stable History mutation, while transformed,
-  rounded-rectangle, and other unqualified input is rejected before ghosting.
+- **Pending commit:** OFFSET supports untransformed open and explicitly closed
+  polylines and circular arcs as well as lines, circles, and square-corner
+  rectangles. Polyline offsets preserve topology with mitered corners; arc
+  offsets preserve their three-point editing metadata and trimmed-circle
+  geometry through Undo/Redo. Transformed, degenerate, self-intersecting,
+  collapsed, and other unqualified input is rejected before mutation.
 - Paper viewport Undo/Redo now persists semantic viewport state: Redo creates a
   fresh live object with the same id and geometry and reconnects selection and
   interaction ownership to it.
@@ -103,6 +177,60 @@ versions may still contain compatibility changes.
 
 ### Fixed
 
+- **Pending commit:** JOIN treats endpoint seams up to 0.1 mm as coincident,
+  allowing every element in a visually connected line/curve chain or loop to
+  be combined without bridging a visible gap.
+- **Pending commit:** POLYLINE live segments follow the viewport's resolved
+  object/grid snap point, and snapped coordinates are retained by committed
+  vertices even when a click arrives before the next animation frame. Its
+  committed in-progress vertices remain endpoint targets so the final segment
+  can snap closed to the first point, without exposing the moving preview or
+  leaking coordinate listeners after finish or cancellation.
+- **Pending commit:** DIMLINEAR and DIMALIGNED show a live baseline and measured
+  value while choosing the second point, even when optional F3 overlays are
+  hidden, and remove the transient preview on handoff or cancellation.
+- **Pending commit:** DIST displays its live guide and completed measurement in
+  the viewport even when optional F3 overlays are hidden, with theme-aware text
+  and Escape cleanup.
+- **Pending commit:** FILLET remains active after each completed line pair so
+  additional pairs can be processed until Escape, with every fillet retained
+  as an independent Undo/Redo mutation.
+- **Pending commit:** Selected spline paths work as finite TRIM cutting
+  boundaries for line targets, with the visible curve intersection used by
+  preview, commit, and Undo/Redo.
+- **Pending commit:** Circular-arc OFFSET creates a visibly painted helper
+  immediately after selecting the source, before side confirmation, including
+  when the source stroke is inherited from its collection.
+- **Pending commit:** Auto-Extend detects semantic arcs as finite boundaries
+  for arc targets. Extended arcs retain their original circle and sweep, with
+  exact editable metadata through Undo/Redo.
+- **Pending commit:** MIRROR rebuilds spline previews and committed paths from
+  their reflected fit points, keeping visible geometry and `splineData`
+  synchronized through Undo/Redo.
+- **Pending commit:** SPLINE applies Ortho to pointer and snapped points relative
+  to the last committed fit point, including live preview updates when F8 or the
+  toolbar changes Ortho without moving the pointer.
+- **Pending commit:** Nearest object snap detects rectangle edges, including
+  rectangles beneath rotation and non-uniform scale transforms.
+- **Pending commit:** TRIM accepts window and crossing rectangles when selecting
+  cutting boundaries. Overlapping rectangles keep existing boundaries selected;
+  individual clicks toggle them, and confirming or cancelling clears highlights
+  and unfinished selection rectangles. Quick pointer movements also preserve
+  the correct window or crossing direction.
+- **Pending commit:** MIRROR starts axis input immediately for preselected
+  objects, enabling snaps to source and target geometry. Its axis and reflected
+  preview follow the current snapped point, including stationary Snap toggles.
+  The axis guide stays thin with screen-sized dashes at every zoom level.
+  Axis-point clicks no longer select nearby objects when an invalid axis cancels
+  the command, and zooming or refreshing keeps editing handles suppressed.
+- COPY now starts base-point input immediately when geometry is preselected,
+  allowing snaps to the source geometry and other elements without an extra
+  selection-confirmation step. Toggling Snap refreshes the indicator and preview
+  at the current pointer; previews use the snapped destination. Image snap
+  targets follow the visible crop and transforms.
+- Moving an element through the Outliner no longer moves its selected
+  collection parent instead. The entire collection header accepts geometry
+  drops, including its top and bottom edges.
 - Failed, cancelled, malformed, or future-schema opens no longer replace the
   current drawing, dirty state, history, or file handle.
 - Paper annotations, viewport state, imported SVG assets, semantic geometry
@@ -157,6 +285,11 @@ versions may still contain compatibility changes.
   before creating a file that could reopen with altered or missing content.
 
 ## [0.1.0-alpha.1] - 2026-08-20
+
+Release tag: `v0.1.0-alpha.1`. Commit:
+[0715d22](https://github.com/elschilling/nanquim/commit/0715d22ad99e41a89a7ccca93588b5a04a59656c)
+(2026-08-20). See the [release notes](docs/releases/v0.1.0-alpha.1.md) for the
+qualified candidate and its deployment record.
 
 ### Added
 

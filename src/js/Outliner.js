@@ -10,11 +10,19 @@ import {
 import { getPreferences } from './Preferences'
 import { MoveCommand } from './commands/MoveCommand'
 import { pointOnEllipse } from './utils/ellipseArcUtils'
+import { canCropImageElement, getImageGripPoints, readImageGripBounds } from './utils/imageGrips'
+import { canEditImageGrips } from './utils/vertexCoordinateSpace'
+import { initOutlinerDragDrop } from './utils/outlinerDragDrop'
+import { initOutlinerCollectionMove } from './utils/outlinerCollectionMove'
+import { initOutlinerRangeSelection } from './utils/outlinerRangeSelection'
 
 const drawingTree = document.getElementById('drawing-tree')
 
 function Outliner(editor) {
   const signals = editor.signals
+  const treeDragDrop = initOutlinerDragDrop(editor, drawingTree)
+  const rangeSelection = initOutlinerRangeSelection(editor, drawingTree, clearSelectionVisuals)
+  initOutlinerCollectionMove(editor, drawingTree, treeDragDrop.cancel)
 
   // "Add Collection" button
   const addBtn = document.getElementById('btn-add-collection')
@@ -26,16 +34,19 @@ function Outliner(editor) {
   }
 
   signals.updatedOutliner.add(() => {
+    treeDragDrop.cancel()
     drawingTree.innerHTML = ''
     renderCollections()
   })
 
   signals.updatedCollections.add(() => {
+    treeDragDrop.cancel()
     drawingTree.innerHTML = ''
     renderCollections()
   })
 
   signals.paperViewportsChanged.add(() => {
+    treeDragDrop.cancel()
     drawingTree.innerHTML = ''
     renderCollections()
   })
@@ -238,6 +249,7 @@ function Outliner(editor) {
 
     const collectionLi = document.createElement('li')
     collectionLi.className = 'collection-row'
+    treeDragDrop.bindRow(collectionLi, data.group)
     if (editor.activeCollection === data.group) collectionLi.classList.add('collection-active')
     if (!data.visible) collectionLi.classList.add('collection-hidden-row')
     if (data.locked) collectionLi.classList.add('collection-locked-row')
@@ -414,6 +426,8 @@ function Outliner(editor) {
       const collectionLi = document.createElement('li')
       collectionLi.id = 'li' + id
       collectionLi.className = 'collection-row'
+      treeDragDrop.bindRow(collectionLi, child)
+      rangeSelection.bindRow(collectionLi, child)
       if (isActive) collectionLi.classList.add('collection-active')
       if (!data.visible) collectionLi.classList.add('collection-hidden-row')
       if (data.locked) collectionLi.classList.add('collection-locked-row')
@@ -451,10 +465,12 @@ function Outliner(editor) {
 
       leftSide.addEventListener('click', (e) => {
         e.stopPropagation()
-        setActiveCollection(editor, id)
-        // Select the collection group so Properties panel shows it
-        editor.selected = [data.group]
-        signals.updatedSelection.dispatch()
+        rangeSelection.select(e, data.group, () => {
+          setActiveCollection(editor, id)
+          // Select the collection group so Properties panel shows it
+          editor.selected = [data.group]
+          signals.updatedSelection.dispatch()
+        })
       })
       // Right-click to open custom context menu
       leftSide.addEventListener('contextmenu', (e) => {
@@ -637,6 +653,7 @@ function Outliner(editor) {
   function drawHandlers() {
     // Clear existing handlers
     editor.handlers.clear()
+    if (editor.suppressHandlers) return
 
     // Get current SVG and zoom level based on mode
     const isPaper = editor.mode === 'paper'
@@ -728,6 +745,20 @@ function Outliner(editor) {
               vertices.push({ element: s, vertexIndex: p.index, originalPosition: { cx, cy, rx, ry } })
             }
           })
+        } else if (s.type === 'image') {
+          if (!canEditImageGrips(s, activeSvg)) return
+          const originalPosition = readImageGripBounds(s)
+          const matches = getImageGripPoints(originalPosition)
+            .filter(point => point.index < 4 || point.index === 8)
+            .filter(point => !activeVertex || activeVertex.element !== s || activeVertex.vertexIndex === point.index)
+            .map(point => ({ ...point, world: localToWorld(s, point.x, point.y) }))
+            .filter(point => Math.abs(point.world.x - x) < tolerance && Math.abs(point.world.y - y) < tolerance)
+            .sort((left, right) => (
+              Math.hypot(left.world.x - x, left.world.y - y) - Math.hypot(right.world.x - x, right.world.y - y)
+            ))
+          // A small image can put several grips within the coincidence tolerance.
+          // Each image must contribute just one edit to the transaction.
+          if (matches[0]) vertices.push({ element: s, vertexIndex: matches[0].index, originalPosition })
         } else if (s.type === 'rect') {
           const rx = s.node.x.baseVal.value
           const ry = s.node.y.baseVal.value
@@ -963,6 +994,56 @@ function Outliner(editor) {
               ])
             })
         })
+      } else if (el.type === 'image') {
+        if (!canEditImageGrips(el, activeSvg)) return
+        const bounds = readImageGripBounds(el)
+        const cropAllowed = editor.isEditingVertex || canCropImageElement(el)
+        getImageGripPoints(bounds).filter(point => point.index < 4 || point.index === 8 || cropAllowed).forEach(point => {
+          const world = localToWorld(el, point.x, point.y)
+          const isCropGrip = point.index >= 4 && point.index <= 7
+          const edge = ['top', 'right', 'bottom', 'left'][point.index - 4]
+          const label = isCropGrip ? `Crop image ${edge}` : point.index === 8 ? 'Move image' : 'Resize image'
+          const handler = editor.handlers
+            .rect(isCropGrip ? handlerWorldSize * 1.5 : handlerWorldSize,
+              isCropGrip ? handlerWorldSize * 0.375 : handlerWorldSize)
+            .center(world.x, world.y)
+            .addClass('selection-handler selection-handler-image')
+            .attr({
+              'aria-label': label,
+              'data-image-grip': point.index,
+              'data-image-id': el.attr('id'),
+            })
+            .mousedown(event => {
+              if (event.button !== 0) return
+              event.stopPropagation()
+              if (isCropGrip && !canCropImageElement(el)) {
+                signals.terminalLogged.dispatch({ msg: 'This image uses CSS clipping. Remove that clipping before cropping it.' })
+                return
+              }
+              const vertices = isCropGrip
+                ? [{ element: el, vertexIndex: point.index, originalPosition: readImageGripBounds(el) }]
+                : getCoincidentVertices(world.x, world.y, { element: el, vertexIndex: point.index })
+              // The clicked grip defines the cursor constraint, independently
+              // of selection order when other geometry shares this position.
+              vertices.sort((left, right) => Number(right.element === el) - Number(left.element === el))
+              signals.vertexEditStarted.dispatch(vertices)
+            })
+          if (point.index === 8) handler.css('cursor', 'move')
+          if (isCropGrip) {
+            handler.addClass('selection-handler-image-crop')
+            const vertical = point.index === 4 || point.index === 6
+            const tangent = localToWorld(el, point.x + (vertical ? 1 : 0), point.y + (vertical ? 0 : 1))
+            const edgeAngle = Math.atan2(tangent.y - world.y, tangent.x - world.x) * 180 / Math.PI
+            handler.rotate(edgeAngle, world.x, world.y)
+            const axis = localToWorld(el, point.x + (vertical ? 0 : 1), point.y + (vertical ? 1 : 0))
+            const angle = Math.atan2(axis.y - world.y, axis.x - world.x)
+            const direction = ((Math.round(angle / (Math.PI / 4)) % 4) + 4) % 4
+            handler.css('cursor', ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][direction])
+          }
+          const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+          title.textContent = label
+          handler.node.appendChild(title)
+        })
       } else if (el.type === 'rect' || el._paperVp) {
         let rx, ry, rw, rh, s
         if (el._paperVp) {
@@ -1179,6 +1260,8 @@ function Outliner(editor) {
       const groupLi = document.createElement('li')
       groupLi.id = 'li' + group.node.id
       groupLi.className = 'collection-row' // Use same class for layout
+      treeDragDrop.bindRow(groupLi, group)
+      rangeSelection.bindRow(groupLi, group)
 
       const isHidden = group.attr('data-hidden') === 'true'
       const isLocked = group.attr('data-locked') === 'true'
@@ -1231,7 +1314,7 @@ function Outliner(editor) {
 
       leftSide.addEventListener('click', (e) => {
         e.stopPropagation()
-        signals.toogledSelect.dispatch(group)
+        rangeSelection.select(e, group, () => signals.toogledSelect.dispatch(group))
       })
       if (isGeometryNodes) {
         leftSide.addEventListener('dblclick', (e) => {
@@ -1296,6 +1379,8 @@ function Outliner(editor) {
         const li = document.createElement('li')
         li.id = 'li' + child.node.id
         li.className = 'collection-row' // consistent layout
+        treeDragDrop.bindRow(li, child)
+        rangeSelection.bindRow(li, child)
 
         const childName = child.attr('name') || child.node.nodeName
         const isHidden = child.attr('data-hidden') === 'true'
@@ -1335,7 +1420,7 @@ function Outliner(editor) {
         leftSide.addEventListener('click', (e) => {
           e.stopPropagation()
           if (isLocked || isHidden) return
-          signals.toogledSelect.dispatch(child)
+          rangeSelection.select(e, child, () => signals.toogledSelect.dispatch(child))
         })
 
         // Element icons container

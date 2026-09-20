@@ -102,6 +102,30 @@ as endpoint targets; referenced shadow-tree geometry is not traversed as if it
 were editable instance content. Spline nearest snap is sampled rather than an
 analytic curve solution.
 
+Interactive SPLINE fit points apply Ortho from the last committed point. The
+live curve preview refreshes from the current pointer when Ortho or snapping is
+toggled, so the preview and stored `splineData` use the same constrained point.
+DIMLINEAR and DIMALIGNED show a transient baseline and their live measured
+value while the second extension origin is chosen. This active-command feedback
+is attached directly to the viewport, so the optional F3 overlays can remain
+hidden; accepting the point hands off to the dimension-line placement preview,
+and cancellation removes the transient group. The active dimension style can
+set DIMLINEAR geometry to Horizontal, Vertical, or Aligned; the choice is
+persisted with the style and redraws dimensions that reference it. The style's
+Position setting places dimension text Above or Below the dimension line in
+both the live preview and committed geometry. DIMALIGNED is an explicit command
+and remains aligned regardless of the orientation style default.
+
+MIRROR accepts an existing selection immediately and asks for the first axis
+point. With no selection, select the objects and press Enter first. Both axis
+points can snap to the source or other drawing geometry. The reflected preview
+uses the current snapped point, including when Snap is toggled with F9 or the
+toolbar without moving the pointer. Axis-point clicks do not select nearby
+objects. Editing handles stay hidden through axis input and the delete-source
+prompt, including when zooming or refreshing the viewport. Semantic splines are
+rebuilt from their reflected fit points so the visible path and `splineData`
+remain identical through commit and Undo/Redo.
+
 When a non-uniform or skew transform turns a circle or circular arc into a
 non-circular curve, the circle-only intersection, tangent, and perpendicular
 solvers do not return an unsafe target. Direct transformed snap points remain
@@ -115,18 +139,70 @@ primitives and any selection inside a transformed ancestor. MIRROR rejects any
 selected element with its own transform or a transformed ancestor before it
 creates preview clones.
 
+TRIM boundary selection supports individual clicks and selection rectangles:
+left-to-right windows include fully enclosed elements, while right-to-left
+crossing rectangles also include intersecting elements. Rectangles add to the
+chosen boundaries; clicking a boundary again removes it. Press Enter to confirm,
+or press Enter with no boundaries to use Auto-Trim. Confirmation and cancellation
+clear boundary highlights and any unfinished selection rectangle. A selected
+semantic spline is sampled as its finite visible curve when trimming a line;
+the preview and committed endpoint use the same intersection.
+
+EXTEND also accepts Enter with no selected boundaries to scan visible Model
+geometry automatically. Circular-arc targets can extend to the nearest valid
+point on another finite semantic arc; the result retains the source circle and
+sweep direction, and its three editable points round-trip through Undo/Redo.
+
 TRIM and EXTEND currently reject a transformed target or boundary, and FILLET
-rejects transformed lines, with an explicit terminal diagnostic before
+rejects transformed lines and rectangles, with an explicit terminal diagnostic before
 calculation or History mutation. HATCH excludes transformed leaves from its
 local-coordinate boundary graph. It rejects and re-arms when the click lies in
 a transformed scope, a detected untransformed region overlaps one, or the
 transformed bounds cannot be qualified; transformed geometry that is provably
 remote does not prevent an ordinary hatch. These guards are documented support
 boundaries, not claims that the operations were performed approximately.
+When every preselected element is a rectangle or SVG path, HATCH bypasses point
+tracing and creates one immediate History mutation from the exact selected
+outlines. Rounded rectangle `rx`/`ry` corners remain elliptical SVG arc commands.
+Paths retain their line, cubic, quadratic, and elliptical-arc commands; every
+finite subpath must be explicitly closed with `Z`, and an even-odd fill rule is
+carried to the hatch so compound-path holes remain open. Mixed rectangle/path
+selections share one pattern-backed hatch. Transformed, malformed, open, or
+non-finite selected boundaries are rejected before mutation. With no supported
+preselection, the existing click-inside boundary workflow remains active. A
+first-use hatch defaults to the visible ANSI31 line pattern at scale 10 rather
+than an opaque fill. Explicit SOLID hatches default to 30% opacity, and pattern
+or scale changes in Properties become the defaults for the next hatch in the
+session.
+After a successful FILLET, the command returns to selection and stays active
+until Escape. Selecting one rectangle applies the radius to all four corners
+while preserving the semantic `<rect>` and its metadata; radius zero removes
+its rounded-corner attributes. The radius cannot exceed half the shorter side.
+Two selected lines retain the line-and-arc workflow. Every completed rectangle
+or line pair is frozen into a separate History entry so Undo and Redo remain
+deterministic across a repeated session.
+JOIN accepts same-parent untransformed lines, open polylines, circular and
+elliptical arcs, splines, and single-subpath open SVG paths whose endpoints form
+one connected, non-branching chain, up to 1,000 selected elements and 10,000
+curve segments. All-linear chains become one polyline; a chain containing a
+curve becomes one SVG path whose line, quadratic, cubic, and arc commands are
+preserved exactly, including when a source must be reversed. The result uses
+the earliest source style and replaces the sources at their earliest document
+position. Source-specific arc/spline edit metadata cannot describe a mixed
+path and is therefore removed from the result;
+Undo restores every original node, selection, and sibling position. Gaps,
+branches, closed or multi-subpath sources, non-curve elements, mixed parents,
+locked or generated content, and transformed geometry are rejected before
+mutation.
 OFFSET has the same explicit-policy approach: its qualified path covers
-untransformed lines, circles, and square-corner rectangles. Transformed
-geometry, rounded rectangles, and other element types are rejected before
-ghosting or mutation.
+untransformed lines, open or explicitly closed polylines, circular arcs,
+circles, and square-corner rectangles. Polyline offsets use mitered corners,
+preserve open/closed topology, and reject degenerate, self-intersecting, or
+collapsed results before History mutation.
+Arc offsets remain concentric and preserve the three defining edit points plus
+trimmed-circle metadata when present. An inward arc or circle offset must leave
+a positive radius. Transformed geometry, degenerate arcs, rounded rectangles,
+and other element types are rejected before ghosting or mutation.
 
 ### Delete and clipboard paste
 

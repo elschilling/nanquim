@@ -577,6 +577,34 @@ describe('ROTATE transformed geometry', () => {
     expect(terminalMessages(editor)).not.toContain(TRANSFORMED_ROTATE_DIAGNOSTIC)
   })
 
+  test.each([
+    { translation: '3.84616', rejected: false },
+    { translation: '3.8462', rejected: true },
+  ])('handles Firefox six-significant-digit matrix serialization (rejected: $rejected)', ({ translation, rejected }) => {
+    const { activeCollection, editor } = createFixture()
+    const line = activeCollection.line(1, 2, 5, 2).attr('transform',
+      'matrix(0.8205127920995327,-0.1538461518483445,0.10256409901244158,1.230769214786756,-53.846153942048694,3.8461552026663908)')
+    const originalMarkup = editor.drawing.node.outerHTML
+    const originalGetComputedStyle = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => {
+      if (node !== line.node) return originalGetComputedStyle(node)
+      const transform = `matrix(0.820513, -0.153846, 0.102564, 1.23077, -53.8462, ${translation})`
+      return { getPropertyValue: property => property === 'transform' ? transform : '', transform }
+    })
+
+    commitRotation(editor, line, { angle: 15, center: { x: 0, y: 0 } })
+
+    if (rejected) {
+      expect(terminalMessages(editor)).toContain(TRANSFORMED_ROTATE_DIAGNOSTIC)
+      expect(editor.drawing.node.outerHTML).toBe(originalMarkup)
+      expect(editor.history.undos).toHaveLength(0)
+      expect(editor.documentState.revision).toBe(0)
+    } else {
+      expectCommittedRotation(editor)
+      expect(terminalMessages(editor)).not.toContain(TRANSFORMED_ROTATE_DIAGNOSTIC)
+    }
+  })
+
   test('rejects inline CSS and non-2D computed transforms without mutating geometry', () => {
     const first = createFixture()
     const inline = first.activeCollection.line(1, 2, 5, 2)

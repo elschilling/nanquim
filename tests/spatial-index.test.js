@@ -21,7 +21,42 @@ function elementWithBBox(bbox, ctm = null) {
   }
 }
 
+function croppedImage(attributes, ctm = null) {
+  return {
+    type: 'image',
+    attr: name => attributes[name],
+    node: { getAttribute: name => attributes[name] ?? null },
+    screenCTM: () => ctm,
+  }
+}
+
 describe('SpatialIndex bounding boxes', () => {
+  test('uses only visible cropped image corners under affine transforms', () => {
+    const element = croppedImage({
+      x: 10, y: 20, width: 40, height: 20,
+      'clip-path': 'inset(25% 10% 25% 20%) fill-box',
+    }, matrix([0, 2, -3, 0, 10, 20]))
+    const svg = { screenCTM: () => matrix([2, 0, 0, 2, 10, 20], [0.5, 0, 0, 0.5, -5, -10]) }
+
+    expect(getElementBBox(element, svg)).toEqual({ minX: -52.5, minY: 18, maxX: -37.5, maxY: 46, element })
+  })
+
+  test('excludes cropped-away strips from spatial searches and updates after an uncrop', () => {
+    const attributes = { x: 0, y: 0, width: 100, height: 40, 'clip-path': 'inset(0% 50% 0% 0%) fill-box' }
+    const element = croppedImage(attributes)
+    const editor = { mode: 'model', svg: { node: {}, screenCTM: () => null } }
+    const index = new SpatialIndex()
+    const hiddenStrip = { minX: 60, minY: 10, maxX: 80, maxY: 30 }
+    index.ensureFresh(editor, () => [element])
+
+    expect(index.search(hiddenStrip)).toEqual([])
+    expect(index.search({ minX: 10, minY: 10, maxX: 30, maxY: 30 })).toHaveLength(1)
+    delete attributes['clip-path']
+    index.markDirty()
+    index.ensureFresh(editor, () => [element])
+    expect(index.search(hiddenStrip)).toHaveLength(1)
+  })
+
   test('transforms every local corner into SVG root coordinates', () => {
     const element = elementWithBBox(
       { x: 0, y: 0, width: 2, height: 4 },
@@ -57,11 +92,13 @@ describe('SpatialIndex bounding boxes', () => {
 
   test('skips empty or unreadable elements', () => {
     const empty = elementWithBBox({ x: 0, y: 0, width: 0, height: 0 })
+    const unavailable = elementWithBBox(null)
     const detached = {
       node: { getBBox: () => { throw new Error('not rendered') } },
     }
 
     expect(getElementBBox(empty, {})).toBeNull()
+    expect(getElementBBox(unavailable, {})).toBeNull()
     expect(getElementBBox(detached, {})).toBeNull()
   })
 })

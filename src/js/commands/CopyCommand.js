@@ -23,14 +23,21 @@ class CopyCommand extends Command {
       return
     }
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: this.name.toUpperCase() + ' ' })
+    this.editor.suppressHandlers = true
+    this.editor.handlers.clear()
+    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
+
+    if (this.editor.selected.length > 0) {
+      this.editor.isInteracting = true
+      this.onSelectionConfirmed()
+      return
+    }
+
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
       msg: `Select elements to copy and press Enter to confirm.`,
     })
     document.addEventListener('keydown', this.boundOnKeyDown)
-    this.editor.suppressHandlers = true
-    this.editor.handlers.clear()
-    this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
   }
 
   onKeyDown(event) {

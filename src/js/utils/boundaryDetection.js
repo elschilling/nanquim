@@ -6,10 +6,23 @@
 
 import { getDrawableElements } from '../Collection'
 import { getArcGeometry } from './arcUtils'
+import { MAX_SVG_GEOMETRY_MAGNITUDE } from './svgNumericBounds'
 
 const EPS = 1e-6
 const SNAP_DIGITS = 3 // Round to 1e-3 for node merging
 const SPLINE_SAMPLES_PER_SEGMENT = 8 // Line segments per Bezier curve for linearization
+const PATH_COMMAND_LENGTHS = Object.freeze({
+    M: 3,
+    L: 3,
+    H: 2,
+    V: 2,
+    C: 7,
+    S: 5,
+    Q: 5,
+    T: 3,
+    A: 8,
+    Z: 1,
+})
 
 // ─── Cubic Bezier helpers ──────────────────────────────────────────
 
@@ -22,6 +35,247 @@ function evalCubicBezier(p0, p1, p2, p3, t) {
         x: uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x,
         y: uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y,
     }
+}
+
+function evalQuadraticBezier(p0, p1, p2, t) {
+    const u = 1 - t
+    return {
+        x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+        y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+    }
+}
+
+function isBoundedPathNumber(value) {
+    return Number.isFinite(value) && Math.abs(value) <= MAX_SVG_GEOMETRY_MAGNITUDE
+}
+
+function isBoundedPoint(point) {
+    return isBoundedPathNumber(point.x) && isBoundedPathNumber(point.y)
+}
+
+function samePoint(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y) <= EPS
+}
+
+function vectorAngle(ux, uy, vx, vy) {
+    return Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+}
+
+/** Sample an SVG elliptical arc expressed in endpoint form. */
+function sampleEllipticalArc(from, rawRx, rawRy, rotation, largeArcFlag, sweepFlag, to) {
+    let rx = Math.abs(rawRx)
+    let ry = Math.abs(rawRy)
+    if (rx <= EPS || ry <= EPS || samePoint(from, to)) return [to]
+
+    const phi = (rotation % 360) * Math.PI / 180
+    const cosPhi = Math.cos(phi)
+    const sinPhi = Math.sin(phi)
+    const dx = (from.x - to.x) / 2
+    const dy = (from.y - to.y) / 2
+    const x1p = cosPhi * dx + sinPhi * dy
+    const y1p = -sinPhi * dx + cosPhi * dy
+
+    const radiiScale = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry)
+    if (radiiScale > 1) {
+        const scale = Math.sqrt(radiiScale)
+        rx *= scale
+        ry *= scale
+    }
+
+    const rx2 = rx * rx
+    const ry2 = ry * ry
+    const numerator = Math.max(0, rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p)
+    const denominator = rx2 * y1p * y1p + ry2 * x1p * x1p
+    const direction = largeArcFlag === sweepFlag ? -1 : 1
+    const coefficient = denominator <= EPS ? 0 : direction * Math.sqrt(numerator / denominator)
+    const cxp = coefficient * rx * y1p / ry
+    const cyp = coefficient * -ry * x1p / rx
+    const cx = cosPhi * cxp - sinPhi * cyp + (from.x + to.x) / 2
+    const cy = sinPhi * cxp + cosPhi * cyp + (from.y + to.y) / 2
+
+    const startUx = (x1p - cxp) / rx
+    const startUy = (y1p - cyp) / ry
+    const endUx = (-x1p - cxp) / rx
+    const endUy = (-y1p - cyp) / ry
+    const startAngle = vectorAngle(1, 0, startUx, startUy)
+    let sweepAngle = vectorAngle(startUx, startUy, endUx, endUy)
+    if (!sweepFlag && sweepAngle > 0) sweepAngle -= 2 * Math.PI
+    if (sweepFlag && sweepAngle < 0) sweepAngle += 2 * Math.PI
+
+    const sampleCount = Math.min(64, Math.max(
+        SPLINE_SAMPLES_PER_SEGMENT,
+        Math.ceil(Math.abs(sweepAngle) / (Math.PI / 16)),
+    ))
+    const points = []
+    for (let i = 1; i <= sampleCount; i++) {
+        const angle = startAngle + sweepAngle * i / sampleCount
+        const cosAngle = Math.cos(angle)
+        const sinAngle = Math.sin(angle)
+        points.push({
+            x: cx + cosPhi * rx * cosAngle - sinPhi * ry * sinAngle,
+            y: cy + sinPhi * rx * cosAngle + cosPhi * ry * sinAngle,
+        })
+    }
+    points[points.length - 1] = to
+    return points
+}
+
+/**
+ * Linearize each SVG path subpath while retaining whether it was explicitly
+ * closed. SVG.js normally exposes absolute commands, but relative commands are
+ * handled as well for imported paths.
+ */
+function sampleSvgPathSubpaths(el) {
+    const result = []
+    let subpath = null
+    let current = null
+    let subpathStart = null
+    let lastCubicControl = null
+    let lastQuadraticControl = null
+
+    const finishSubpath = closed => {
+        if (subpath && subpath.points.length > 1) result.push({ ...subpath, closed })
+        subpath = null
+        subpathStart = null
+    }
+    const beginIfNeeded = () => {
+        if (!subpath && current) {
+            subpath = { points: [{ ...current }] }
+            subpathStart = { ...current }
+        }
+        return Boolean(subpath)
+    }
+    const append = point => {
+        if (!beginIfNeeded()) return
+        subpath.points.push(point)
+        current = point
+    }
+    const coordinate = (value, axis, relative) => (
+        relative ? value + (current ? current[axis] : 0) : value
+    )
+
+    let commands
+    try {
+        commands = el.array()
+    } catch (_error) {
+        return []
+    }
+
+    for (const segment of commands) {
+        const rawType = String(segment[0] || '')
+        const type = rawType.toUpperCase()
+        const expectedLength = PATH_COMMAND_LENGTHS[type]
+        if (!expectedLength || segment.length !== expectedLength) return []
+        const values = segment.slice(1).map(Number)
+        if (!values.every(isBoundedPathNumber)) return []
+        const relative = rawType === rawType.toLowerCase() && rawType !== rawType.toUpperCase()
+
+        if (type === 'M') {
+            finishSubpath(false)
+            current = {
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            }
+            if (!isBoundedPoint(current)) return []
+            subpath = { points: [{ ...current }] }
+            subpathStart = { ...current }
+        } else if (type === 'L' && beginIfNeeded()) {
+            append({
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            })
+        } else if (type === 'H' && beginIfNeeded()) {
+            append({ x: coordinate(values[0], 'x', relative), y: current.y })
+        } else if (type === 'V' && beginIfNeeded()) {
+            append({ x: current.x, y: coordinate(values[0], 'y', relative) })
+        } else if (type === 'C' && beginIfNeeded()) {
+            const p0 = current
+            const p1 = {
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            }
+            const p2 = {
+                x: coordinate(values[2], 'x', relative),
+                y: coordinate(values[3], 'y', relative),
+            }
+            const p3 = {
+                x: coordinate(values[4], 'x', relative),
+                y: coordinate(values[5], 'y', relative),
+            }
+            for (let i = 1; i <= SPLINE_SAMPLES_PER_SEGMENT; i++) {
+                append(evalCubicBezier(p0, p1, p2, p3, i / SPLINE_SAMPLES_PER_SEGMENT))
+            }
+            lastCubicControl = p2
+        } else if (type === 'S' && beginIfNeeded()) {
+            const p0 = current
+            const p1 = lastCubicControl
+                ? { x: 2 * p0.x - lastCubicControl.x, y: 2 * p0.y - lastCubicControl.y }
+                : p0
+            const p2 = {
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            }
+            const p3 = {
+                x: coordinate(values[2], 'x', relative),
+                y: coordinate(values[3], 'y', relative),
+            }
+            for (let i = 1; i <= SPLINE_SAMPLES_PER_SEGMENT; i++) {
+                append(evalCubicBezier(p0, p1, p2, p3, i / SPLINE_SAMPLES_PER_SEGMENT))
+            }
+            lastCubicControl = p2
+        } else if (type === 'Q' && beginIfNeeded()) {
+            const p0 = current
+            const p1 = {
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            }
+            const p2 = {
+                x: coordinate(values[2], 'x', relative),
+                y: coordinate(values[3], 'y', relative),
+            }
+            for (let i = 1; i <= SPLINE_SAMPLES_PER_SEGMENT; i++) {
+                append(evalQuadraticBezier(p0, p1, p2, i / SPLINE_SAMPLES_PER_SEGMENT))
+            }
+            lastQuadraticControl = p1
+        } else if (type === 'T' && beginIfNeeded()) {
+            const p0 = current
+            const p1 = lastQuadraticControl
+                ? { x: 2 * p0.x - lastQuadraticControl.x, y: 2 * p0.y - lastQuadraticControl.y }
+                : p0
+            const p2 = {
+                x: coordinate(values[0], 'x', relative),
+                y: coordinate(values[1], 'y', relative),
+            }
+            for (let i = 1; i <= SPLINE_SAMPLES_PER_SEGMENT; i++) {
+                append(evalQuadraticBezier(p0, p1, p2, i / SPLINE_SAMPLES_PER_SEGMENT))
+            }
+            lastQuadraticControl = p1
+        } else if (type === 'A' && beginIfNeeded()) {
+            if (![0, 1].includes(values[3]) || ![0, 1].includes(values[4])) return []
+            const to = {
+                x: coordinate(values[5], 'x', relative),
+                y: coordinate(values[6], 'y', relative),
+            }
+            for (const point of sampleEllipticalArc(
+                current, values[0], values[1], values[2], values[3], values[4], to,
+            )) append(point)
+        } else if (type === 'Z') {
+            if (subpath && subpathStart) {
+                if (!samePoint(current, subpathStart)) subpath.points.push({ ...subpathStart })
+                current = { ...subpathStart }
+                finishSubpath(true)
+            }
+        } else {
+            return []
+        }
+
+        if (!['C', 'S'].includes(type)) lastCubicControl = null
+        if (!['Q', 'T'].includes(type)) lastQuadraticControl = null
+        if (current && !isBoundedPoint(current)) return []
+    }
+
+    finishSubpath(false)
+    return result.every(path => path.points.every(isBoundedPoint)) ? result : []
 }
 
 /**
@@ -176,44 +430,19 @@ export function extractSegments(editor, elements = getDrawableElements(editor)) 
                     })
                 }
             } else {
-                try {
-                    const arr = el.array()
-                    let lastPt = null
-                    for (const seg of arr) {
-                        const cmd = seg[0]
-                        if (cmd === 'M') {
-                            lastPt = { x: seg[1], y: seg[2] }
-                        } else if (cmd === 'L' && lastPt) {
-                            segments.push({
-                                type: 'line',
-                                x1: lastPt.x, y1: lastPt.y,
-                                x2: seg[1], y2: seg[2],
-                                element: el,
-                            })
-                            lastPt = { x: seg[1], y: seg[2] }
-                        } else if (cmd === 'C' && lastPt) {
-                            // Cubic Bezier — linearize by sampling
-                            const p0 = lastPt
-                            const p1 = { x: seg[1], y: seg[2] }
-                            const p2 = { x: seg[3], y: seg[4] }
-                            const p3 = { x: seg[5], y: seg[6] }
-                            let prev = p0
-                            for (let t = 1; t <= SPLINE_SAMPLES_PER_SEGMENT; t++) {
-                                const pt = evalCubicBezier(p0, p1, p2, p3, t / SPLINE_SAMPLES_PER_SEGMENT)
-                                segments.push({
-                                    type: 'line',
-                                    x1: prev.x, y1: prev.y,
-                                    x2: pt.x, y2: pt.y,
-                                    element: el,
-                                })
-                                prev = pt
-                            }
-                            lastPt = { x: seg[5], y: seg[6] }
-                        } else if (cmd === 'Z' && lastPt) {
-                            lastPt = null
-                        }
+                for (const subpath of sampleSvgPathSubpaths(el)) {
+                    for (let i = 0; i < subpath.points.length - 1; i++) {
+                        const from = subpath.points[i]
+                        const to = subpath.points[i + 1]
+                        if (samePoint(from, to)) continue
+                        segments.push({
+                            type: 'line',
+                            x1: from.x, y1: from.y,
+                            x2: to.x, y2: to.y,
+                            element: el,
+                        })
                     }
-                } catch (_e) { /* skip unparseable paths */ }
+                }
             }
         }
     }
@@ -904,6 +1133,41 @@ function getClosedElementInfo(el) {
     return null
 }
 
+function genericClosedPathInfos(el) {
+    if (el.type !== 'path' || el.data('arcData') || el.data('splineData')) return []
+
+    return sampleSvgPathSubpaths(el)
+        .filter(subpath => subpath.closed && subpath.points.length >= 4)
+        .map(subpath => {
+            const points = samePoint(subpath.points[0], subpath.points.at(-1))
+                ? subpath.points.slice(0, -1)
+                : subpath.points.slice()
+            let pathD = `M ${points[0].x} ${points[0].y}`
+            for (let i = 1; i < points.length; i++) {
+                pathD += ` L ${points[i].x} ${points[i].y}`
+            }
+            pathD += ' Z'
+            return { samplePoints: points, pathD }
+        })
+}
+
+function getClosedElementInfos(el) {
+    const genericPathInfos = genericClosedPathInfos(el)
+    if (genericPathInfos.length > 0) return genericPathInfos
+    const info = getClosedElementInfo(el)
+    return info ? [info] : []
+}
+
+function polygonArea(points) {
+    let twiceArea = 0
+    for (let i = 0; i < points.length; i++) {
+        const current = points[i]
+        const next = points[(i + 1) % points.length]
+        twiceArea += current.x * next.y - next.x * current.y
+    }
+    return Math.abs(twiceArea) / 2
+}
+
 // ─── Public API ─────────────────────────────────────────────────────
 
 /**
@@ -975,6 +1239,8 @@ export function findIslands(
 ) {
     const outerPoly = sampleBoundary(outerBoundary, segments)
     if (outerPoly.length < 3) return []
+    const outerArea = polygonArea(outerPoly)
+    const areaTolerance = Math.max(EPS, outerArea * 1e-6)
 
     // Elements that form the outer boundary should not be treated as islands
     const boundaryElements = new Set()
@@ -986,20 +1252,22 @@ export function findIslands(
     for (const el of elements) {
         if (el.hasClass('grid') || el.hasClass('axis') || el.hasClass('ghostLine')) continue
         if (el.hasClass('hatch-fill')) continue
-        if (boundaryElements.has(el)) continue
+        const belongsToOuterBoundary = boundaryElements.has(el)
 
-        const info = getClosedElementInfo(el)
-        if (!info) continue
+        for (const { samplePoints, pathD } of getClosedElementInfos(el)) {
+            // Do not add the outer loop itself when multiple subpaths belong to
+            // the same SVG path. Smaller nested loops remain eligible islands.
+            if (belongsToOuterBoundary
+                && polygonArea(samplePoints) >= outerArea - areaTolerance) continue
 
-        const { samplePoints, pathD } = info
+            // All perimeter points must be inside the outer boundary
+            if (!samplePoints.every(p => pointInPolygon(p, outerPoly))) continue
 
-        // All perimeter points must be inside the outer boundary
-        if (!samplePoints.every(p => pointInPolygon(p, outerPoly))) continue
+            // The click point must NOT be inside this island
+            if (pointInPolygon(clickPoint, samplePoints)) continue
 
-        // The click point must NOT be inside this island
-        if (pointInPolygon(clickPoint, samplePoints)) continue
-
-        islands.push(pathD)
+            islands.push(pathD)
+        }
     }
 
     return islands

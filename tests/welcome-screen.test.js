@@ -4,6 +4,16 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Navbar } from '../src/js/Navbar.js'
 import { WelcomeScreen } from '../src/js/WelcomeScreen'
 
+const screens = []
+
+afterEach(() => {
+  for (const screen of screens.splice(0)) {
+    const overlay = screen._overlay
+    screen.dismiss()
+    if (overlay) finishDismissal(overlay)
+  }
+})
+
 function deferred() {
   let resolve
   const promise = new Promise((resolvePromise) => {
@@ -27,6 +37,7 @@ async function createWelcomeScreen({ documents = {}, recentFiles = [] } = {}) {
   const welcomeScreen = new WelcomeScreen(editor, {
     getRecentFiles: vi.fn(async () => recentFiles),
   })
+  screens.push(welcomeScreen)
   await vi.waitFor(() => expect(document.querySelector('#welcome-overlay')).not.toBeNull())
   return { editor, welcomeScreen }
 }
@@ -382,5 +393,135 @@ describe('WelcomeScreen dismissal', () => {
     expect(delayedCompletion).toHaveBeenCalledTimes(1)
     expect(welcomeScreen._overlay).toBeNull()
     expect(welcomeScreen._dismissState).toBeNull()
+  })
+})
+
+describe('WelcomeScreen reopening and keyboard access', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '<button id="logo">Open welcome screen</button>'
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  test('reopens with current recent files, dated history, and a focusable close button', async () => {
+    const logo = document.getElementById('logo')
+    logo.focus()
+    const { welcomeScreen, editor } = await createWelcomeScreen()
+    expect(document.querySelector('#ws-dialog').getAttribute('aria-modal')).toBe('true')
+    expect(document.querySelector('#ws-dialog').getAttribute('role')).toBe('dialog')
+    expect(document.querySelectorAll('#ws-changelog time').length).toBeGreaterThan(0)
+    expect(document.activeElement.id).toBe('ws-dismiss')
+    welcomeScreen.dismiss()
+    finishDismissal(welcomeScreen._overlay)
+    expect(document.activeElement).toBe(logo)
+
+    welcomeScreen._getRecentFiles.mockResolvedValue([{ name: 'recent.svg', timestamp: 1, handle: {} }])
+    await welcomeScreen.show()
+    expect(document.querySelector('.ws-recent-item').tagName).toBe('BUTTON')
+    expect(document.querySelector('.ws-recent-name').textContent).toBe('recent.svg')
+    expect(editor.documents.newDocument).not.toHaveBeenCalled()
+    expect(editor.documents.open).not.toHaveBeenCalled()
+  })
+
+  test('coalesces requests while recent files load and tolerates unavailable storage', async () => {
+    const { welcomeScreen } = await createWelcomeScreen()
+    welcomeScreen.dismiss()
+    finishDismissal(welcomeScreen._overlay)
+    const pending = deferred()
+    welcomeScreen._getRecentFiles.mockImplementation(() => pending.promise)
+    const opening = welcomeScreen.show()
+    await welcomeScreen.show()
+    pending.resolve([])
+    await opening
+    expect(document.querySelectorAll('#welcome-overlay')).toHaveLength(1)
+    expect(welcomeScreen._getRecentFiles).toHaveBeenCalledTimes(2)
+
+    welcomeScreen.dismiss()
+    finishDismissal(welcomeScreen._overlay)
+    welcomeScreen._getRecentFiles.mockRejectedValue(new Error('Storage unavailable'))
+    await expect(welcomeScreen.show()).resolves.toBeUndefined()
+    expect(welcomeScreen.isVisible()).toBe(true)
+  })
+
+  test('keeps document shortcuts available to the existing document controller entry points', async () => {
+    await createWelcomeScreen()
+    const documentShortcut = vi.fn(event => event.preventDefault())
+    document.addEventListener('keydown', documentShortcut)
+    try {
+      for (const key of ['n', 'o', 's']) {
+        document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {
+          key, ctrlKey: true, bubbles: true, cancelable: true,
+        }))
+        document.activeElement.dispatchEvent(new KeyboardEvent('keyup', { key, ctrlKey: true, bubbles: true }))
+      }
+      expect(documentShortcut.mock.calls.map(([event]) => event.key)).toEqual(['n', 'o', 's'])
+    } finally {
+      document.removeEventListener('keydown', documentShortcut)
+    }
+  })
+
+  test('dismissal cancels a pending show and prevents late document results from closing a reopened screen', async () => {
+    const { welcomeScreen } = await createWelcomeScreen()
+    const pendingAction = deferred()
+    const action = welcomeScreen.runDocumentAction(() => pendingAction.promise, 'Open failed')
+    welcomeScreen.dismiss()
+    finishDismissal(welcomeScreen._overlay)
+    const pendingFiles = deferred()
+    welcomeScreen._getRecentFiles.mockImplementationOnce(() => pendingFiles.promise)
+    const opening = welcomeScreen.show()
+    welcomeScreen.dismiss()
+    pendingFiles.resolve([])
+    await opening
+    expect(welcomeScreen.isVisible()).toBe(false)
+
+    await welcomeScreen.show()
+    pendingAction.resolve({ ok: true })
+    await action
+    expect(welcomeScreen._overlay.classList.contains('ws-fade-out')).toBe(false)
+  })
+
+  test('traps focus and consumes editor keys, paste, and the closing Escape keyup', async () => {
+    document.getElementById('logo').focus()
+    const { welcomeScreen } = await createWelcomeScreen()
+    const editorKey = vi.fn()
+    const editorPaste = vi.fn()
+    document.addEventListener('keydown', editorKey)
+    document.addEventListener('keyup', editorKey)
+    document.addEventListener('paste', editorPaste)
+    const press = (key, extra = {}) => {
+      for (const type of ['keydown', 'keyup']) {
+        document.activeElement.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true, ...extra }))
+      }
+    }
+    const links = document.querySelectorAll('#ws-dialog a')
+    links[links.length - 1].focus()
+    press('Tab')
+    expect(document.activeElement.id).toBe('ws-new')
+    press('Tab', { shiftKey: true })
+    expect(document.activeElement).toBe(links[links.length - 1])
+    document.getElementById('logo').focus()
+    expect(document.activeElement.id).toBe('ws-dismiss')
+    for (const key of ['l', 'Delete', 'F3']) press(key)
+    const findShortcut = new KeyboardEvent('keydown', { key: 'F3', bubbles: true, cancelable: true })
+    document.activeElement.dispatchEvent(findShortcut)
+    expect(findShortcut.defaultPrevented).toBe(true)
+    document.activeElement.dispatchEvent(new KeyboardEvent('keyup', { key: 'F3', bubbles: true }))
+    press('z', { ctrlKey: true })
+    document.activeElement.dispatchEvent(new Event('paste', { bubbles: true, cancelable: true }))
+
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    finishDismissal(welcomeScreen._overlay)
+    expect(document.activeElement.id).toBe('logo')
+    document.activeElement.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', bubbles: true }))
+    expect(editorKey).not.toHaveBeenCalled()
+    expect(editorPaste).not.toHaveBeenCalled()
+    press('l')
+    expect(editorKey).toHaveBeenCalledTimes(2)
+    document.removeEventListener('keydown', editorKey)
+    document.removeEventListener('keyup', editorKey)
+    document.removeEventListener('paste', editorPaste)
   })
 })

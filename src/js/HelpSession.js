@@ -12,6 +12,8 @@ const TERMINAL_SHORTCUTS = [
   { keys: ['Ctrl/⌘ + C', 'Ctrl/⌘ + V'], description: 'Copy or paste selected Nanquim geometry.' },
   { keys: ['↑ / ↓', 'Tab'], description: 'Navigate and accept terminal autocomplete suggestions.' },
   { keys: ['P'], description: 'Restore the previous selection when one is available.' },
+  { keys: ['M over Outliner'], description: 'Move selected elements to an existing or new collection.' },
+  { keys: ['Shift + click in Outliner'], description: 'Select the visible range from the last clicked row.' },
   { keys: ['@x,y', '#x,y'], description: 'Enter relative or absolute coordinates.' },
   { keys: ['F2'], description: 'Expand or restore the terminal.' },
   { keys: ['F3'], description: 'Toggle all viewport overlays.' },
@@ -301,6 +303,12 @@ class HelpSession {
   _guardKeyDown(event) {
     const isF1 = event.key === 'F1' || event.code === 'F1'
     if (!this.isOpen && !isF1) return
+    if (!this.isOpen && document.getElementById('welcome-overlay')) {
+      // Welcome installs its capture guard after Help. Let it own this key
+      // without opening a second modal or the browser's Help page.
+      event.preventDefault()
+      return
+    }
 
     this.suppressedKeyups.add(event.code || event.key)
     event.stopImmediatePropagation()

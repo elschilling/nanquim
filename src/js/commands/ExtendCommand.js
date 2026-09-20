@@ -1,9 +1,9 @@
-import { getArcGeometry } from '../utils/arcUtils'
+import { getArcGeometry, isPointInArc } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { EditVertexCommand } from './EditVertexCommand'
 import { ExtendArcCommand } from './ExtendArcCommand'
 import { ExtendSplineCommand } from './ExtendSplineCommand'
-import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPolylineSegments, getLineEllipseIntersections } from '../utils/intersection'
+import { getLineEquation, getLineIntersection, getLineCircleIntersections, getLineRectIntersections, getCircleCircleIntersections, getPathIntersections, getPathSegments, getPolylineSegments, getLineEllipseIntersections } from '../utils/intersection'
 import { EditPolylineCommand } from './EditPolylineCommand'
 import { getDrawableElements } from '../Collection'
 import { catmullRomToBezierPath } from './DrawSplineCommand'
@@ -486,11 +486,39 @@ class ExtendCommand extends Command {
                         }
                     })
                 })
+            } else if (boundary.type === 'path' && boundary.data('arcData')) {
+                const boundaryArc = boundary.data('arcData')
+                const boundaryGeo = this.getArcGeometry(boundaryArc)
+                if (!boundaryGeo) continue
+                getCircleCircleIntersections(circle, {
+                    cx: boundaryGeo.cx,
+                    cy: boundaryGeo.cy,
+                    r: boundaryGeo.r,
+                }).forEach(pt => {
+                    if (isPointInArc(
+                        pt,
+                        boundaryGeo.cx,
+                        boundaryGeo.cy,
+                        boundaryGeo.theta1,
+                        boundaryGeo.theta3,
+                        boundaryGeo.ccw,
+                    )) {
+                        checkAndAddIntersection(pt)
+                    }
+                })
             } else if (boundary.type === 'path' && boundary.data('splineData')) {
                 // Approximate arc-spline intersection via circle-segment intersections
                 const segments = getPathSegments(boundary)
                 segments.forEach(seg => {
-                    getLineCircleIntersections(seg, circle).forEach(checkAndAddIntersection)
+                    getLineCircleIntersections(seg, circle).forEach(pt => {
+                        const minX = Math.min(seg.x1, seg.x2) - 1e-4
+                        const maxX = Math.max(seg.x1, seg.x2) + 1e-4
+                        const minY = Math.min(seg.y1, seg.y2) - 1e-4
+                        const maxY = Math.max(seg.y1, seg.y2) + 1e-4
+                        if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                            checkAndAddIntersection(pt)
+                        }
+                    })
                 })
             } else if (boundary.type === 'polyline') {
                 getPolylineSegments(boundary).forEach(seg => {

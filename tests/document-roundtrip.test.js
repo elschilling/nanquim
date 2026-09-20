@@ -9,6 +9,8 @@ import { Editor } from '../src/js/Editor.js'
 import { PaperEditor } from '../src/js/PaperEditor.js'
 import { createCollection } from '../src/js/Collection.js'
 import { GeometryNodeManager } from '../src/js/geometry-nodes/GeometryNodeManager.js'
+import { AddImageCommand } from '../src/js/commands/ImageCommand.js'
+import { ReorderTreeCommand } from '../src/js/commands/ReorderTreeCommand.js'
 import { buildNativeDocument, serializeNativeDocument } from '../src/js/document/DocumentSerializer.js'
 import {
   DEFAULT_TEXT_STYLE_PROPERTIES,
@@ -220,6 +222,8 @@ function assertCanonicalSubsystems(editor, root) {
   expect(textStyle.properties.fontFamily).toBe('Inter')
   expect(dimensionStyle.name).toBe(`Dimensions & <detail> "quoted" 'single'`)
   expect(dimensionStyle.properties.textStyleId).toBe('text-v3')
+  expect(dimensionStyle.properties.orientation).toBe('aligned')
+  expect(dimensionStyle.properties.position).toBe('below')
 
   const blockName = `Block & <panel> "quoted" 'single'`
   expect(editor.blockDefinitions.get(blockName)).toMatchObject({
@@ -384,6 +388,93 @@ describe('native schema-v3 semantic round trips', () => {
     expect(normalizedElement(secondRoot)).toEqual(normalizedElement(firstRoot))
   })
 
+  test('preserves an imported raster image, its collection, and XML-special file name through native save and reopen', async () => {
+    const href = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
+    const name = `Reference & <detail> "quoted" 'single'.png`
+    const collectionName = `Images & <reference> "quoted" 'single'`
+    const editor = createTestEditor()
+    const collection = createCollection(editor, collectionName)
+    const image = editor.overlays.image().attr({
+      href,
+      name,
+      x: -12.5,
+      y: 23.75,
+      width: 80,
+      height: 45,
+      preserveAspectRatio: 'xMidYMid meet',
+      'data-nanquim-transient': 'true',
+    }).remove()
+    editor.execute(new AddImageCommand(editor, image, collection))
+
+    const imageId = String(image.id())
+    const collectionId = collection.id()
+    const first = serializeNativeDocument(editor)
+    const firstRoot = parseSvg(first)
+    assertUniqueResolvableReferences(firstRoot)
+    expect(firstRoot.querySelectorAll('image')).toHaveLength(1)
+    expect(firstRoot.querySelector('[data-nanquim-transient]')).toBeNull()
+
+    const reopened = await openDocument(first, 'raster-image-native.svg')
+    const secondRoot = parseSvg(serializeNativeDocument(reopened))
+    const restoredImage = secondRoot.querySelector('image')
+    expect(Object.fromEntries(Array.from(restoredImage.attributes, attribute => [attribute.name, attribute.value])))
+      .toMatchObject({
+        id: imageId,
+        href,
+        name,
+        x: '-12.5',
+        y: '23.75',
+        width: '80',
+        height: '45',
+        preserveAspectRatio: 'xMidYMid meet',
+      })
+    expect(restoredImage.parentElement.id).toBe(collectionId)
+    expect(restoredImage.parentElement.getAttribute('name')).toBe(collectionName)
+    expect(reopened.activeCollection.id()).toBe(collectionId)
+    expect(reopened.collections.get(collectionId).group.findOne('image').attr('href')).toBe(href)
+    expect(reopened.history.undos).toHaveLength(0)
+    assertUniqueResolvableReferences(secondRoot)
+    expect(normalizedElement(secondRoot)).toEqual(normalizedElement(firstRoot))
+  })
+
+  test('preserves an image crop and the original embedded pixels through native save and reopen', async () => {
+    const href = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
+    const clip = 'inset(10% 20% 30% 15%) fill-box'
+    const editor = createTestEditor()
+    const collection = createCollection(editor, 'Cropped references')
+    const image = editor.overlays.image().attr({
+      href,
+      name: 'Cropped reference.png',
+      x: -12.5,
+      y: 23.75,
+      width: 80,
+      height: 45,
+      transform: 'translate(20 30) rotate(25)',
+      preserveAspectRatio: 'xMidYMid meet',
+      'clip-path': clip,
+    }).remove()
+    editor.execute(new AddImageCommand(editor, image, collection))
+    const collectionId = collection.id()
+
+    const first = serializeNativeDocument(editor)
+    const firstRoot = parseSvg(first)
+    const reopened = await openDocument(first, 'cropped-image-native.svg')
+    const restoredImage = reopened.collections.get(collectionId).group.findOne('image')
+    const secondRoot = parseSvg(serializeNativeDocument(reopened))
+
+    expect(restoredImage.attr('clip-path')).toBe(clip)
+    expect(restoredImage.attr('href')).toBe(href)
+    expect(restoredImage.attr('transform')).toBe('translate(20 30) rotate(25)')
+    expect(['x', 'y', 'width', 'height'].map(name => restoredImage.attr(name)))
+      .toEqual([-12.5, 23.75, 80, 45])
+    expect(restoredImage.parent().id()).toBe(collectionId)
+    expect(secondRoot.querySelectorAll('clipPath')).toHaveLength(0)
+    expect(secondRoot.getAttribute('data-nanquim-version'))
+      .toBe(firstRoot.getAttribute('data-nanquim-version'))
+    assertUniqueResolvableReferences(secondRoot)
+    expect(normalizedElement(secondRoot)).toEqual(normalizedElement(firstRoot))
+  })
+
   test('preserves the active model collection when saving from Paper Space', async () => {
     const colorContext = {
       _fillStyle: '#000000',
@@ -465,6 +556,44 @@ describe('native schema-v3 semantic round trips', () => {
     expect(migratedIds).toMatchObject(expectedIds)
     expect(editor.elementIndex).toBe(3)
     expect(serializedRoot.getAttribute('data-element-index')).toBe('3')
+  })
+
+  test('preserves reordered collections and reparented geometry through native save and reopen', async () => {
+    const editor = createTestEditor()
+    const first = editor.activeCollection
+    const second = createCollection(editor, `Destination & <group> "quoted" 'single'`)
+    const group = first.group().attr({
+      id: '0',
+      'data-group': 'true',
+      transform: 'translate(20 30) rotate(25)',
+    })
+    const rect = group.rect(10, 5).move(2, 3).attr({
+      id: '1',
+      name: `Shape & <rect> "quoted" 'single'`,
+      'data-style-overrides': '{"fill":true}',
+    }).css('fill', '#336699')
+    const other = second.circle(4).attr('id', '2')
+    editor.elementIndex = 3
+    const firstId = first.id()
+    const secondId = second.id()
+
+    editor.execute(new ReorderTreeCommand(editor, [rect], other, 'before'))
+    editor.execute(new ReorderTreeCommand(editor, [second], first, 'before'))
+    const transform = rect.attr('transform')
+    const serialized = serializeNativeDocument(editor)
+    const reopened = await openDocument(serialized, 'reordered-tree.svg')
+    const restored = reopened.drawing.findOne('[id="1"]')
+
+    expect(Array.from(reopened.drawing.node.children).map(node => node.id)).toEqual([secondId, firstId])
+    expect(Array.from(reopened.collections.get(secondId).group.node.children).map(node => node.id))
+      .toEqual(['1', '2'])
+    expect(restored.parent()).toBe(reopened.collections.get(secondId).group)
+    expect(restored.attr('transform')).toBe(transform)
+    expect(restored.attr('name')).toBe(`Shape & <rect> "quoted" 'single'`)
+    expect(restored.attr('data-style-overrides')).toBe('{"fill":true}')
+    expect(restored.css('fill')).toBe(rect.css('fill'))
+    expect(reopened.drawing.findOne('[id="0"]').children()).toHaveLength(0)
+    expect(reopened.history.undos).toHaveLength(0)
   })
 
   test('keeps persistent paste-scope wrappers canonical across save and reopen', async () => {

@@ -12,6 +12,7 @@ class DrawPolylineCommand extends Command {
     this.polyline = null
     this.ghostLine = null
     this.boundHandleMove = this.handleMove.bind(this)
+    this.boundHandleCoordinatesUpdated = this.handleCoordinatesUpdated.bind(this)
     this.boundHandleClick = this.handleClick.bind(this)
     this.boundHandleRightClick = this.handleRightClick.bind(this)
     this.boundHandleKeyDown = this.handleKeyDown.bind(this)
@@ -25,10 +26,15 @@ class DrawPolylineCommand extends Command {
       msg: 'Click to add points. Enter/Right-click to finish, Esc to cancel.',
     })
     this.editor.setIsDrawing(true)
+    this.editor.activeDrawingSnapPoints = {
+      owner: this,
+      points: this.points,
+    }
 
     const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
     activeSvg.on('mousedown.polyline', this.boundHandleClick)
     document.addEventListener('mousemove', this.boundHandleMove)
+    this.editor.signals.updatedCoordinates.add(this.boundHandleCoordinatesUpdated)
     document.addEventListener('contextmenu', this.boundHandleRightClick, true)
     document.addEventListener('keydown', this.boundHandleKeyDown)
     activeSvg.on('cancelDrawing.polyline', this.boundCancelDrawing)
@@ -91,6 +97,14 @@ class DrawPolylineCommand extends Command {
     this.polyline.plot(preview)
   }
 
+  handleCoordinatesUpdated(point) {
+    if (this.points.length === 0 || !this.polyline || !point) return
+
+    // Viewport emits this after object/grid snapping has been resolved. The
+    // native mousemove listener runs before that asynchronous snap pass.
+    this.polyline.plot([...this.points, [point.x, point.y]])
+  }
+
   finalizePolyline() {
     if (this.points.length < 2) {
       this.editor.signals.terminalLogged.dispatch({ msg: 'Need at least 2 points. Polyline cancelled.' })
@@ -116,8 +130,12 @@ class DrawPolylineCommand extends Command {
     activeSvg.off('mousedown.polyline')
     activeSvg.off('cancelDrawing.polyline')
     document.removeEventListener('mousemove', this.boundHandleMove)
+    this.editor.signals.updatedCoordinates.remove(this.boundHandleCoordinatesUpdated)
     document.removeEventListener('contextmenu', this.boundHandleRightClick, true)
     document.removeEventListener('keydown', this.boundHandleKeyDown)
+    if (this.editor.activeDrawingSnapPoints?.owner === this) {
+      this.editor.activeDrawingSnapPoints = null
+    }
   }
 
   cleanup() {
@@ -137,4 +155,4 @@ function drawPolylineCommand(editor) {
   cmd.execute()
 }
 
-export { drawPolylineCommand }
+export { DrawPolylineCommand, drawPolylineCommand }

@@ -36,6 +36,17 @@ function makeElement({
   node.getBBox = vi.fn(() => bbox || { x: 0, y: 0, width: 10, height: 10 })
   node.getTotalLength = vi.fn(() => totalLength)
   node.getPointAtLength = vi.fn(pathPoint)
+  const geometryAttributes = {
+    circle: ['cx', 'cy', 'r'],
+    ellipse: ['cx', 'cy', 'rx', 'ry'],
+    image: ['x', 'y', 'width', 'height'],
+    rect: ['x', 'y', 'width', 'height'],
+  }[type] || []
+  if (geometryAttributes.length > 0) {
+    for (const name of geometryAttributes) {
+      node[name] = { baseVal: { value: Number(attributes[name] ?? 0) } }
+    }
+  }
 
   return {
     type,
@@ -111,6 +122,117 @@ describe('snapSystem transformed geometry qualification', () => {
       point: { x: 12, y: 26 },
       type: 'endpoint',
     })
+  })
+
+  test('snaps to an imported image corner while a command is interacting', () => {
+    const image = makeElement({
+      attributes: { x: 10, y: 20, width: 80, height: 40 },
+      type: 'image',
+    })
+    const fixture = makeFixture([image], { endpoint: true }, { isInteracting: true })
+
+    expectSnap(fixture, { x: 10.5, y: 20.25 }, {
+      point: { x: 10, y: 20 },
+      type: 'endpoint',
+    })
+  })
+
+  test.each([
+    ['endpoint', { x: 210, y: 90 }],
+    ['endpoint', { x: 210, y: 190 }],
+    ['endpoint', { x: 150, y: 190 }],
+    ['endpoint', { x: 150, y: 90 }],
+    ['midpoint', { x: 210, y: 140 }],
+    ['midpoint', { x: 180, y: 190 }],
+    ['midpoint', { x: 150, y: 140 }],
+    ['midpoint', { x: 180, y: 90 }],
+    ['center', { x: 180, y: 140 }],
+  ])('snaps an image %s to its visible cropped bounds under a nested transform (%j)', (type, point) => {
+    const image = makeElement({
+      attributes: {
+        x: 10, y: 20, width: 80, height: 40,
+        'clip-path': 'inset(25% 25% 25% 12.5%) fill-box',
+      },
+      matrix: { a: 0, b: 2, c: -3, d: 0, e: 300, f: 50 },
+      type: 'image',
+    })
+    const fixture = makeFixture([image], { [type]: true })
+
+    expectSnap(fixture, { x: point.x + 0.5, y: point.y + 0.25 }, { point, type })
+    expect(checkSnap({ x: 240, y: 70 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+    fixture.editor.snapTypes[type] = false
+    expect(checkSnap(point, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([0, -10, Infinity, NaN])('does not snap to an image with invalid width %s', width => {
+    const image = makeElement({
+      attributes: { x: 10, y: 20, width, height: 40 },
+      type: 'image',
+    })
+    const fixture = makeFixture([image], { endpoint: true, midpoint: true, center: true })
+
+    expect(checkSnap({ x: 10, y: 20 }, fixture.editor, fixture.activeSvg, 100)).toBeNull()
+  })
+
+  test.each([
+    ['command ghost', image => ({ ghostNodes: new Set([image.node]) })],
+    ['transient image', image => {
+      image.node.setAttribute('data-nanquim-transient', 'true')
+      return {}
+    }],
+    ['image inside a transient group', image => {
+      const group = document.createElementNS(SVG_NS, 'g')
+      group.setAttribute('data-nanquim-transient', 'true')
+      group.append(image.node)
+      return {}
+    }],
+  ])('excludes a %s from image snap targets', (_label, configure) => {
+    const image = makeElement({
+      attributes: { x: 10, y: 20, width: 80, height: 40 },
+      type: 'image',
+    })
+    const fixture = makeFixture([image], { endpoint: true, midpoint: true, center: true }, configure(image))
+
+    expect(checkSnap({ x: 10, y: 20 }, fixture.editor, fixture.activeSvg, 100)).toBeNull()
+  })
+
+  test('does not infer nearest or intersection geometry from bitmap content or image edges', () => {
+    const image = makeElement({
+      attributes: { x: 10, y: 20, width: 80, height: 40 },
+      type: 'image',
+    })
+    const line = makeElement({ array: [[30, 0], [30, 100]], type: 'line' })
+    const fixture = makeFixture([image], { nearest: true })
+    expect(checkSnap({ x: 30, y: 20 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+
+    const intersectionFixture = makeFixture([image, line], { intersection: true })
+    expect(checkSnap({ x: 30, y: 20 }, intersectionFixture.editor, intersectionFixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([
+    {
+      cursor: { x: 25, y: 17 },
+      expected: { x: 25, y: 20 },
+      label: 'untransformed',
+      matrix: IDENTITY,
+      tolerance: 4,
+    },
+    {
+      cursor: { x: 44, y: 90 },
+      expected: { x: 40, y: 90 },
+      label: 'rotated and non-uniformly scaled',
+      matrix: { a: 0, b: 2, c: -3, d: 0, e: 100, f: 50 },
+      tolerance: 5,
+    },
+  ])('snaps to the nearest $label rectangle edge', ({ cursor, expected, matrix, tolerance }) => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 30, height: 20 },
+      matrix,
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { nearest: true })
+
+    expectSnap(fixture, cursor, { point: expected, type: 'nearest' }, tolerance)
   })
 
   test.each([
