@@ -30,7 +30,7 @@ describe('external interoperability qualification contract', () => {
     expect(manifest.blenderImport).toEqual({ objects: 17, curves: 14, splines: 14 })
     expect(manifest.toolVersions).toEqual({
       inkscape: '^Inkscape 1\\.4\\.4(?:[ (]|$)',
-      blender: '^Blender 5\\.2\\.0 LTS(?:[ (]|$)',
+      blender: '^Blender 5\\.2\\.1 LTS(?:[ (]|$)',
     })
   })
 

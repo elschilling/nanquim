@@ -1,6 +1,6 @@
 # File interoperability and Paper output
 
-Last reviewed: 2026-08-22
+Last reviewed: 2026-09-20
 
 Qualification status: **Partial — Phase 3 is in progress.**
 
@@ -131,13 +131,17 @@ paths, paint extents, marker/use reference expansion, and CSS geometry before
 untrusted nodes can enter the live document; safe siblings remain available
 with a bounded diagnostic.
 
-The local qualification recorded on 2026-08-21 produced these results:
+The local alpha.2 qualification recorded on 2026-09-20 produced these results:
 
 | Tool | Version | Recorded result |
 | --- | --- | --- |
 | Inkscape | 1.4.4 | Plain-SVG export retained the exact element inventory, physical `210mm` × `148mm` size, viewBox, and all local references, with no dangling reference. All 21 renderer-query geometry bounds matched with maximum delta 0 against the `0.01` limit. |
-| Blender | 5.2.0 LTS | SVG curve import returned `FINISHED` with 17 objects, 14 curves, and 14 splines. |
+| Blender | 5.2.1 LTS | SVG curve import returned `FINISHED` with 17 objects, 14 curves, and 14 splines. |
 | LibreCAD | 2.2.1.2 | Installed, but manual qualification is still required because the application has no supported headless semantic inspection interface. |
+
+The Blender pin was refreshed from 5.2.0 LTS after the installed 5.2.1 LTS
+retained the same import inventory. The candidate evidence is in
+`test-results/interoperability/alpha2-external/summary.json`.
 
 The manifest records absolute bounds tolerance `0.01` for the external
 renderer comparison. The Inkscape runner checks renderer-query bounds,

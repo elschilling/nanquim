@@ -5119,7 +5119,7 @@ async function runImageCropWorkflows(activePage) {
           await activePage.mouse.click(handler.x, handler.y)
           await activePage.waitForFunction(() => window.editor.isEditingVertex)
           await activePage.mouse.move(point.x, point.y)
-          await activePage.waitForFunction(({ clip }) => document.getElementById('501').getAttribute('clip-path') !== clip, {}, before)
+          await waitForRasterCropInset(activePage, '501', inset, 20)
           const preview = await rasterHandlerState(activePage, '501')
           for (const name of ['x', 'y', 'width', 'height']) assertNear(preview[name], original[name], 1e-5, `Crop preview ${name}`)
           assertRasterIdentity(original, preview)
@@ -5172,7 +5172,7 @@ async function runImageCropWorkflows(activePage) {
         await activePage.mouse.click(top.x, top.y)
         await activePage.waitForFunction(() => window.editor.isEditingVertex)
         await activePage.mouse.move(cancelPoint.x, cancelPoint.y)
-        await activePage.waitForFunction(clip => document.getElementById('501').getAttribute('clip-path') !== clip, {}, beforeCancel.clip)
+        await waitForRasterCropInset(activePage, '501', 0, 35)
         await activePage.keyboard.press('Escape')
         await activePage.waitForFunction(() => !window.editor.isEditingVertex)
         const cancelled = await rasterHandlerState(activePage, '501')
@@ -5277,6 +5277,17 @@ async function runImageCropWorkflows(activePage) {
       }, originalPreferences)
     }
   })
+}
+
+async function waitForRasterCropInset(activePage, id, index, expected) {
+  // Clicking a grip can queue a small crop before the destination move's frame.
+  // Wait for that destination preview, not merely any changed clip attribute.
+  await activePage.waitForFunction(({ id, index, expected }) => {
+    const clip = getComputedStyle(document.getElementById(id)).clipPath
+    const insets = clip.match(/^inset\(([^)]+)\)/)?.[1].split(/\s+/).map(parseFloat) || [0]
+    const crop = [insets[0], insets[1] ?? insets[0], insets[2] ?? insets[0], insets[3] ?? insets[1] ?? insets[0]]
+    return Math.abs(crop[index] - expected) <= 1.5
+  }, {}, { id, index, expected })
 }
 
 async function rasterCropPixels(activePage, id, hide = false) {

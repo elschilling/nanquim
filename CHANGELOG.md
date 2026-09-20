@@ -19,17 +19,22 @@ keep their date, commit-link, and summary columns when adding entries.
 
 ## [Unreleased]
 
+Prepared for `v0.1.0-alpha.2`; release qualification is in progress. See the
+[prepared release notes](docs/releases/v0.1.0-alpha.2.md) for compatibility,
+limitations, and the candidate verification record.
+
 ### Dated commits
 
-These entries describe development history, not production availability. The
-2026-09-17 entry is on `feat/image-outliner-editing`, proposed in
-[PR #31](https://github.com/elschilling/nanquim/pull/31). The Unreleased comparison
-link at the end of this file follows `master`; feature-branch commits are linked
-directly here until merged.
+These entries describe development history, not production availability.
+[PR #31](https://github.com/elschilling/nanquim/pull/31) was merged on
+2026-09-20 as
+[1219f96](https://github.com/elschilling/nanquim/commit/1219f96ea2ad7ac1645ec15575b3e19c2e12c746).
+That squash commit contains the September image, Outliner, Welcome, CAD-tool,
+and regression-test work; it replaces the earlier feature-branch provenance.
 
 | Commit date | Commit | Changes |
 | --- | --- | --- |
-| 2026-09-17 | [a656268](https://github.com/elschilling/nanquim/commit/a65626832de97487322e63720f2db58ca7499bcf) | Image import, resize, translation, and crop; Outliner drag-and-drop, M move dialog, and Shift-click ranges; COPY snapping fixes. |
+| 2026-09-20 | [1219f96](https://github.com/elschilling/nanquim/commit/1219f96ea2ad7ac1645ec15575b3e19c2e12c746) | Image insertion and editable cropping; Outliner organization; Welcome history; JOIN, OFFSET, FILLET, HATCH, dimension, and snapping improvements; expanded regression coverage. |
 | 2026-08-22 | [25f6847](https://github.com/elschilling/nanquim/commit/25f6847e78385299d1334fca3610123a96ca62b1) | Rotate affine-transformed geometry while preserving its local geometry, metadata, and Undo/Redo. |
 | 2026-08-21 | [4c7d7c7](https://github.com/elschilling/nanquim/commit/4c7d7c78fd9d998b7b174c1e0b1eb042ea744763) | Qualify one-sheet Paper output and SVG/DXF/PDF exchange; add interoperability fixtures, diagnostics, and performance budgets. |
 | 2026-08-21 | [e727f91](https://github.com/elschilling/nanquim/commit/e727f91cb334497648e876ec781d6db09b75655d) | Support Firefox ESR in the production browser harness and record browser qualification. |
@@ -41,7 +46,7 @@ directly here until merged.
 
 ### Added
 
-- **Pending commit:** Click the Nanquim icon in the top bar to reopen Welcome
+- Click the Nanquim icon in the top bar to reopen Welcome
   without changing the drawing. Welcome includes dated changelog history and
   commit links, keyboard navigation, and a layout that adapts to narrow windows.
 - Local PNG, JPEG, GIF, and WebP insertion with `IMAGE` (`IMG`, `IMAGEATTACH`)
@@ -73,12 +78,12 @@ directly here until merged.
 - A V8 coverage ratchet, deterministic command fixture/leak harness, and an
   explicit lifecycle and Model/Paper availability contract for all 32
   registered commands.
-- **Pending commit:** `JOIN` (`J`) combines a same-parent, connected,
+- `JOIN` (`J`) combines a same-parent, connected,
   non-branching selection of open lines, polylines, circular or elliptical
   arcs, splines, and SVG paths. All-linear results remain semantic polylines;
   mixed curves preserve their exact SVG commands in one path, with the leading
   source style and exact Undo/Redo ordering.
-- **Pending commit:** Dimension styles include persisted Orientation
+- Dimension styles include persisted Orientation
   (Horizontal, Vertical, or Aligned) and text Position (Above or Below)
   controls. DIMLINEAR follows the style, changing a style redraws its existing
   dimensions, and DIMALIGNED remains explicitly aligned.
@@ -87,7 +92,7 @@ directly here until merged.
   qualification, with isolated profiles and actionable failure artifacts.
 - Purpose-built SVG/DXF interoperability profiles with semantic expectations,
   sanitizer/degradation checks, unit/layer coverage, and a path-safe external
-  qualification runner. The recorded Inkscape 1.4.4 and Blender 5.2.0 LTS
+  qualification runner. The recorded Inkscape 1.4.4 and Blender 5.2.1 LTS
   checks pass; LibreCAD 2.2.1.2 remains an explicit manual gate.
 - Deterministic in-memory 1,000- and 10,000-element performance fixtures and a
   production-Chromium budget runner for load/save, spatial indexes, viewport
@@ -96,11 +101,11 @@ directly here until merged.
 
 ### Changed
 
-- **Pending commit:** `FILLET` rounds all four corners of an untransformed
+- `FILLET` rounds all four corners of an untransformed
   rectangle in one reversible mutation while preserving its semantic element
   and metadata. Radius zero restores square corners, and repeated rectangle or
   line-pair operations remain active until Escape.
-- **Pending commit:** `HATCH` immediately fills preselected rectangles, keeps
+- `HATCH` immediately fills preselected rectangles, keeps
   rounded corners as exact elliptical arcs, and now accepts explicitly closed
   SVG paths without flattening their curves, arcs, compound subpaths, or
   even-odd holes. Mixed selections form one reversible hatch, while click-inside
@@ -155,7 +160,7 @@ directly here until merged.
   intersection, and Block-instance bounds in root coordinates. Unsafe
   circle-only advanced snaps remain disabled when a transform makes a curve
   non-circular.
-- **Pending commit:** OFFSET supports untransformed open and explicitly closed
+- OFFSET supports untransformed open and explicitly closed
   polylines and circular arcs as well as lines, circles, and square-corner
   rectangles. Polyline offsets preserve topology with mitered corners; arc
   offsets preserve their three-point editing metadata and trimmed-circle
@@ -177,47 +182,47 @@ directly here until merged.
 
 ### Fixed
 
-- **Pending commit:** JOIN treats endpoint seams up to 0.1 mm as coincident,
+- JOIN treats endpoint seams up to 0.1 mm as coincident,
   allowing every element in a visually connected line/curve chain or loop to
   be combined without bridging a visible gap.
-- **Pending commit:** POLYLINE live segments follow the viewport's resolved
+- POLYLINE live segments follow the viewport's resolved
   object/grid snap point, and snapped coordinates are retained by committed
   vertices even when a click arrives before the next animation frame. Its
   committed in-progress vertices remain endpoint targets so the final segment
   can snap closed to the first point, without exposing the moving preview or
   leaking coordinate listeners after finish or cancellation.
-- **Pending commit:** DIMLINEAR and DIMALIGNED show a live baseline and measured
+- DIMLINEAR and DIMALIGNED show a live baseline and measured
   value while choosing the second point, even when optional F3 overlays are
   hidden, and remove the transient preview on handoff or cancellation.
-- **Pending commit:** DIST displays its live guide and completed measurement in
+- DIST displays its live guide and completed measurement in
   the viewport even when optional F3 overlays are hidden, with theme-aware text
   and Escape cleanup.
-- **Pending commit:** FILLET remains active after each completed line pair so
+- FILLET remains active after each completed line pair so
   additional pairs can be processed until Escape, with every fillet retained
   as an independent Undo/Redo mutation.
-- **Pending commit:** Selected spline paths work as finite TRIM cutting
+- Selected spline paths work as finite TRIM cutting
   boundaries for line targets, with the visible curve intersection used by
   preview, commit, and Undo/Redo.
-- **Pending commit:** Circular-arc OFFSET creates a visibly painted helper
+- Circular-arc OFFSET creates a visibly painted helper
   immediately after selecting the source, before side confirmation, including
   when the source stroke is inherited from its collection.
-- **Pending commit:** Auto-Extend detects semantic arcs as finite boundaries
+- Auto-Extend detects semantic arcs as finite boundaries
   for arc targets. Extended arcs retain their original circle and sweep, with
   exact editable metadata through Undo/Redo.
-- **Pending commit:** MIRROR rebuilds spline previews and committed paths from
+- MIRROR rebuilds spline previews and committed paths from
   their reflected fit points, keeping visible geometry and `splineData`
   synchronized through Undo/Redo.
-- **Pending commit:** SPLINE applies Ortho to pointer and snapped points relative
+- SPLINE applies Ortho to pointer and snapped points relative
   to the last committed fit point, including live preview updates when F8 or the
   toolbar changes Ortho without moving the pointer.
-- **Pending commit:** Nearest object snap detects rectangle edges, including
+- Nearest object snap detects rectangle edges, including
   rectangles beneath rotation and non-uniform scale transforms.
-- **Pending commit:** TRIM accepts window and crossing rectangles when selecting
+- TRIM accepts window and crossing rectangles when selecting
   cutting boundaries. Overlapping rectangles keep existing boundaries selected;
   individual clicks toggle them, and confirming or cancelling clears highlights
   and unfinished selection rectangles. Quick pointer movements also preserve
   the correct window or crossing direction.
-- **Pending commit:** MIRROR starts axis input immediately for preselected
+- MIRROR starts axis input immediately for preselected
   objects, enabling snaps to source and target geometry. Its axis and reflected
   preview follow the current snapped point, including stationary Snap toggles.
   The axis guide stays thin with screen-sized dashes at every zoom level.
@@ -284,6 +289,12 @@ directly here until merged.
 - Native serialization rejects unsupported SVG and XML-invalid characters
   before creating a file that could reopen with altered or missing content.
 
+## [0.1.0-alpha.2] - Unreleased
+
+Prepared candidate. Its changes remain under **Unreleased** above until release
+qualification and publication are complete. See the
+[prepared release notes](docs/releases/v0.1.0-alpha.2.md).
+
 ## [0.1.0-alpha.1] - 2026-08-20
 
 Release tag: `v0.1.0-alpha.1`. Commit:
@@ -325,4 +336,5 @@ qualified candidate and its deployment record.
   packages.
 
 [Unreleased]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.1...master
+[0.1.0-alpha.2]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.1...master
 [0.1.0-alpha.1]: https://github.com/elschilling/nanquim/releases/tag/v0.1.0-alpha.1
