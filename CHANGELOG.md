@@ -19,9 +19,10 @@ keep their date, commit-link, and summary columns when adding entries.
 
 ## [Unreleased]
 
-Prepared for `v0.1.0-alpha.2`; release qualification is in progress. See the
-[prepared release notes](docs/releases/v0.1.0-alpha.2.md) for compatibility,
-limitations, and the candidate verification record.
+## [0.1.0-alpha.2] - 2026-09-20
+
+See the [release notes](docs/releases/v0.1.0-alpha.2.md) for compatibility,
+limitations, and the qualification and deployment records.
 
 ### Dated commits
 
@@ -34,6 +35,7 @@ and regression-test work; it replaces the earlier feature-branch provenance.
 
 | Commit date | Commit | Changes |
 | --- | --- | --- |
+| 2026-09-20 | [37f9e08](https://github.com/elschilling/nanquim/commit/37f9e085f81b19f92581d9cf85bd96ad6f131e8e) | Prepare alpha.2, refresh browser and Blender qualification profiles, and synchronize crop-preview browser checks. |
 | 2026-09-20 | [1219f96](https://github.com/elschilling/nanquim/commit/1219f96ea2ad7ac1645ec15575b3e19c2e12c746) | Image insertion and editable cropping; Outliner organization; Welcome history; JOIN, OFFSET, FILLET, HATCH, dimension, and snapping improvements; expanded regression coverage. |
 | 2026-08-22 | [25f6847](https://github.com/elschilling/nanquim/commit/25f6847e78385299d1334fca3610123a96ca62b1) | Rotate affine-transformed geometry while preserving its local geometry, metadata, and Undo/Redo. |
 | 2026-08-21 | [4c7d7c7](https://github.com/elschilling/nanquim/commit/4c7d7c78fd9d998b7b174c1e0b1eb042ea744763) | Qualify one-sheet Paper output and SVG/DXF/PDF exchange; add interoperability fixtures, diagnostics, and performance budgets. |
@@ -93,7 +95,8 @@ and regression-test work; it replaces the earlier feature-branch provenance.
 - Purpose-built SVG/DXF interoperability profiles with semantic expectations,
   sanitizer/degradation checks, unit/layer coverage, and a path-safe external
   qualification runner. The recorded Inkscape 1.4.4 and Blender 5.2.1 LTS
-  checks pass; LibreCAD 2.2.1.2 remains an explicit manual gate.
+  checks pass; the alpha.2 LibreCAD 2.2.1.2 sample round trip records its
+  external color degradation and remains a bounded interoperability profile.
 - Deterministic in-memory 1,000- and 10,000-element performance fixtures and a
   production-Chromium budget runner for load/save, spatial indexes, viewport
   interactions, snapping, Outliner synchronization, and Geometry Nodes, with
@@ -289,12 +292,6 @@ and regression-test work; it replaces the earlier feature-branch provenance.
 - Native serialization rejects unsupported SVG and XML-invalid characters
   before creating a file that could reopen with altered or missing content.
 
-## [0.1.0-alpha.2] - Unreleased
-
-Prepared candidate. Its changes remain under **Unreleased** above until release
-qualification and publication are complete. See the
-[prepared release notes](docs/releases/v0.1.0-alpha.2.md).
-
 ## [0.1.0-alpha.1] - 2026-08-20
 
 Release tag: `v0.1.0-alpha.1`. Commit:
@@ -335,6 +332,6 @@ qualified candidate and its deployment record.
 - Dependency overrides address known high-severity issues in transitive
   packages.
 
-[Unreleased]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.1...master
-[0.1.0-alpha.2]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.1...master
+[Unreleased]: https://github.com/elschilling/nanquim/compare/v0.1.0-alpha.2...master
+[0.1.0-alpha.2]: https://github.com/elschilling/nanquim/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/elschilling/nanquim/releases/tag/v0.1.0-alpha.1

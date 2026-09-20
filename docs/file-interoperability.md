@@ -99,12 +99,16 @@ Automated tests cover every A0-A4 orientation at 1 and 2.5 SVG units per
 centimetre, viewport scale/origin behavior, persisted Paper state, detached
 SVG export, multiple PDF viewports, line-only geometry, reference closure,
 stroke widths, the embedded font, and vector dimension output. The settled
-local production harness passes all ten workflows in Chromium
-151.0.7922.137 and Firefox 154.0, including intercepted Paper SVG/PDF
+alpha.2 production harness passes all 43 workflows in Chrome
+153.0.8010.36 and Firefox 156.0, including intercepted Paper SVG/PDF
 downloads with exact physical page bounds, vector-only output, closed local
-references, and a nonempty embedded font. External visual comparison in
-representative renderers, direct persistent-handle coverage, Safari, and an
-exact-release-candidate rerun remain open release checks.
+references, and a nonempty embedded font. The alpha.2 Inkscape/Poppler review
+also confirmed representative linework,
+clipping, color mapping, widths, and page bounds. Its synthetic text inherited
+a thick stroke and rendered illegibly in Inkscape; real dimension commands
+set `stroke: none`. Broader visual equivalence and readable-dimension review
+remain open, as do direct persistent-handle and Safari coverage. The
+[release record](releases/v0.1.0-alpha.2.md) separates these results and gaps.
 
 ## SVG qualification profile
 
@@ -137,11 +141,11 @@ The local alpha.2 qualification recorded on 2026-09-20 produced these results:
 | --- | --- | --- |
 | Inkscape | 1.4.4 | Plain-SVG export retained the exact element inventory, physical `210mm` × `148mm` size, viewBox, and all local references, with no dangling reference. All 21 renderer-query geometry bounds matched with maximum delta 0 against the `0.01` limit. |
 | Blender | 5.2.1 LTS | SVG curve import returned `FINISHED` with 17 objects, 14 curves, and 14 splines. |
-| LibreCAD | 2.2.1.2 | Installed, but manual qualification is still required because the application has no supported headless semantic inspection interface. |
+| LibreCAD | 2.2.1.2 | A five-entity GUI export/open/edit/R2000-save/Nanquim-reopen sample preserved units, geometry and layer states, with an external Hidden-layer color rewrite recorded. |
 
 The Blender pin was refreshed from 5.2.0 LTS after the installed 5.2.1 LTS
 retained the same import inventory. The candidate evidence is in
-`test-results/interoperability/alpha2-external/summary.json`.
+`test-results/interoperability/alpha2-external-1a6665d4/summary.json`.
 
 The manifest records absolute bounds tolerance `0.01` for the external
 renderer comparison. The Inkscape runner checks renderer-query bounds,
@@ -221,8 +225,15 @@ or a beta candidate can claim DXF round-trip qualification:
    notes under the ignored `test-results/interoperability/` tree or in the
    candidate release record.
 
-This checklist has not yet been completed; installing or version-querying
-LibreCAD does not satisfy it.
+The 2026-09-20 alpha.2 sample completed the GUI round trip on source
+`1a6665d4ba3183700f778944090ac6b92d2fe3e5`. It retained centimetre units, five
+entities, bounds, polyline closure, four layer names, visibility/locking, and
+the intended line endpoint change when reopened in Nanquim. LibreCAD changed
+the Hidden layer ACI color from `-7` to `256` while retaining the frozen flag;
+complete layer-color parity is not qualified. The external rewrite is recorded
+in `test-results/interoperability/alpha2-paper/external-review.json`, with
+Nanquim reopen evidence in `librecad-reopen-browser.json` alongside it.
+This bounded sample does not qualify arbitrary DXF round trips.
 
 ## Performance qualification
 
@@ -233,9 +244,10 @@ synchronization, and Geometry Nodes evaluation using one warm-up and five
 recorded samples. Both median and nearest-rank p95 must remain below explicit
 budgets.
 
-The 2026-08-21 local Chromium 151.0.7922.137 run passed every budget for both
-datasets. This is reproducible evidence on the recorded Linux/AMD machine, not
-a cross-browser or universal hardware guarantee. See
+The 2026-09-20 alpha.2 Chrome 153.0.8010.36 run passed all 20 metric/dataset
+checks at the existing median and p95 budgets. The release record gives exact
+hardware, samples, and checksums. This evidence applies to the recorded
+Linux/AMD environment and datasets. See
 [Performance budgets](performance.md) for measurements, checksums, budgets,
 artifact safety, and interpretation.
 
@@ -267,8 +279,9 @@ third-party project files, and screenshots must not be placed in `public`.
 
 Every release candidate must rerun qualification against its exact commit.
 Earlier local or scheduled results do not qualify a later tree. Phase 3 remains
-open until the LibreCAD manual round trip, representative external Paper
-SVG/PDF review, and applicable exact-candidate browser/release gates are
-recorded. Direct persistent-file-handle and Safari checks remain governed by
+open after the bounded LibreCAD sample: broader external Paper SVG/PDF
+visual equivalence and readable-dimension review, plus applicable candidate
+browser/release gates, still require evidence. Direct persistent-file-handle
+and Safari checks remain governed by
 [Browser and file API support](browser-support.md) and the
 [release process](release-process.md).
