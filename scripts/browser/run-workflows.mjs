@@ -1257,7 +1257,18 @@ async function runWorkflows(activePage) {
   })
 
   await runCopySnapWorkflows(activePage)
+  await runRectangleNearestSnapWorkflows(activePage)
+  await runRectangleHatchWorkflows(activePage)
+  await runSplineOrthoWorkflows(activePage)
   await runMirrorSnapWorkflows(activePage)
+  await runArcAutoExtendWorkflows(activePage)
+  await runArcOffsetWorkflows(activePage)
+  await runPolylineOffsetWorkflows(activePage)
+  await runFilletRepeatWorkflows(activePage)
+  await runJoinWorkflows(activePage)
+  await runDistanceMeasurementWorkflows(activePage)
+  await runDimensionSecondPointPreviewWorkflows(activePage)
+  await runSplineTrimBoundaryWorkflows(activePage)
   await runTrimBoundarySelectionWorkflows(activePage)
   await runImageImportWorkflows(activePage)
   await runImageCropWorkflows(activePage)
@@ -1266,6 +1277,1293 @@ async function runWorkflows(activePage) {
   await runOutlinerMoveDialogWorkflows(activePage)
   await runOutlinerRangeSelectionWorkflows(activePage)
   await runWelcomeScreenWorkflows(activePage)
+}
+
+async function runRectangleHatchWorkflows(activePage) {
+  await step('hatch a selected rounded rectangle with Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
+        data-nanquim-version="3" data-element-index="942" data-active-collection-id="hatch-rectangles">
+        <g id="hatch-rectangles" data-collection="true" name="Hatch rectangles"
+          style="stroke:#ffffff;stroke-width:.3;fill:none">
+          <rect id="941" name="Rounded rectangle" x="20" y="25" width="50" height="30" rx="6" ry="4"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'hatch-rectangles.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.lastHatchPattern = 'ANSI31'
+      editor.lastHatchScale = 5
+      editor.selected = [editor.drawing.findOne('[id="941"]')]
+      editor.signals.updatedSelection.dispatch()
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the selected-rectangle HATCH fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const source = editor.drawing.findOne('[id="941"]')
+      const hatch = editor.drawing.findOne('.hatch-fill')
+      return {
+        fill: hatch?.attr('fill') || null,
+        fillRule: hatch?.attr('fill-rule') || null,
+        hatchData: hatch?.data('hatchData') || null,
+        hatchId: hatch ? String(hatch.attr('id')) : null,
+        hatchPath: hatch?.attr('d') || null,
+        history: editor.history.undos.length,
+        interacting: editor.isInteracting,
+        revision: editor.documentState.revision,
+        sourceConnected: Boolean(source?.node.isConnected),
+      }
+    })
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'h')
+    await activePage.waitForFunction(() => (
+      window.editor.history.undos.length === 1
+      && Boolean(window.editor.drawing.findOne('.hatch-fill'))
+      && !window.editor.isInteracting
+    ))
+    const hatched = await readState()
+    const expectedPath = [
+      'M 26 25',
+      'H 64',
+      'A 6 4 0 0 1 70 29',
+      'V 51',
+      'A 6 4 0 0 1 64 55',
+      'H 26',
+      'A 6 4 0 0 1 20 51',
+      'V 29',
+      'A 6 4 0 0 1 26 25',
+      'Z',
+    ].join(' ')
+    assert(hatched.hatchPath === expectedPath,
+      'HATCH did not preserve the selected rectangle rounded-corner geometry.')
+    assert(/^url\(["']?#hatch-/.test(hatched.fill || '') && hatched.fillRule === 'nonzero',
+      'HATCH did not apply the selected pattern and nonzero rectangle fill rule.')
+    assert(hatched.hatchData?.patternType === 'ANSI31' && hatched.hatchData?.hatchScale === 5,
+      'HATCH did not persist its selected rectangle pattern metadata.')
+    assert(hatched.sourceConnected && hatched.history === before.history + 1
+      && hatched.revision === before.revision + 1 && !hatched.interacting,
+    'HATCH did not commit one mutation while retaining the source rectangle.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(!undone.hatchId && undone.sourceConnected,
+      'Undo did not remove only the selected-rectangle hatch.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(redone.hatchId === hatched.hatchId && redone.hatchPath === expectedPath
+      && redone.sourceConnected,
+    'Redo did not restore the same selected-rectangle hatch.')
+    trace('rectangle-hatch', { before, hatched, undone, redone })
+  })
+}
+
+async function runJoinWorkflows(activePage) {
+  await step('join connected lines and polylines with Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 45 25"
+        data-nanquim-version="3" data-element-index="984" data-active-collection-id="join-chain">
+        <g id="join-chain" data-collection="true" name="Join chain"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <circle id="980" name="Before" cx="-2" cy="0" r="1"/>
+          <line id="981" name="First" x1="0" y1="0" x2="10" y2="0" stroke="#35d07f"/>
+          <line id="982" name="Second" x1="20" y1="0" x2="10" y2="0"/>
+          <polyline id="983" name="Third" points="30,10 25,5 20,0"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'join-chain.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.selected = ['983', '982', '981'].map(id => editor.drawing.findOne(`[id="${id}"]`))
+      editor.signals.updatedSelection.dispatch()
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the JOIN fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const collection = editor.drawing.findOne('[id="join-chain"]')
+      const joined = collection.findOne('polyline')
+      return {
+        childIds: collection.children().map(element => String(element.attr('id'))),
+        history: editor.history.undos.length,
+        joinedId: joined ? String(joined.attr('id')) : null,
+        joinedPoints: joined?.array().map(([x, y]) => [Number(x), Number(y)]) || null,
+        joinedStroke: joined?.attr('stroke') || null,
+        revision: editor.documentState.revision,
+        selected: editor.selected.map(element => String(element.attr('id'))),
+      }
+    })
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'j')
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.findOne('[id="join-chain"]').find('polyline').length === 1
+      && !window.editor.drawing.findOne('[id="981"]'))
+    const joined = await readState()
+    assert(JSON.stringify(joined.joinedPoints) === JSON.stringify([
+      [0, 0], [10, 0], [20, 0], [25, 5], [30, 10],
+    ]), 'JOIN did not create the expected ordered polyline geometry.')
+    assert(joined.joinedStroke === '#35d07f'
+      && JSON.stringify(joined.childIds) === JSON.stringify(['980', joined.joinedId]),
+    'JOIN did not preserve the leading segment style and document position.')
+    assert(joined.history === before.history + 1 && joined.revision === before.revision + 1
+      && joined.selected.length === 1 && joined.selected[0] === joined.joinedId,
+    'JOIN did not commit one selected History result.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(JSON.stringify(undone.childIds) === JSON.stringify(['980', '981', '982', '983'])
+      && undone.joinedId === '983',
+    'Undo did not restore the original JOIN sources and order.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(redone.joinedId === joined.joinedId
+      && JSON.stringify(redone.joinedPoints) === JSON.stringify(joined.joinedPoints),
+    'Redo did not restore the same joined polyline identity and geometry.')
+    trace('join', { before, joined, redone, undone })
+  })
+
+  await step('join lines, arcs, splines, and SVG paths without flattening curves', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 50 25"
+        data-nanquim-version="3" data-element-index="994" data-active-collection-id="join-curves">
+        <g id="join-curves" data-collection="true" name="Joined curves"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <line id="990" name="Line" x1="0" y1="0" x2="10" y2="0"/>
+          <path id="991" name="Arc" d="M 10 0 A 10 10 0 0 1 20 10"/>
+          <path id="992" name="Spline" d="M 30 10 C 28 10 24 10 20 10"/>
+          <path id="993" name="Imported path" d="M 30 10 Q 35 15 40 10"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'join-curves.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.selected = ['993', '992', '990', '991']
+        .map(id => editor.drawing.findOne(`[id="${id}"]`))
+      editor.signals.updatedSelection.dispatch()
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the mixed-curve JOIN fixture.')
+
+    await runTerminalCommand(activePage, 'j')
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.findOne('path[name^="Joined Path"]'))
+    const joined = await activePage.evaluate(() => {
+      const editor = window.editor
+      const path = editor.drawing.findOne('path[name^="Joined Path"]')
+      return {
+        commands: path.array().map(segment => [...segment]),
+        history: editor.history.undos.length,
+        selected: editor.selected.map(element => String(element.attr('id'))),
+        sourceCount: ['990', '991', '992', '993']
+          .filter(id => editor.drawing.findOne(`[id="${id}"]`)).length,
+      }
+    })
+    assert(JSON.stringify(joined.commands) === JSON.stringify([
+      ['M', 0, 0],
+      ['L', 10, 0],
+      ['A', 10, 10, 0, 0, 1, 20, 10],
+      ['C', 24, 10, 28, 10, 30, 10],
+      ['Q', 35, 15, 40, 10],
+    ]), 'JOIN changed or flattened mixed curve commands.')
+    assert(joined.history === 1 && joined.selected.length === 1 && joined.sourceCount === 0,
+      'Mixed-curve JOIN did not commit one selected replacement.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    await activePage.waitForFunction(() => ['990', '991', '992', '993'].every(
+      id => window.editor.drawing.findOne(`[id="${id}"]`),
+    ))
+    trace('join-curves', { joined })
+  })
+}
+
+async function runDistanceMeasurementWorkflows(activePage) {
+  await step('show DIST measurements in the viewport with optional overlays hidden', async () => {
+    const initialized = await activePage.evaluate(async () => {
+      const result = await window.editor.documents.newDocument()
+      window.editor.svg.viewbox(0, 0, 100, 75)
+      return result
+    })
+    assert(initialized?.ok, 'Could not initialize the DIST viewport fixture.')
+
+    if (await activePage.$eval('#Overlays', node => getComputedStyle(node).display !== 'none')) {
+      await activePage.keyboard.press('F3')
+    }
+    await activePage.waitForFunction(() => getComputedStyle(document.getElementById('Overlays')).display === 'none')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const first = await screenPoint(20, 20)
+    const second = await screenPoint(70, 50)
+
+    await runTerminalCommand(activePage, 'dist')
+    await activePage.mouse.click(first.x, first.y)
+    await activePage.mouse.move(second.x, second.y)
+    await activePage.waitForFunction(() => {
+      const group = document.querySelector('.measure-ghost-group[data-nanquim-transient="true"]')
+      const line = group?.querySelector('.measure-ghost')
+      if (!group || !line || group.parentElement !== window.editor.svg.node) return false
+      const style = getComputedStyle(line)
+      const bounds = line.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && style.stroke !== 'none' && Number(style.opacity) > 0
+        && (bounds.width > 0 || bounds.height > 0)
+    })
+
+    await activePage.mouse.click(second.x, second.y)
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && document.querySelector('.measure-overlay[data-nanquim-transient="true"]'))
+    const measurement = await activePage.evaluate(() => {
+      const group = document.querySelector('.measure-overlay[data-nanquim-transient="true"]')
+      const line = group.querySelector('.measure-line')
+      const text = group.querySelector('.measure-text')
+      const lineStyle = getComputedStyle(line)
+      const textStyle = getComputedStyle(text)
+      const lineBounds = line.getBoundingClientRect()
+      const textBounds = text.getBoundingClientRect()
+      return {
+        lineVisible: lineStyle.display !== 'none' && lineStyle.visibility !== 'hidden'
+          && lineStyle.stroke !== 'none' && Number(lineStyle.opacity) > 0
+          && (lineBounds.width > 0 || lineBounds.height > 0),
+        overlaysHidden: getComputedStyle(document.getElementById('Overlays')).display === 'none',
+        parentIsViewport: group.parentElement === window.editor.svg.node,
+        text: Number(text.textContent),
+        textFill: textStyle.fill,
+        textVisible: textStyle.display !== 'none' && textStyle.visibility !== 'hidden'
+          && textStyle.fill !== 'none' && Number(textStyle.opacity) > 0
+          && textBounds.width > 0 && textBounds.height > 0,
+      }
+    })
+    assert(measurement.overlaysHidden && measurement.parentIsViewport,
+      'DIST placed its result back inside the hidden optional overlay group.')
+    assert(measurement.lineVisible && measurement.textVisible,
+      'DIST created a result that was not visibly painted in the viewport.')
+    assert(Math.abs(measurement.text - Math.hypot(50, 30)) < 0.2
+      && measurement.textFill !== 'rgb(204, 204, 204)',
+      'DIST did not show the expected theme-aware measurement label.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'distance-measurement.png') })
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !document.querySelector('.measure-overlay'))
+    await activePage.keyboard.press('F3')
+    await activePage.waitForFunction(() => getComputedStyle(document.getElementById('Overlays')).display !== 'none')
+    trace('distance-measurement', measurement)
+  })
+}
+
+async function runDimensionSecondPointPreviewWorkflows(activePage) {
+  await step('apply dimension-style orientation and position to preview, placement, and redraw', async () => {
+    const initialized = await activePage.evaluate(async () => {
+      const result = await window.editor.documents.newDocument()
+      window.editor.svg.viewbox(0, 0, 100, 75)
+      window.editor.isSnapping = false
+      window.editor.gridSnap = false
+      window.editor.polarTracking = false
+      window.editor.ortho = false
+      return result
+    })
+    assert(initialized?.ok, 'Could not initialize the dimension preview fixture.')
+
+    if (await activePage.$eval('#Overlays', node => getComputedStyle(node).display !== 'none')) {
+      await activePage.keyboard.press('F3')
+    }
+    await activePage.waitForFunction(() => getComputedStyle(document.getElementById('Overlays')).display === 'none')
+
+    const setDimensionStyleOption = async (label, property, value) => {
+      await activePage.click('#tab-dimstyles')
+      await activePage.evaluate(({ labelText, nextValue }) => {
+        const accordion = document.querySelector('.prop-accordion')
+        const body = accordion?.querySelector('.dim-style-body')
+        if (body?.style.display === 'none') accordion.querySelector('.prop-accordion-header').click()
+        const row = Array.from(document.querySelectorAll('.property-row'))
+          .find(candidate => candidate.querySelector('.property-label')?.textContent === labelText)
+        const select = row?.querySelector('select')
+        if (!select) throw new Error(`Dimension style ${labelText} control was not rendered.`)
+        select.value = nextValue
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      }, { labelText: label, nextValue: value })
+      await activePage.waitForFunction(({ expected, propertyName }) => (
+        window.editor.dimensionManager.getActiveStyle().properties[propertyName] === expected
+      ), {}, { expected: value, propertyName: property })
+    }
+
+    await setDimensionStyleOption('Orientation', 'orientation', 'vertical')
+    await setDimensionStyleOption('Position', 'position', 'below')
+    const baseline = await activePage.evaluate(() => ({
+      history: window.editor.history.undos.length,
+      revision: window.editor.documentState.revision,
+    }))
+    await activePage.click('#tab-transform')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const first = await screenPoint(20, 20)
+    const second = await screenPoint(70, 50)
+
+    await runTerminalCommand(activePage, 'dm')
+    await activePage.mouse.click(first.x, first.y)
+    await activePage.mouse.move(second.x, second.y)
+    await activePage.waitForFunction(() => {
+      const group = document.querySelector('.dimension-second-point-preview[data-nanquim-transient="true"]')
+      const line = group?.querySelector('.measure-ghost')
+      const text = group?.querySelector('.measure-text')
+      if (!group || !line || !text || group.parentElement !== window.editor.svg.node) return false
+      const lineStyle = getComputedStyle(line)
+      const textStyle = getComputedStyle(text)
+      const lineBounds = line.getBoundingClientRect()
+      const textBounds = text.getBoundingClientRect()
+      return lineStyle.display !== 'none' && lineStyle.visibility !== 'hidden'
+        && lineStyle.stroke !== 'none' && Number(lineStyle.opacity) > 0
+        && (lineBounds.width > 0 || lineBounds.height > 0)
+        && textStyle.display !== 'none' && textStyle.visibility !== 'hidden'
+        && textStyle.fill !== 'none' && Number(textStyle.opacity) > 0
+        && textBounds.width > 0 && textBounds.height > 0
+        && Math.abs(Number(text.textContent)
+          - Math.abs(Number(line.getAttribute('y2')) - Number(line.getAttribute('y1')))) < 0.011
+    })
+    const preview = await activePage.evaluate(() => {
+      const group = document.querySelector('.dimension-second-point-preview[data-nanquim-transient="true"]')
+      const line = group.querySelector('.measure-ghost')
+      const text = group.querySelector('.measure-text')
+      const transform = text.getAttribute('transform') || ''
+      const translation = transform.match(/translate\(([^,]+),\s*([^\)]+)\)/)
+      return {
+        history: window.editor.history.undos.length,
+        line: ['x1', 'y1', 'x2', 'y2'].map(attribute => Number(line.getAttribute(attribute))),
+        overlaysHidden: getComputedStyle(document.getElementById('Overlays')).display === 'none',
+        parentIsViewport: group.parentElement === window.editor.svg.node,
+        revision: window.editor.documentState.revision,
+        text: text.textContent,
+        textPoint: translation ? [Number(translation[1]), Number(translation[2])] : null,
+      }
+    })
+    assert(preview.overlaysHidden && preview.parentIsViewport,
+      'DIMLINEAR placed its second-point preview inside the hidden optional overlays.')
+    assert(Math.abs(Number(preview.text) - Math.abs(preview.line[3] - preview.line[1])) < 0.011
+      && preview.history === baseline.history && preview.revision === baseline.revision,
+    'The vertical dimension style did not drive the preview without mutating the document.')
+    const previewDx = preview.line[2] - preview.line[0]
+    const previewDy = preview.line[3] - preview.line[1]
+    const previewLength = Math.hypot(previewDx, previewDy)
+    const previewMidpoint = [
+      (preview.line[0] + preview.line[2]) / 2,
+      (preview.line[1] + preview.line[3]) / 2,
+    ]
+    const previewBelowOffset = preview.textPoint
+      && (preview.textPoint[0] - previewMidpoint[0]) * (-previewDy / previewLength)
+        + (preview.textPoint[1] - previewMidpoint[1]) * (previewDx / previewLength)
+    assert(previewBelowOffset > 0,
+      'The Below style did not place the live dimension value below its baseline.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'dimension-second-point-preview.png') })
+
+    await activePage.mouse.click(second.x, second.y)
+    await activePage.waitForFunction(() => !document.querySelector('.dimension-second-point-preview'))
+    const location = await screenPoint(80, 60)
+    await activePage.mouse.move(location.x, location.y)
+    await activePage.mouse.click(location.x, location.y)
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && window.editor.drawing.findOne('[data-element-type="dimension"]'))
+    const vertical = await activePage.evaluate(() => {
+      const dimension = window.editor.drawing.findOne('[data-element-type="dimension"]')
+      const main = dimension.findOne('.dim-main-line')
+      return {
+        data: JSON.parse(dimension.attr('data-dim-data')),
+        line: ['x1', 'y1', 'x2', 'y2'].map(attribute => Number(main.attr(attribute))),
+        text: dimension.findOne('.dim-text').text(),
+        textPoint: ['x', 'y'].map(attribute => Number(dimension.findOne('.dim-text').attr(attribute))),
+      }
+    })
+    assert(Math.abs(vertical.line[0] - vertical.line[2]) < 1e-5
+      && Math.abs(Number(vertical.text) - Math.abs(vertical.data.p2.y - vertical.data.p1.y)) < 0.011
+      && vertical.textPoint[0] < vertical.line[0],
+      'The vertical dimension style did not create vertical dimension geometry.')
+
+    await setDimensionStyleOption('Orientation', 'orientation', 'aligned')
+    await activePage.waitForFunction(() => {
+      const dimension = window.editor.drawing.findOne('[data-element-type="dimension"]')
+      const main = dimension?.findOne('.dim-main-line')
+      return main && Math.abs(Number(main.attr('x1')) - Number(main.attr('x2'))) > 1e-4
+    })
+    const aligned = await activePage.evaluate(() => {
+      const dimension = window.editor.drawing.findOne('[data-element-type="dimension"]')
+      const main = dimension.findOne('.dim-main-line')
+      return {
+        data: JSON.parse(dimension.attr('data-dim-data')),
+        line: ['x1', 'y1', 'x2', 'y2'].map(attribute => Number(main.attr(attribute))),
+        orientation: window.editor.dimensionManager.getActiveStyle().properties.orientation,
+        position: window.editor.dimensionManager.getActiveStyle().properties.position,
+        text: dimension.findOne('.dim-text').text(),
+        textPoint: ['x', 'y'].map(attribute => Number(dimension.findOne('.dim-text').attr(attribute))),
+      }
+    })
+    const alignedDx = aligned.line[2] - aligned.line[0]
+    const alignedDy = aligned.line[3] - aligned.line[1]
+    const measuredDx = aligned.data.p2.x - aligned.data.p1.x
+    const measuredDy = aligned.data.p2.y - aligned.data.p1.y
+    const measuredDistance = Math.hypot(measuredDx, measuredDy)
+    const alignedMidpoint = [
+      (aligned.line[0] + aligned.line[2]) / 2,
+      (aligned.line[1] + aligned.line[3]) / 2,
+    ]
+    const alignedBelowOffset = (aligned.textPoint[0] - alignedMidpoint[0]) * (-measuredDy / measuredDistance)
+      + (aligned.textPoint[1] - alignedMidpoint[1]) * (measuredDx / measuredDistance)
+    assert(aligned.orientation === 'aligned' && aligned.position === 'below'
+      && Math.abs(Number(aligned.text) - measuredDistance) < 0.01
+      && Math.abs(alignedDx * measuredDy - alignedDy * measuredDx) < 1e-5
+      && alignedBelowOffset > 0,
+    'Aligned/Below did not redraw the existing dimension with the selected style placement.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'dimension-style-orientation.png') })
+
+    await activePage.keyboard.press('F3')
+    await activePage.waitForFunction(() => getComputedStyle(document.getElementById('Overlays')).display !== 'none')
+    trace('dimension-style-orientation', { aligned, baseline, preview, vertical })
+  })
+}
+
+async function runFilletRepeatWorkflows(activePage) {
+  await step('fillet a rectangle semantically with Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70"
+        data-nanquim-version="3" data-element-index="976" data-active-collection-id="fillet-rectangle">
+        <g id="fillet-rectangle" data-collection="true" name="Rectangle fillet"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <rect id="975" name="Room" data-zone="A" x="20" y="15" width="50" height="30"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'fillet-rectangle.svg', { type: 'image/svg+xml' }),
+      )
+      window.editor.cmdParams.filletRadius = 6
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the rectangle FILLET fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const rectangle = editor.drawing.findOne('[id="975"]')
+      return {
+        history: editor.history.undos.length,
+        interacting: editor.isInteracting,
+        name: rectangle?.attr('name') || null,
+        revision: editor.documentState.revision,
+        rx: rectangle?.node.hasAttribute('rx') ? Number(rectangle.attr('rx')) : null,
+        ry: rectangle?.node.hasAttribute('ry') ? Number(rectangle.attr('ry')) : null,
+        tag: rectangle?.type || null,
+        zone: rectangle?.attr('data-zone') || null,
+      }
+    })
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'f')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.toogledSelect.getNumListeners() > 0)
+    await activePage.evaluate(() => {
+      const editor = window.editor
+      editor.lastClick = { x: 20, y: 15 }
+      editor.signals.toogledSelect.dispatch(editor.drawing.findOne('[id="975"]'))
+    })
+    await activePage.waitForFunction(() => {
+      const editor = window.editor
+      const rectangle = editor.drawing.findOne('[id="975"]')
+      return editor.history.undos.length === 1
+        && Number(rectangle?.attr('rx')) === 6
+        && Number(rectangle?.attr('ry')) === 6
+        && editor.isInteracting && editor.selectSingleElement
+    })
+    const filleted = await readState()
+    assert(filleted.tag === 'rect' && filleted.name === 'Room' && filleted.zone === 'A'
+      && filleted.rx === 6 && filleted.ry === 6,
+    'Rectangle FILLET did not preserve its semantic element and metadata.')
+    assert(filleted.history === before.history + 1
+      && filleted.revision === before.revision + 1 && filleted.interacting,
+    'Rectangle FILLET did not create one mutation and remain active.')
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && !window.editor.selectSingleElement)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(undone.tag === 'rect' && undone.rx === null && undone.ry === null
+      && undone.name === 'Room' && undone.zone === 'A',
+    'Undo did not restore the exact square rectangle.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(redone.tag === 'rect' && redone.rx === 6 && redone.ry === 6
+      && redone.name === 'Room' && redone.zone === 'A',
+    'Redo did not restore the same semantic rectangle fillet.')
+    trace('fillet-rectangle', { before, filleted, redone, undone })
+  })
+
+  await step('fillet separated lines using their full picked rays', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.1 -0.1 1.2 1.2"
+        data-nanquim-version="3" data-element-index="972" data-active-collection-id="fillet-gap">
+        <g id="fillet-gap" data-collection="true" name="Gapped fillet"
+          style="stroke:#ffffff;stroke-width:.005;fill:none">
+          <line id="970" name="Horizontal" x1=".01" y1="0" x2="1" y2="0"/>
+          <line id="971" name="Vertical" x1="0" y1=".01" x2="0" y2="1"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'fillet-gap.svg', { type: 'image/svg+xml' }),
+      )
+      window.editor.cmdParams.filletRadius = 0.02
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the gapped FILLET fixture.')
+
+    await runTerminalCommand(activePage, 'f')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.toogledSelect.getNumListeners() > 0)
+    await activePage.evaluate(() => {
+      const editor = window.editor
+      const select = (id, point) => {
+        editor.lastClick = point
+        editor.signals.toogledSelect.dispatch(editor.drawing.findOne(`[id="${id}"]`))
+      }
+      select('970', { x: 0.011, y: 0 })
+      select('971', { x: 0, y: 0.011 })
+    })
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.findOne('path[name="Arc"]'))
+
+    const filleted = await activePage.evaluate(() => {
+      const editor = window.editor
+      const line = id => ['x1', 'y1', 'x2', 'y2'].map(attribute => (
+        Number(editor.drawing.findOne(`[id="${id}"]`).attr(attribute))
+      ))
+      const arc = editor.drawing.findOne('path[name="Arc"]')
+      return {
+        arcData: arc.data('arcData'),
+        history: editor.history.undos.length,
+        horizontal: line('970'),
+        vertical: line('971'),
+      }
+    })
+    assertNear(filleted.horizontal[0], 0.02, 1e-8, 'Gapped FILLET horizontal tangent')
+    assertNear(filleted.vertical[1], 0.02, 1e-8, 'Gapped FILLET vertical tangent')
+    assertNear(filleted.arcData.p1.x, 0.02, 1e-8, 'Gapped FILLET arc start x')
+    assertNear(filleted.arcData.p3.y, 0.02, 1e-8, 'Gapped FILLET arc end y')
+    assert(filleted.history === 1, 'Gapped FILLET did not create exactly one History mutation.')
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && !window.editor.selectSingleElement)
+    trace('fillet-gap', { filleted })
+  })
+
+  await step('repeat FILLET pairs until Escape with independent Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 40 40"
+        data-nanquim-version="3" data-element-index="974" data-active-collection-id="fillet-repeat">
+        <g id="fillet-repeat" data-collection="true" name="Repeated fillets"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <line id="970" name="First horizontal" x1="2" y1="0" x2="10" y2="0"/>
+          <line id="971" name="First vertical" x1="0" y1="2" x2="0" y2="10"/>
+          <line id="972" name="Second horizontal" x1="22" y1="20" x2="30" y2="20"/>
+          <line id="973" name="Second vertical" x1="20" y1="22" x2="20" y2="30"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'fillet-repeat.svg', { type: 'image/svg+xml' }),
+      )
+      window.editor.cmdParams.filletRadius = 0
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the repeated FILLET fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const line = id => ['x1', 'y1', 'x2', 'y2'].map(attribute => (
+        Number(editor.drawing.findOne(`[id="${id}"]`).attr(attribute))
+      ))
+      return {
+        firstHorizontal: line('970'),
+        firstVertical: line('971'),
+        history: editor.history.undos.length,
+        interacting: editor.isInteracting,
+        revision: editor.documentState.revision,
+        secondHorizontal: line('972'),
+        secondVertical: line('973'),
+        selecting: editor.selectSingleElement,
+      }
+    })
+
+    await runTerminalCommand(activePage, 'f')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.toogledSelect.getNumListeners() > 0)
+    await activePage.evaluate(() => {
+      const editor = window.editor
+      const select = (id, point) => {
+        editor.lastClick = point
+        editor.signals.toogledSelect.dispatch(editor.drawing.findOne(`[id="${id}"]`))
+      }
+      select('970', { x: 8, y: 0 })
+      select('971', { x: 0, y: 8 })
+      select('972', { x: 28, y: 20 })
+      select('973', { x: 20, y: 28 })
+    })
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 2
+      && window.editor.isInteracting && window.editor.selectSingleElement)
+
+    const repeated = await readState()
+    assert(JSON.stringify(repeated.firstHorizontal) === JSON.stringify([0, 0, 10, 0])
+      && JSON.stringify(repeated.firstVertical) === JSON.stringify([0, 0, 0, 10]),
+    'The first FILLET pair did not extend to its intersection.')
+    assert(JSON.stringify(repeated.secondHorizontal) === JSON.stringify([20, 20, 30, 20])
+      && JSON.stringify(repeated.secondVertical) === JSON.stringify([20, 20, 20, 30]),
+    'The repeated FILLET pair did not extend to its intersection.')
+    assert(repeated.history === 2 && repeated.revision === 2
+      && repeated.interacting && repeated.selecting,
+    'FILLET did not remain active with one History mutation per completed pair.')
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && !window.editor.selectSingleElement)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const onceUndone = await readState()
+    assert(JSON.stringify(onceUndone.firstHorizontal) === JSON.stringify(repeated.firstHorizontal)
+      && JSON.stringify(onceUndone.secondHorizontal) === JSON.stringify([22, 20, 30, 20]),
+    'Undo did not isolate the most recent repeated FILLET pair.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const twiceUndone = await readState()
+    assert(JSON.stringify(twiceUndone.firstHorizontal) === JSON.stringify([2, 0, 10, 0])
+      && JSON.stringify(twiceUndone.firstVertical) === JSON.stringify([0, 2, 0, 10]),
+    'The second Undo did not restore the first FILLET pair.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(JSON.stringify(redone.firstHorizontal) === JSON.stringify(repeated.firstHorizontal)
+      && JSON.stringify(redone.secondHorizontal) === JSON.stringify(repeated.secondHorizontal),
+    'Redo did not restore both repeated FILLET mutations.')
+    trace('fillet-repeat', { onceUndone, redone, repeated, twiceUndone })
+  })
+}
+
+async function runSplineTrimBoundaryWorkflows(activePage) {
+  await step('trim a line against a selected spline boundary with Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const points = [
+        { x: 50, y: 0 },
+        { x: 50, y: 10 },
+        { x: 50, y: 20 },
+        { x: 50, y: 30 },
+      ]
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -5 100 40"
+        data-nanquim-version="3" data-element-index="963" data-active-collection-id="trim-spline-boundary">
+        <g id="trim-spline-boundary" data-collection="true" name="Spline trim boundary"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <path id="960" name="Spline boundary" d="M 50 0 C 50 10, 50 20, 50 30"
+            data-spline-data="${JSON.stringify({ points }).replaceAll('"', '&quot;')}"/>
+          <line id="961" name="Trim target" x1="20" y1="15" x2="80" y2="15"/>
+        </g></svg>`
+      return window.editor.documents.openFile(new File([source], 'trim-spline-boundary.svg', { type: 'image/svg+xml' }))
+    })
+    assert(loaded?.ok, 'Could not initialize the spline TRIM boundary fixture.')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const line = editor.drawing.findOne('[id="961"]')
+      const spline = editor.drawing.findOne('[id="960"]')
+      return {
+        history: editor.history.undos.length,
+        line: ['x1', 'y1', 'x2', 'y2'].map(attribute => Number(line.attr(attribute))),
+        revision: editor.documentState.revision,
+        spline: spline.data('splineData').points,
+      }
+    })
+    const before = await readState()
+    await activePage.evaluate(() => document.querySelector('[data-outliner-id="960"] .collection-name')?.click())
+    await activePage.waitForFunction(() => window.editor.selected.some(element => element.node.id === '960'))
+    await runTerminalCommand(activePage, 'tr')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.toogledSelect.getNumListeners() > 0)
+
+    const trimPoint = await screenPoint(68, 15)
+    await activePage.mouse.move(trimPoint.x, trimPoint.y)
+    await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '961'))
+    await activePage.mouse.click(trimPoint.x, trimPoint.y)
+    await activePage.waitForFunction(() => {
+      const line = window.editor.drawing.findOne('[id="961"]')
+      return window.editor.history.undos.length === 1 && Math.abs(Number(line.attr('x2')) - 50) < 1e-4
+    })
+    const trimmed = await readState()
+    assert(trimmed.line.every((value, index) => Math.abs(value - [20, 15, 50, 15][index]) < 1e-4),
+      'TRIM did not shorten the line at the selected spline boundary.')
+    assert(JSON.stringify(trimmed.spline) === JSON.stringify(before.spline),
+      'Using the spline as a TRIM boundary changed the spline.')
+    assert(trimmed.history === before.history + 1 && trimmed.revision === before.revision + 1,
+      'Spline-bounded TRIM did not commit one document mutation.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'trim-spline-boundary.png') })
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(JSON.stringify(undone.line) === JSON.stringify(before.line),
+      'Undo did not restore the spline-bounded line trim.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assert(JSON.stringify(redone.line) === JSON.stringify(trimmed.line),
+      'Redo changed the spline-bounded line trim.')
+    trace('trim-spline-boundary', { before, trimmed, undone, redone })
+  })
+}
+
+async function runArcAutoExtendWorkflows(activePage) {
+  await step('auto-extend an arc to a finite arc boundary with Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const root = Math.SQRT1_2 * 10
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -5 35 20"
+        data-nanquim-version="3" data-element-index="953" data-active-collection-id="extend-arcs">
+        <g id="extend-arcs" data-collection="true" name="Extend arcs"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <path id="950" name="Target arc" d="M 10 0 A 10 10 0 0 1 0 10"
+            data-arc-data="{&quot;p1&quot;:{&quot;x&quot;:10,&quot;y&quot;:0},&quot;p2&quot;:{&quot;x&quot;:${root},&quot;y&quot;:${root}},&quot;p3&quot;:{&quot;x&quot;:0,&quot;y&quot;:10}}"/>
+          <path id="951" name="Boundary arc" d="M 0 0 A 10 10 0 0 1 -10 10"
+            data-arc-data="{&quot;p1&quot;:{&quot;x&quot;:0,&quot;y&quot;:0},&quot;p2&quot;:{&quot;x&quot;:${-10 + root},&quot;y&quot;:${root}},&quot;p3&quot;:{&quot;x&quot;:-10,&quot;y&quot;:10}}"/>
+        </g></svg>`
+      return window.editor.documents.openFile(new File([source], 'extend-arcs.svg', { type: 'image/svg+xml' }))
+    })
+    assert(loaded?.ok, 'Could not initialize the arc Auto-Extend fixture.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const target = editor.drawing.findOne('[id="950"]')
+      const data = target.data('arcData')
+      const p1 = data.p1, p2 = data.p2, p3 = data.p3
+      const area = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x)
+        + p2.x * p3.y - p3.x * p2.y
+      const b = (p1.x ** 2 + p1.y ** 2) * (p3.y - p2.y)
+        + (p2.x ** 2 + p2.y ** 2) * (p1.y - p3.y)
+        + (p3.x ** 2 + p3.y ** 2) * (p2.y - p1.y)
+      const c = (p1.x ** 2 + p1.y ** 2) * (p2.x - p3.x)
+        + (p2.x ** 2 + p2.y ** 2) * (p3.x - p1.x)
+        + (p3.x ** 2 + p3.y ** 2) * (p1.x - p2.x)
+      const cx = -b / (2 * area), cy = -c / (2 * area)
+      return {
+        data,
+        history: editor.history.undos.length,
+        radius: Math.hypot(p1.x - cx, p1.y - cy),
+        revision: editor.documentState.revision,
+      }
+    })
+    const before = await readState()
+    await runTerminalCommand(activePage, 'ex')
+    await activePage.keyboard.press('Enter')
+    await waitForTerminalText(activePage, 'Auto-Extend Mode ON')
+    await activePage.evaluate(() => {
+      const editor = window.editor
+      const target = editor.drawing.findOne('[id="950"]')
+      editor.lastClick = { x: 0, y: 10 }
+      editor.signals.toogledSelect.dispatch(target)
+    })
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1)
+    const extended = await readState()
+    assertNear(extended.data.p3.x, -5, 1e-5, 'Auto-extended arc endpoint x')
+    assertNear(extended.data.p3.y, Math.sqrt(75), 1e-5, 'Auto-extended arc endpoint y')
+    assertNear(extended.radius, 10, 1e-5, 'Auto-extended arc radius')
+    assert(extended.history === before.history + 1 && extended.revision === before.revision + 1,
+      'Arc Auto-Extend did not commit one document mutation.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'extend-arc-auto.png') })
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assertNear(undone.data.p3.x, before.data.p3.x, 1e-7, 'Undone arc endpoint x')
+    assertNear(undone.data.p3.y, before.data.p3.y, 1e-7, 'Undone arc endpoint y')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    assertNear(redone.data.p3.x, extended.data.p3.x, 1e-7, 'Redone arc endpoint x')
+    assertNear(redone.data.p3.y, extended.data.p3.y, 1e-7, 'Redone arc endpoint y')
+    assertNear(redone.radius, extended.radius, 1e-7, 'Redone arc radius')
+    trace('extend-arc-auto', { before, extended, undone, redone })
+  })
+}
+
+async function runSplineOrthoWorkflows(activePage) {
+  await step('constrain SPLINE fit points and its live preview with Ortho', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"
+        data-nanquim-version="3" data-element-index="931" data-active-collection-id="spline-ortho">
+        <g id="spline-ortho" data-collection="true" name="Spline Ortho"
+          style="stroke:#ffffff;stroke-width:.25;fill:none"/>
+      </svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'spline-ortho.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = true
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the SPLINE Ortho fixture.')
+
+    const pointerAt = (x, y) => activePage.evaluate(point => {
+      const editor = window.editor
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(editor.svg.node.getScreenCTM())
+      const pointer = { x: Math.round(screen.x), y: Math.round(screen.y) }
+      const world = editor.svg.point(pointer.x, pointer.y)
+      return { pointer, world: { x: world.x, y: world.y } }
+    }, { x, y })
+    const previewEnd = () => activePage.evaluate(() => {
+      const path = window.editor.drawing.node.querySelector('path[data-nanquim-transient="true"]')
+      if (!path) return null
+      const point = path.getPointAtLength(path.getTotalLength())
+      return { x: point.x, y: point.y }
+    })
+    const constrain = (point, reference) => {
+      const dx = point.x - reference.x
+      const dy = point.y - reference.y
+      return Math.abs(dx) > Math.abs(dy)
+        ? { x: point.x, y: reference.y }
+        : { x: reference.x, y: point.y }
+    }
+    const assertPreview = async (expected, label) => {
+      await activePage.waitForFunction(point => {
+        const path = window.editor.drawing.node.querySelector('path[data-nanquim-transient="true"]')
+        if (!path) return false
+        const end = path.getPointAtLength(path.getTotalLength())
+        return Math.abs(end.x - point.x) < 1e-4 && Math.abs(end.y - point.y) < 1e-4
+      }, {}, expected)
+      const actual = await previewEnd()
+      assertNear(actual.x, expected.x, 1e-4, `${label} x`)
+      assertNear(actual.y, expected.y, 1e-4, `${label} y`)
+    }
+
+    await runTerminalCommand(activePage, 'sp')
+    const first = await pointerAt(20, 20)
+    await activePage.mouse.click(first.pointer.x, first.pointer.y)
+    const second = await pointerAt(47, 31)
+    const constrainedSecond = constrain(second.world, first.world)
+    await activePage.mouse.move(second.pointer.x, second.pointer.y)
+    await assertPreview(constrainedSecond, 'Horizontal SPLINE Ortho preview')
+    await activePage.mouse.click(second.pointer.x, second.pointer.y)
+
+    const third = await pointerAt(52, 62)
+    const constrainedThird = constrain(third.world, constrainedSecond)
+    await activePage.mouse.move(third.pointer.x, third.pointer.y)
+    await assertPreview(constrainedThird, 'Vertical SPLINE Ortho preview')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'spline-ortho-preview.png') })
+
+    // F8 must redraw at the stationary pointer without requiring another move.
+    await activePage.keyboard.press('F8')
+    await assertPreview(third.world, 'Unconstrained stationary SPLINE preview')
+    await activePage.keyboard.press('F8')
+    await assertPreview(constrainedThird, 'Re-constrained stationary SPLINE preview')
+
+    await activePage.mouse.click(third.pointer.x, third.pointer.y)
+    await activePage.keyboard.press('Enter')
+    await activePage.waitForFunction(() => !window.editor.isDrawing
+      && !window.editor.drawing.node.querySelector('[data-nanquim-transient="true"]'))
+    const state = await activePage.evaluate(() => {
+      const editor = window.editor
+      const spline = editor.drawing.findOne('path')
+      return {
+        history: editor.history.undos.length,
+        points: spline?.data('splineData')?.points || [],
+        revision: editor.documentState.revision,
+      }
+    })
+    const expected = [first.world, constrainedSecond, constrainedThird]
+    assert(state.points.length === expected.length, 'SPLINE did not retain all constrained fit points.')
+    expected.forEach((point, index) => {
+      assertNear(state.points[index].x, point.x, 1e-4, `Stored SPLINE point ${index + 1} x`)
+      assertNear(state.points[index].y, point.y, 1e-4, `Stored SPLINE point ${index + 1} y`)
+    })
+    assert(state.history === 1 && state.revision === 1,
+      'SPLINE Ortho did not commit exactly one document mutation.')
+    trace('spline-ortho', { expected, state })
+  })
+}
+
+async function runRectangleNearestSnapWorkflows(activePage) {
+  await step('snap a line endpoint to the nearest point on a rectangle edge', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"
+        data-nanquim-version="3" data-element-index="921" data-active-collection-id="rectangle-nearest">
+        <g id="rectangle-nearest" data-collection="true" name="Rectangle nearest"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <rect id="920" x="30" y="30" width="40" height="25"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'rectangle-nearest.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = true
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      for (const type of Object.keys(editor.snapTypes)) editor.snapTypes[type] = type === 'nearest'
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the rectangle nearest-snap fixture.')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: screen.x, y: screen.y }
+    }, { x, y })
+    await runTerminalCommand(activePage, 'l')
+    const start = await screenPoint(12, 12)
+    await activePage.mouse.click(start.x, start.y)
+    const edge = await screenPoint(50, 30)
+    await activePage.mouse.move(edge.x, edge.y - 6)
+    await activePage.waitForFunction(() => {
+      const editor = window.editor
+      const marker = document.querySelector('#Snap > *')
+      const bounds = marker?.getBoundingClientRect()
+      return editor.snapPoint && Math.abs(editor.snapPoint.x - 50) < 1e-5
+        && Math.abs(editor.snapPoint.y - 30) < 1e-5
+        && bounds?.width > 0 && bounds.height > 0
+    })
+    await activePage.screenshot({ path: join(artifactsDirectory, 'rectangle-nearest-snap.png') })
+    await activePage.mouse.click(edge.x, edge.y - 6)
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isDrawing)
+
+    const line = await activePage.evaluate(() => {
+      const node = window.editor.drawing.node.querySelector('line')
+      return node && {
+        x1: node.x1.baseVal.value,
+        y1: node.y1.baseVal.value,
+        x2: node.x2.baseVal.value,
+        y2: node.y2.baseVal.value,
+      }
+    })
+    assert(line, 'LINE did not commit after snapping to the rectangle.')
+    assertNear(line.x2, 50, 1e-5, 'Rectangle nearest-snap line end x')
+    assertNear(line.y2, 30, 1e-5, 'Rectangle nearest-snap line end y')
+    trace('rectangle-nearest-snap', { line })
+  })
+}
+
+async function runArcOffsetWorkflows(activePage) {
+  await step('offset a circular arc with a visible preview and Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
+        data-nanquim-version="3" data-element-index="901" data-active-collection-id="offset-arcs">
+        <g id="offset-arcs" data-collection="true" name="Offset arcs" style="stroke:#ffffff;stroke-width:.3;fill:none">
+          <path id="900" name="Source arc" d="M 20 50 A 20 20 0 0 1 60 50"
+            data-arc-data="{&quot;p1&quot;:{&quot;x&quot;:20,&quot;y&quot;:50},&quot;p2&quot;:{&quot;x&quot;:40,&quot;y&quot;:30},&quot;p3&quot;:{&quot;x&quot;:60,&quot;y&quot;:50}}"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'offset-arcs.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the arc OFFSET fixture.')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const paths = []
+      const collectPaths = (root, directPreview) => root.find('path').each((path) => {
+        const data = path.data('arcData')
+        if (!data) return
+        paths.push({
+          data,
+          directPreview,
+          id: path.attr('id') == null ? null : String(path.attr('id')),
+          name: path.attr('name') ?? null,
+          paint: (() => {
+            const style = getComputedStyle(path.node)
+            return {
+              display: style.display,
+              opacity: Number(style.opacity),
+              stroke: style.stroke,
+              strokeWidth: Number.parseFloat(style.strokeWidth),
+              visibility: style.visibility,
+            }
+          })(),
+        })
+      })
+      collectPaths(editor.drawing, false)
+      collectPaths(editor.overlays, true)
+      return {
+        history: editor.history.undos.length,
+        interacting: editor.isInteracting,
+        paths,
+        revision: editor.documentState.revision,
+      }
+    })
+    const radius = data => {
+      const p1 = data.p1, p2 = data.p2, p3 = data.p3
+      const area = p1.x * (p2.y - p3.y) - p1.y * (p2.x - p3.x) + p2.x * p3.y - p3.x * p2.y
+      const b = (p1.x ** 2 + p1.y ** 2) * (p3.y - p2.y)
+        + (p2.x ** 2 + p2.y ** 2) * (p1.y - p3.y)
+        + (p3.x ** 2 + p3.y ** 2) * (p2.y - p1.y)
+      const c = (p1.x ** 2 + p1.y ** 2) * (p2.x - p3.x)
+        + (p2.x ** 2 + p2.y ** 2) * (p3.x - p1.x)
+        + (p3.x ** 2 + p3.y ** 2) * (p1.x - p2.x)
+      const cx = -b / (2 * area), cy = -c / (2 * area)
+      return Math.hypot(p1.x - cx, p1.y - cy)
+    }
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'o')
+    await typeTerminalValue(activePage, '5')
+    const sourcePoint = await screenPoint(40, 30)
+    await activePage.mouse.move(sourcePoint.x, sourcePoint.y)
+    await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '900'))
+    await activePage.mouse.click(sourcePoint.x, sourcePoint.y)
+    await activePage.waitForFunction(() => window.editor.isInteracting)
+
+    await activePage.waitForFunction(() => {
+      const preview = window.editor.overlays.node.querySelector('path[data-nanquim-transient="true"]')
+      if (!preview) return false
+      const style = getComputedStyle(preview)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0 && style.stroke !== 'none'
+        && Number.parseFloat(style.strokeWidth) > 0
+    })
+    const initialPreviewState = await readState()
+    const initialPreview = initialPreviewState.paths.find(path => path.directPreview)
+    assert(initialPreview, 'Arc OFFSET did not create a preview before side confirmation.')
+    assert(initialPreview.paint.display !== 'none' && initialPreview.paint.visibility !== 'hidden'
+      && initialPreview.paint.opacity > 0 && initialPreview.paint.stroke !== 'none'
+      && initialPreview.paint.strokeWidth > 0,
+    'Arc OFFSET preview was present but had no visible stroke before confirmation.')
+
+    const outside = await screenPoint(40, 20)
+    await activePage.mouse.move(outside.x, outside.y)
+    await activePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const previewState = await readState()
+    const preview = previewState.paths.find(path => path.directPreview)
+    assert(preview && preview.paint.display !== 'none' && preview.paint.visibility !== 'hidden'
+      && preview.paint.opacity > 0 && preview.paint.stroke !== 'none'
+      && preview.paint.strokeWidth > 0,
+    'Arc OFFSET did not expose a visibly painted concentric preview.')
+    assertNear(radius(preview.data), 25, 1e-5, 'Arc OFFSET preview radius')
+    assertNear(preview.data.p2.y, 25, 1e-5, 'Arc OFFSET preview midpoint')
+    assert(previewState.history === before.history && previewState.revision === before.revision,
+      'Arc OFFSET preview changed History or dirtied the document.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'offset-arc-preview.png') })
+
+    await activePage.mouse.click(outside.x, outside.y)
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.node.querySelectorAll('path').length === 2)
+    const placed = await readState()
+    const offset = placed.paths.find(path => path.id !== '900')
+    assert(offset && !placed.paths.some(path => path.directPreview), 'Arc OFFSET left its preview attached after commit.')
+    assertNear(radius(offset.data), 25, 1e-5, 'Committed arc OFFSET radius')
+    assertNear(offset.data.p1.x, 15, 1e-5, 'Committed arc OFFSET start point')
+    assertNear(offset.data.p2.y, 25, 1e-5, 'Committed arc OFFSET midpoint')
+    assertNear(offset.data.p3.x, 65, 1e-5, 'Committed arc OFFSET end point')
+    assert(offset.name === 'Source arc' && placed.history === before.history + 1,
+      'Arc OFFSET did not preserve its name in one History mutation.')
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(undone.paths.length === 1 && undone.paths[0].id === '900', 'Undo did not remove the offset arc.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    const redoneOffset = redone.paths.find(path => path.id !== '900')
+    assert(redoneOffset && Math.abs(radius(redoneOffset.data) - 25) < 1e-5,
+      'Redo did not restore the same offset arc geometry.')
+    trace('offset-arc', { before, initialPreviewState, previewState, placed, undone, redone })
+  })
+}
+
+async function runPolylineOffsetWorkflows(activePage) {
+  await step('offset a polyline with a visible mitered preview and Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"
+        data-nanquim-version="3" data-element-index="911" data-active-collection-id="offset-polylines">
+        <g id="offset-polylines" data-collection="true" name="Offset polylines"
+          style="stroke:#ffffff;stroke-width:.3;fill:none">
+          <polyline id="910" name="Source polyline" points="20,50 50,50 50,80"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(
+        new File([source], 'offset-polylines.svg', { type: 'image/svg+xml' }),
+      )
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the polyline OFFSET fixture.')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x), y: Math.round(screen.y) }
+    }, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const polylines = []
+      const collect = (root, directPreview) => root.find('polyline').each((polyline) => {
+        const style = getComputedStyle(polyline.node)
+        polylines.push({
+          directPreview,
+          id: polyline.attr('id') == null ? null : String(polyline.attr('id')),
+          name: polyline.attr('name') ?? null,
+          paint: {
+            display: style.display,
+            opacity: Number(style.opacity),
+            stroke: style.stroke,
+            strokeWidth: Number.parseFloat(style.strokeWidth),
+            visibility: style.visibility,
+          },
+          points: polyline.array().map(([x, y]) => [Number(x), Number(y)]),
+        })
+      })
+      collect(editor.drawing, false)
+      collect(editor.overlays, true)
+      return {
+        history: editor.history.undos.length,
+        polylines,
+        revision: editor.documentState.revision,
+      }
+    })
+    const assertPoints = (actual, expected, label) => {
+      assert(actual.length === expected.length, `${label} has the wrong point count.`)
+      expected.forEach((point, index) => {
+        assertNear(actual[index][0], point[0], 1e-5, `${label} point ${index + 1} x`)
+        assertNear(actual[index][1], point[1], 1e-5, `${label} point ${index + 1} y`)
+      })
+    }
+
+    const before = await readState()
+    await runTerminalCommand(activePage, 'o')
+    await typeTerminalValue(activePage, '5')
+    const sourcePoint = await screenPoint(35, 50)
+    await activePage.mouse.move(sourcePoint.x, sourcePoint.y)
+    await activePage.waitForFunction(() => window.editor.hoveredElements.some(element => element.node.id === '910'))
+    await activePage.mouse.click(sourcePoint.x, sourcePoint.y)
+    await activePage.waitForFunction(() => window.editor.isInteracting)
+
+    const outside = await screenPoint(35, 40)
+    await activePage.mouse.move(outside.x, outside.y)
+    await activePage.waitForFunction(() => {
+      const preview = window.editor.overlays.node.querySelector('polyline[data-nanquim-transient="true"]')
+      if (!preview) return false
+      const style = getComputedStyle(preview)
+      return style.display !== 'none' && style.visibility !== 'hidden'
+        && Number(style.opacity) > 0 && style.stroke !== 'none'
+        && Number.parseFloat(style.strokeWidth) > 0
+    })
+    const previewState = await readState()
+    const preview = previewState.polylines.find(polyline => polyline.directPreview)
+    assert(preview, 'Polyline OFFSET did not create a preview before side confirmation.')
+    assertPoints(preview.points, [[20, 45], [55, 45], [55, 80]], 'Polyline OFFSET preview')
+    assert(previewState.history === before.history && previewState.revision === before.revision,
+      'Polyline OFFSET preview changed History or dirtied the document.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'offset-polyline-preview.png') })
+
+    await activePage.mouse.click(outside.x, outside.y)
+    await activePage.waitForFunction(() => window.editor.history.undos.length === 1
+      && window.editor.drawing.node.querySelectorAll('polyline').length === 2)
+    const placed = await readState()
+    const offset = placed.polylines.find(polyline => !polyline.directPreview && polyline.id !== '910')
+    assert(offset && !placed.polylines.some(polyline => polyline.directPreview),
+      'Polyline OFFSET left its preview attached after commit.')
+    assertPoints(offset.points, [[20, 45], [55, 45], [55, 80]], 'Committed polyline OFFSET')
+    assert(offset.name === 'Source polyline' && placed.history === before.history + 1,
+      'Polyline OFFSET did not preserve its name in one History mutation.')
+    assertPoints(
+      placed.polylines.find(polyline => polyline.id === '910').points,
+      [[20, 50], [50, 50], [50, 80]],
+      'Source polyline after OFFSET',
+    )
+
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.selectSingleElement)
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(undone.polylines.filter(polyline => !polyline.directPreview).length === 1,
+      'Undo did not remove the offset polyline.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    const redoneOffset = redone.polylines.find(polyline => !polyline.directPreview && polyline.id !== '910')
+    assert(redoneOffset, 'Redo did not restore the offset polyline.')
+    assertPoints(redoneOffset.points, offset.points, 'Redone polyline OFFSET')
+    trace('offset-polyline', { before, previewState, placed, undone, redone })
+  })
 }
 
 async function runWelcomeScreenWorkflows(activePage) {
@@ -1739,6 +3037,133 @@ async function runMirrorSnapWorkflows(activePage) {
       && window.editor.handlers.node.childElementCount > 0)
     await activePage.keyboard.press('Escape')
     trace('mirror-snap', { original, placed, cancelled, promptCancelled, invalid })
+  })
+
+  await step('mirror a spline preview and preserve its fit points through Undo/Redo', async () => {
+    const loaded = await activePage.evaluate(async () => {
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"
+        data-nanquim-version="3" data-element-index="941" data-active-collection-id="mirror-spline">
+        <g id="mirror-spline" data-collection="true" name="Mirror spline"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <path id="940" name="Source spline"
+            d="M 20 20 C 23.333333333333332 23.333333333333332, 26.666666666666668 30, 30 30 C 33.333333333333336 30, 36.666666666666664 23.333333333333332, 40 20"
+            data-spline-data="{&quot;points&quot;:[{&quot;x&quot;:20,&quot;y&quot;:20},{&quot;x&quot;:30,&quot;y&quot;:30},{&quot;x&quot;:40,&quot;y&quot;:20}]}"/>
+        </g></svg>`
+      const result = await window.editor.documents.openFile(new File([source], 'mirror-spline.svg', { type: 'image/svg+xml' }))
+      const editor = window.editor
+      editor.isSnapping = false
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      return result
+    })
+    assert(loaded?.ok, 'Could not initialize the MIRROR spline fixture.')
+
+    const screenPoint = (x, y) => activePage.evaluate(point => {
+      const editor = window.editor
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(editor.svg.node.getScreenCTM())
+      const pointer = { x: Math.round(screen.x), y: Math.round(screen.y) }
+      const world = editor.svg.point(pointer.x, pointer.y)
+      return { pointer, world: { x: world.x, y: world.y } }
+    }, { x, y })
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      const splines = []
+      editor.drawing.find('path').each((path) => {
+        const data = path.data('splineData')
+        if (!data) return
+        const length = path.node.getTotalLength()
+        const start = path.node.getPointAtLength(0)
+        const end = path.node.getPointAtLength(length)
+        splines.push({
+          end: { x: end.x, y: end.y },
+          id: path.attr('id') == null ? null : String(path.attr('id')),
+          points: data.points,
+          start: { x: start.x, y: start.y },
+          transient: path.attr('data-nanquim-transient') === 'true',
+        })
+      })
+      return {
+        history: editor.history.undos.length,
+        revision: editor.documentState.revision,
+        splines,
+      }
+    })
+    const sourcePoints = [{ x: 20, y: 20 }, { x: 30, y: 30 }, { x: 40, y: 20 }]
+    const before = await readState()
+    await activePage.evaluate(() => document.querySelector('[data-outliner-id="940"] .collection-name')?.click())
+    await activePage.waitForFunction(() => window.editor.selected.some(element => element.node.id === '940'))
+    await runTerminalCommand(activePage, 'mi')
+    await activePage.waitForFunction(() => window.editor.isInteracting
+      && window.editor.signals.pointCaptured.getNumListeners() > 0)
+    const first = await screenPoint(50, 10)
+    const second = await screenPoint(50, 60)
+    await activePage.mouse.click(first.pointer.x, first.pointer.y)
+    await activePage.waitForFunction(() => document.querySelector('.mirror-axis-helper')
+      && window.editor.drawing.node.querySelector('path[data-nanquim-transient="true"]'))
+    await activePage.mouse.move(second.pointer.x, second.pointer.y)
+    const reflectedPoints = sourcePoints.map(point => ({
+      x: 2 * first.world.x - point.x,
+      y: point.y,
+    }))
+    await activePage.waitForFunction(expected => {
+      let preview = null
+      window.editor.drawing.find('[data-nanquim-transient="true"]').each((element) => {
+        if (!preview && element.data('splineData')) preview = element
+      })
+      if (!preview) return false
+      const points = preview.data('splineData').points
+      const start = preview.node.getPointAtLength(0)
+      const end = preview.node.getPointAtLength(preview.node.getTotalLength())
+      return points.length === expected.length
+        && points.every((point, index) => Math.abs(point.x - expected[index].x) < 1e-4
+          && Math.abs(point.y - expected[index].y) < 1e-4)
+        && Math.abs(start.x - expected[0].x) < 1e-4
+        && Math.abs(end.x - expected.at(-1).x) < 1e-4
+    }, {}, reflectedPoints)
+    const previewState = await readState()
+    const preview = previewState.splines.find(spline => spline.transient)
+    assert(preview, 'MIRROR did not expose a reflected spline preview.')
+    assertNear(preview.start.x, reflectedPoints[0].x, 1e-4, 'Mirrored spline preview start x')
+    assertNear(preview.end.x, reflectedPoints.at(-1).x, 1e-4, 'Mirrored spline preview end x')
+    assert(previewState.history === before.history && previewState.revision === before.revision,
+      'MIRROR spline preview changed History or dirtied the document.')
+    await activePage.screenshot({ path: join(artifactsDirectory, 'mirror-spline-preview.png') })
+
+    await activePage.mouse.click(second.pointer.x, second.pointer.y)
+    await typeTerminalValue(activePage, 'n')
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && !window.editor.drawing.node.querySelector('[data-nanquim-transient="true"]'))
+    const placed = await readState()
+    const copy = placed.splines.find(spline => spline.id !== '940')
+    assert(copy && placed.splines.length === 2, 'MIRROR did not commit one spline copy.')
+    reflectedPoints.forEach((point, index) => {
+      assertNear(copy.points[index].x, point.x, 1e-4, `Mirrored spline fit point ${index + 1} x`)
+      assertNear(copy.points[index].y, point.y, 1e-4, `Mirrored spline fit point ${index + 1} y`)
+    })
+    assertNear(copy.start.x, reflectedPoints[0].x, 1e-4, 'Committed mirrored spline start x')
+    assertNear(copy.end.x, reflectedPoints.at(-1).x, 1e-4, 'Committed mirrored spline end x')
+    assert(placed.history === before.history + 1 && placed.revision === before.revision + 1,
+      'MIRROR spline did not commit one document mutation.')
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const undone = await readState()
+    assert(undone.splines.length === 1 && undone.splines[0].id === '940',
+      'Undo did not remove the mirrored spline copy.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const redone = await readState()
+    const redoneCopy = redone.splines.find(spline => spline.id !== '940')
+    assert(redoneCopy && Math.abs(redoneCopy.start.x - copy.start.x) < 1e-4
+      && Math.abs(redoneCopy.end.x - copy.end.x) < 1e-4,
+    'Redo changed the mirrored spline geometry.')
+    trace('mirror-spline', { before, previewState, placed, undone, redone })
   })
 
   await step('keep the MIRROR axis thin and readable across zoom levels and themes', async () => {

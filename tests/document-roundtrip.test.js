@@ -222,6 +222,8 @@ function assertCanonicalSubsystems(editor, root) {
   expect(textStyle.properties.fontFamily).toBe('Inter')
   expect(dimensionStyle.name).toBe(`Dimensions & <detail> "quoted" 'single'`)
   expect(dimensionStyle.properties.textStyleId).toBe('text-v3')
+  expect(dimensionStyle.properties.orientation).toBe('aligned')
+  expect(dimensionStyle.properties.position).toBe('below')
 
   const blockName = `Block & <panel> "quoted" 'single'`
   expect(editor.blockDefinitions.get(blockName)).toMatchObject({

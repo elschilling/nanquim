@@ -24,6 +24,7 @@ const expectedCommands = [
   'SCALE',
   'OFFSET',
   'FILLET',
+  'JOIN',
   'MATCH_PROPERTIES',
   'ERASE',
   'EXTEND',

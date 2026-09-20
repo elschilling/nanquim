@@ -58,27 +58,23 @@ class LinearDimensionCommand extends Command {
             msg: 'Specify second extension line origin: ',
         })
 
-        this.ghostGroup = this.editor.overlays.group().addClass('measure-ghost-group')
-        this.ghostLine = this.ghostGroup
-            .line(point.x, point.y, point.x, point.y)
-            .addClass('measure-ghost')
-            
-        // Initial ghost line styling
-        const activeStyleId = this.editor.dimensionManager.activeStyleId
-        const activeStyle = this.editor.dimensionManager.getStyle(activeStyleId)
-        this.ghostLine.stroke({ 
-            color: activeStyle.lineColor && activeStyle.lineColor !== 'inherit' ? activeStyle.lineColor : 'white', 
-            width: 1 / this.editor.svg.zoom() 
-        })
-        this.ghostLine.css('opacity', 0.5)
-
-        this.boundOnMouseMove1 = (e) => {
-            const coords = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
-            if (this.ghostLine) {
-                this.ghostLine.plot(this.p1.x, this.p1.y, coords.x, coords.y)
-            }
+        this.ghostGroup = LinearDimensionCommand.createPreviewGroup(this.editor)
+        this.boundOnMouseMove1 = (coords) => {
+            const point = this.editor.snapPoint || coords
+            if (!point || !this.ghostGroup) return
+            const properties = this.editor.dimensionManager
+                .getActiveStyle?.()?.properties || {}
+            LinearDimensionCommand.renderSecondPointPreview(
+                this.ghostGroup,
+                this.p1,
+                point,
+                properties.orientation || 'linear',
+                properties.position || 'above',
+                this.editor.svg.zoom()
+            )
         }
-        this.editor.svg.on('mousemove', this.boundOnMouseMove1)
+        this.editor.signals.updatedCoordinates.add(this.boundOnMouseMove1, this)
+        this.boundOnMouseMove1(this.editor.snapPoint || this.editor.coordinates || point)
 
         this.boundOnSecondPoint = (p) => this.onSecondPoint(p)
         this.editor.signals.pointCaptured.addOnce(this.boundOnSecondPoint)
@@ -95,7 +91,7 @@ class LinearDimensionCommand extends Command {
             this.editor.signals.coordinateInput.remove(this.boundOnSecondCoordinateInput)
         }
         if (this.boundOnMouseMove1) {
-            this.editor.svg.off('mousemove', this.boundOnMouseMove1)
+            this.editor.signals.updatedCoordinates.remove(this.boundOnMouseMove1, this)
             this.boundOnMouseMove1 = null
         }
         this.p2 = point
@@ -109,10 +105,10 @@ class LinearDimensionCommand extends Command {
         })
 
         // Move ghost line into full measuring preview
-        if (this.ghostLine) {
-            this.ghostLine.remove()
-            this.ghostLine = null
-        }
+        this.ghostGroup.clear()
+        this.ghostGroup.removeClass('dimension-second-point-preview')
+        this.ghostLine = null
+        this.ghostText = null
 
         // Draw temporary dimension group in overlays
         this.boundOnMouseMove2 = (e) => {
@@ -207,7 +203,9 @@ class LinearDimensionCommand extends Command {
     }
 
     cleanup() {
-        if (this.boundOnMouseMove1) this.editor.svg.off('mousemove', this.boundOnMouseMove1)
+        if (this.boundOnMouseMove1) {
+            this.editor.signals.updatedCoordinates.remove(this.boundOnMouseMove1, this)
+        }
         if (this.boundOnMouseMove2) this.editor.svg.off('mousemove', this.boundOnMouseMove2)
         if (this.ghostGroup) this.ghostGroup.remove()
 
@@ -225,6 +223,66 @@ class LinearDimensionCommand extends Command {
         this.deferSessionTask(() => {
             this.editor.selectSingleElement = false
         }, 10)
+    }
+
+    static createPreviewGroup(editor) {
+        return editor.svg
+            .group()
+            .addClass('measure-ghost-group')
+            .addClass('dimension-second-point-preview')
+            .attr({
+                'aria-hidden': 'true',
+                'data-nanquim-transient': 'true',
+                'pointer-events': 'none',
+            })
+    }
+
+    static renderSecondPointPreview(
+        group,
+        p1,
+        p2,
+        orientation = 'linear',
+        position = 'above',
+        zoom = 1
+    ) {
+        group.clear()
+        const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+        const dx = p2.x - p1.x
+        const dy = p2.y - p1.y
+        const distance = Math.hypot(dx, dy)
+        const isAligned = orientation === 'aligned'
+        const isHorizontal = orientation === 'horizontal'
+            || (orientation !== 'vertical' && Math.abs(dx) > Math.abs(dy))
+        const value = isAligned
+            ? distance
+            : (isHorizontal ? Math.abs(dx) : Math.abs(dy))
+
+        group
+            .line(p1.x, p1.y, p2.x, p2.y)
+            .addClass('measure-ghost')
+            .stroke({ width: 1.5 })
+            .attr('stroke-dasharray', '6 4')
+
+        const angle = Math.atan2(dy, dx)
+        let angleDeg = angle * (180 / Math.PI)
+        if (angleDeg > 90) angleDeg -= 180
+        if (angleDeg < -90) angleDeg += 180
+        const offset = 10 / safeZoom
+        const side = position === 'below' ? 1 : -1
+        const textX = p1.x + dx / 2 - Math.sin(angle) * offset * side
+        const textY = p1.y + dy / 2 + Math.cos(angle) * offset * side
+
+        group
+            .text(value.toFixed(2))
+            .addClass('measure-text')
+            .attr({
+                'dominant-baseline': 'middle',
+                'font-family': "'JetBrains Mono', 'Fira Code', monospace",
+                'font-size': 14 / safeZoom,
+                'text-anchor': 'middle',
+                transform: `translate(${textX}, ${textY}) rotate(${angleDeg})`,
+            })
+            .css('opacity', 0.75)
     }
 
     static renderDimensionGraphics(group, p1, p2, p3, style, zoom = 1, isGhost = false, dimType = 'linear', editor = null) {
@@ -246,9 +304,21 @@ class LinearDimensionCommand extends Command {
         const offX = Math.abs(p3.x - p1.x)
         const offY = Math.abs(p3.y - p1.y)
 
-        // Determine orientation
-        const isAligned = dimType === 'aligned'
-        const isHorizontalDir = !isAligned && Math.abs(dx) > Math.abs(dy)
+        // A style orientation overrides the command's legacy geometry mode.
+        // Styles without the property retain their prior command behavior.
+        const styleOrientation = ['horizontal', 'vertical', 'aligned'].includes(props.orientation)
+            ? props.orientation
+            : null
+        // DIMALIGNED is an explicit command and remains aligned. DIMLINEAR
+        // follows the selected style, including its Aligned option.
+        const effectiveOrientation = dimType === 'aligned'
+            ? 'aligned'
+            : (styleOrientation || dimType)
+        const isAligned = effectiveOrientation === 'aligned'
+        const isHorizontalDir = !isAligned && (
+            effectiveOrientation === 'horizontal'
+            || (effectiveOrientation !== 'vertical' && Math.abs(dx) > Math.abs(dy))
+        )
 
         let ex1Start, ex1End, ex2Start, ex2End
         let dimStart, dimEnd
@@ -383,23 +453,13 @@ class LinearDimensionCommand extends Command {
         let textBaseX = (dimStart.x + dimEnd.x) / 2
         let textBaseY = (dimStart.y + dimEnd.y) / 2
         
-        const displayTextOffset = props.textOffset
-        if (isAligned) {
-            const ux = dx / p1p2Dist
-            const uy = dy / p1p2Dist
-            const nx = -uy
-            const ny = ux
-            const d = (p3.x - p1.x) * nx + (p3.y - p1.y) * ny
-            const signD = Math.sign(d) || 1
-            textBaseX += (displayTextOffset * signD) * nx
-            textBaseY += (displayTextOffset * signD) * ny
-        } else if (isHorizontalDir) {
-            const dirY = Math.sign(dimStart.y - Math.min(p1.y, p2.y)) || -1
-            textBaseY += displayTextOffset * dirY
-        } else {
-            const dirX = Math.sign(dimStart.x - Math.min(p1.x, p2.x)) || -1
-            textBaseX += displayTextOffset * dirX
-        }
+        const displayTextOffset = Math.abs(props.textOffset)
+        const positionSide = props.position === 'below' ? 1 : -1
+        const positionAngle = isAligned
+            ? angle * (Math.PI / 180)
+            : (isHorizontalDir ? 0 : Math.PI / 2)
+        textBaseX -= Math.sin(positionAngle) * displayTextOffset * positionSide
+        textBaseY += Math.cos(positionAngle) * displayTextOffset * positionSide
         
         let txtX = textBaseX
         let txtY = textBaseY

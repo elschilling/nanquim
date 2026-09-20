@@ -36,8 +36,14 @@ function makeElement({
   node.getBBox = vi.fn(() => bbox || { x: 0, y: 0, width: 10, height: 10 })
   node.getTotalLength = vi.fn(() => totalLength)
   node.getPointAtLength = vi.fn(pathPoint)
-  if (type === 'image') {
-    for (const name of ['x', 'y', 'width', 'height']) {
+  const geometryAttributes = {
+    circle: ['cx', 'cy', 'r'],
+    ellipse: ['cx', 'cy', 'rx', 'ry'],
+    image: ['x', 'y', 'width', 'height'],
+    rect: ['x', 'y', 'width', 'height'],
+  }[type] || []
+  if (geometryAttributes.length > 0) {
+    for (const name of geometryAttributes) {
       node[name] = { baseVal: { value: Number(attributes[name] ?? 0) } }
     }
   }
@@ -201,6 +207,32 @@ describe('snapSystem transformed geometry qualification', () => {
 
     const intersectionFixture = makeFixture([image, line], { intersection: true })
     expect(checkSnap({ x: 30, y: 20 }, intersectionFixture.editor, intersectionFixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([
+    {
+      cursor: { x: 25, y: 17 },
+      expected: { x: 25, y: 20 },
+      label: 'untransformed',
+      matrix: IDENTITY,
+      tolerance: 4,
+    },
+    {
+      cursor: { x: 44, y: 90 },
+      expected: { x: 40, y: 90 },
+      label: 'rotated and non-uniformly scaled',
+      matrix: { a: 0, b: 2, c: -3, d: 0, e: 100, f: 50 },
+      tolerance: 5,
+    },
+  ])('snaps to the nearest $label rectangle edge', ({ cursor, expected, matrix, tolerance }) => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 30, height: 20 },
+      matrix,
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { nearest: true })
+
+    expectSnap(fixture, cursor, { point: expected, type: 'nearest' }, tolerance)
   })
 
   test.each([

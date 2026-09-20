@@ -71,8 +71,17 @@ directly here until merged.
 - A resizable left command palette with distinct project-authored icons for all
   registered tools, compact and categorized labeled modes, and an `F4` toggle.
 - A V8 coverage ratchet, deterministic command fixture/leak harness, and an
-  explicit lifecycle and Model/Paper availability contract for all 31
+  explicit lifecycle and Model/Paper availability contract for all 32
   registered commands.
+- **Pending commit:** `JOIN` (`J`) combines a same-parent, connected,
+  non-branching selection of open lines, polylines, circular or elliptical
+  arcs, splines, and SVG paths. All-linear results remain semantic polylines;
+  mixed curves preserve their exact SVG commands in one path, with the leading
+  source style and exact Undo/Redo ordering.
+- **Pending commit:** Dimension styles include persisted Orientation
+  (Horizontal, Vertical, or Aligned) and text Position (Above or Below)
+  controls. DIMLINEAR follows the style, changing a style redraws its existing
+  dimensions, and DIMALIGNED remains explicitly aligned.
 - Production-build browser workflows for current Chromium on pull requests
   and scheduled/prerelease current/previous Chromium plus Firefox stable/ESR
   qualification, with isolated profiles and actionable failure artifacts.
@@ -87,6 +96,14 @@ directly here until merged.
 
 ### Changed
 
+- **Pending commit:** `FILLET` rounds all four corners of an untransformed
+  rectangle in one reversible mutation while preserving its semantic element
+  and metadata. Radius zero restores square corners, and repeated rectangle or
+  line-pair operations remain active until Escape.
+- **Pending commit:** `HATCH` immediately fills preselected rectangles, keeps
+  rounded corners as exact elliptical arcs, supports multiple rectangles in one
+  reversible hatch, and retains click-inside boundary detection when no
+  rectangle-only preselection exists.
 - Native schema-v1 and schema-v2 documents now migrate through a bounded,
   detached preparation pipeline before the live editor is replaced.
 - Opening or creating a document now resets command helpers, selection,
@@ -135,9 +152,12 @@ directly here until merged.
   intersection, and Block-instance bounds in root coordinates. Unsafe
   circle-only advanced snaps remain disabled when a transform makes a curve
   non-circular.
-- OFFSET now has an explicit support policy: untransformed lines, circles, and
-  square-corner rectangles use one stable History mutation, while transformed,
-  rounded-rectangle, and other unqualified input is rejected before ghosting.
+- **Pending commit:** OFFSET supports untransformed open and explicitly closed
+  polylines and circular arcs as well as lines, circles, and square-corner
+  rectangles. Polyline offsets preserve topology with mitered corners; arc
+  offsets preserve their three-point editing metadata and trimmed-circle
+  geometry through Undo/Redo. Transformed, degenerate, self-intersecting,
+  collapsed, and other unqualified input is rejected before mutation.
 - Paper viewport Undo/Redo now persists semantic viewport state: Redo creates a
   fresh live object with the same id and geometry and reconnects selection and
   interaction ownership to it.
@@ -154,6 +174,32 @@ directly here until merged.
 
 ### Fixed
 
+- **Pending commit:** DIMLINEAR and DIMALIGNED show a live baseline and measured
+  value while choosing the second point, even when optional F3 overlays are
+  hidden, and remove the transient preview on handoff or cancellation.
+- **Pending commit:** DIST displays its live guide and completed measurement in
+  the viewport even when optional F3 overlays are hidden, with theme-aware text
+  and Escape cleanup.
+- **Pending commit:** FILLET remains active after each completed line pair so
+  additional pairs can be processed until Escape, with every fillet retained
+  as an independent Undo/Redo mutation.
+- **Pending commit:** Selected spline paths work as finite TRIM cutting
+  boundaries for line targets, with the visible curve intersection used by
+  preview, commit, and Undo/Redo.
+- **Pending commit:** Circular-arc OFFSET creates a visibly painted helper
+  immediately after selecting the source, before side confirmation, including
+  when the source stroke is inherited from its collection.
+- **Pending commit:** Auto-Extend detects semantic arcs as finite boundaries
+  for arc targets. Extended arcs retain their original circle and sweep, with
+  exact editable metadata through Undo/Redo.
+- **Pending commit:** MIRROR rebuilds spline previews and committed paths from
+  their reflected fit points, keeping visible geometry and `splineData`
+  synchronized through Undo/Redo.
+- **Pending commit:** SPLINE applies Ortho to pointer and snapped points relative
+  to the last committed fit point, including live preview updates when F8 or the
+  toolbar changes Ortho without moving the pointer.
+- **Pending commit:** Nearest object snap detects rectangle edges, including
+  rectangles beneath rotation and non-uniform scale transforms.
 - **Pending commit:** TRIM accepts window and crossing rectangles when selecting
   cutting boundaries. Overlapping rectangles keep existing boundaries selected;
   individual clicks toggle them, and confirming or cancelling clears highlights

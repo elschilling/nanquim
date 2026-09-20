@@ -43,6 +43,7 @@ const commandIconCells = {
   AREA: [4, 3],
   VIEWPORT: [5, 3],
   IMAGE: [6, 3],
+  JOIN: [7, 3],
 }
 
 function percentage(index, count) {

@@ -1,6 +1,7 @@
 import { getArcGeometry } from '../utils/arcUtils'
 import { Command } from '../Command'
 import { applyCollectionStyleToElement } from '../Collection'
+import { catmullRomToBezierPath } from './DrawSplineCommand'
 import { renderEllipseArc } from '../utils/ellipseArcUtils'
 import { remapSvgIds } from '../utils/sanitizeSvg'
 import {
@@ -309,8 +310,8 @@ class MirrorCommand extends Command {
                     // Spline: reflect all control points and rebuild with Catmull-Rom
                     const sd = originalPos.splineData
                     const reflectedPoints = sd.points.map(p => reflectPoint(p, this.basePoint, p2))
+                    clone.plot(catmullRomToBezierPath(reflectedPoints))
                     clone.data('splineData', { points: reflectedPoints })
-                    // Path array already handled by reflectPath above for visual
                 } else {
                     // General path (DXF import, etc.): reflect the path segments
                     clone.plot(reflectPath(originalPos.pathArray, this.basePoint, p2))

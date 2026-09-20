@@ -11,7 +11,14 @@ import {
   calculateLocalDelta
 } from './utils/calculateDistance'
 import { isLineIntersectingRect, isCircleIntersectingRect, isPolygonIntersectingRect } from './utils/intersection'
-import { applyOffsetToElement, computeOffsetVector } from './utils/offsetCalc'
+import {
+  applyArcOffsetToElement,
+  applyPolylineOffsetToElement,
+  computeArcOffsetGeometry,
+  computeOffsetVector,
+  computePolylineOffsetGeometry,
+  getOffsetResultIssue,
+} from './utils/offsetCalc'
 import { getSelectableElements, findSelectableAncestor } from './Collection'
 import { getPreferences } from './Preferences'
 import { commitVertexEditUpdates } from './commands/VertexEditTransaction'
@@ -543,12 +550,13 @@ function Viewport(editor) {
     rootRotationContexts.clear()
   }
 
-  function onOffsetGhostingStarted(element, distance) {
+  function onOffsetGhostingStarted(element, distance, point) {
     const el = element[0]
     initialTransforms.set(el, el.transform())
     ghostElements = el
     isGhostingOffset = true
     offsetDistance = distance
+    if (point) updateOffsetGhosts(point)
   }
 
   function onOffsetGhostingStopped() {
@@ -1864,15 +1872,24 @@ function Viewport(editor) {
     }
   }
 
-  // Update offset ghosts: translate for lines/paths, resize for circles/rects
+  // Update offset ghosts: translate lines and rebuild or resize other geometry.
   function updateOffsetGhosts(point) {
     if (ghostElements) {
       if (!offsetGhostClone) {
         offsetGhostClone = ghostElements.clone()
-        offsetGhostClone.putIn(editor.drawing)
+        offsetGhostClone.putIn(editor.overlays)
+        offsetGhostClone.removeClass('elementHover')
+        offsetGhostClone.removeClass('elementSelected')
+        offsetGhostClone.addClass('ghostLine')
+        offsetGhostClone.fill('none')
+        offsetGhostClone.attr({
+          'data-nanquim-transient': 'true',
+          id: null,
+          'pointer-events': 'none',
+        })
       }
 
-      // For circles/rects, resize instead of translate
+      // Circular arcs/circles and rectangles resize instead of translating.
       if (ghostElements.type === 'circle') {
         offsetGhostClone.transform({}) // Reset transform
         const cx = ghostElements.cx()
@@ -1886,6 +1903,22 @@ function Viewport(editor) {
         offsetGhostClone.center(cx, cy)
         if (offsetGhostClone.radius) offsetGhostClone.radius(newR)
         else offsetGhostClone.attr('r', newR)
+      } else if (ghostElements.type === 'path' && ghostElements.data('arcData')) {
+        if (getOffsetResultIssue(ghostElements, point, offsetDistance)) {
+          offsetGhostClone.hide()
+          return
+        }
+        offsetGhostClone.show()
+        const result = computeArcOffsetGeometry(ghostElements, point, offsetDistance)
+        applyArcOffsetToElement(offsetGhostClone, result)
+      } else if (ghostElements.type === 'polyline') {
+        if (getOffsetResultIssue(ghostElements, point, offsetDistance)) {
+          offsetGhostClone.hide()
+          return
+        }
+        offsetGhostClone.show()
+        const result = computePolylineOffsetGeometry(ghostElements, point, offsetDistance)
+        applyPolylineOffsetToElement(offsetGhostClone, result)
       } else if (ghostElements.type === 'rect') {
         offsetGhostClone.transform({}) // Reset transform
         const x = ghostElements.x()

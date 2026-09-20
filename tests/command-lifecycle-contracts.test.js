@@ -312,6 +312,49 @@ describe('registry-driven command lifecycle contracts', () => {
     }
   })
 
+  test('DIST paints its live and completed measurement when optional overlays are hidden', () => {
+    const listenerTracker = installDomListenerTracker()
+    const clock = installClockHarness()
+    const fixture = createDeterministicEditorFixture()
+    const { editor, signalHarness } = fixture
+    const harnesses = { clock, listenerTracker, signalHarness }
+    vi.spyOn(editor.svg, 'zoom').mockReturnValue(1)
+    editor.overlays.hide()
+    const baseline = snapshotInteractionState(editor, harnesses)
+
+    try {
+      expect(executeRegisteredCommand(editor, 'DIST')).toBe(true)
+      editor.signals.pointCaptured.dispatch({ x: 10, y: 20 })
+
+      const ghost = editor.svg.findOne('.measure-ghost-group')
+      expect(ghost).not.toBeNull()
+      expect(ghost.node.parentNode).toBe(editor.svg.node)
+      expect(ghost.attr('data-nanquim-transient')).toBe('true')
+      expect(editor.overlays.css('display')).toBe('none')
+
+      editor.signals.pointCaptured.dispatch({ x: 40, y: 60 })
+
+      const measurement = editor.svg.findOne('.measure-overlay')
+      expect(measurement).not.toBeNull()
+      expect(measurement.node.parentNode).toBe(editor.svg.node)
+      expect(measurement.attr('data-nanquim-transient')).toBe('true')
+      expect(measurement.find('.measure-line')).toHaveLength(5)
+      expect(measurement.findOne('.measure-text').text()).toBe('50.0000')
+      expect(editor.isInteracting).toBe(false)
+      expect(editor.selectSingleElement).toBe(false)
+      expect(editor.history.undos).toHaveLength(0)
+      expect(editor.documentState.revision).toBe(0)
+
+      editor.signals.commandCancelled.dispatch()
+      expect(editor.svg.findOne('.measure-overlay')).toBeNull()
+      expectNoInteractionLeaks(editor, baseline, harnesses)
+    } finally {
+      fixture.dispose()
+      clock.dispose()
+      listenerTracker.dispose()
+    }
+  })
+
   test.each(['OFFSET', 'FILLET', 'EXTEND', 'TRIM'])(
     '%s survives repeated high-risk start/cancel cycles without helper or listener growth',
     async (commandName) => {
@@ -365,6 +408,9 @@ describe('registry-driven command lifecycle contracts', () => {
       editor.signals.toogledSelect.dispatch(vertical)
       await clock.runAll()
 
+      expect(editor.isInteracting).toBe(true)
+      expect(editor.selectSingleElement).toBe(true)
+      await cancelActiveCommand('FILLET', fixture, clock)
       expectNoInteractionLeaks(editor, baseline, harnesses)
       expect(editor.history.undos).toHaveLength(1)
       expect(editor.history.undos[0].type).toBe('FilletCommand')
@@ -404,6 +450,104 @@ describe('registry-driven command lifecycle contracts', () => {
       expect(editor.documentState.revision).toBe(3)
       expect(editor.spatialIndex.markDirty).toHaveBeenCalled()
       expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalled()
+    } finally {
+      fixture.dispose()
+      clock.dispose()
+      listenerTracker.dispose()
+    }
+  })
+
+  test('FILLET uses the full picked rays when separated line ends leave a small corner gap', async () => {
+    const listenerTracker = installDomListenerTracker()
+    const clock = installClockHarness()
+    const fixture = createDeterministicEditorFixture()
+    const { editor, signalHarness } = fixture
+    const messages = terminalMessages(editor)
+    const horizontal = editor.activeCollection.line(0.01, 0, 1, 0)
+    const vertical = editor.activeCollection.line(0, 0.01, 0, 1)
+    editor.cmdParams.filletRadius = 0.02
+    const harnesses = { clock, listenerTracker, signalHarness }
+    const baseline = snapshotInteractionState(editor, harnesses)
+
+    try {
+      commands.FILLET.execute(editor)
+      editor.lastClick = { x: 0.011, y: 0 }
+      editor.signals.toogledSelect.dispatch(horizontal)
+      editor.lastClick = { x: 0, y: 0.011 }
+      editor.signals.toogledSelect.dispatch(vertical)
+      await clock.runAll()
+
+      expect(messages.some((message) => message.startsWith('Fillet failed:'))).toBe(false)
+      expect(editor.history.undos).toHaveLength(1)
+      expect(horizontal.array().flat()).toEqual([
+        expect.closeTo(0.02, 10), 0, 1, 0,
+      ])
+      expect(vertical.array().flat()).toEqual([
+        0, expect.closeTo(0.02, 10), 0, 1,
+      ])
+      expect(editor.activeCollection.findOne('path')?.attr('name')).toBe('Arc')
+
+      await cancelActiveCommand('FILLET', fixture, clock)
+      expectNoInteractionLeaks(editor, baseline, harnesses)
+    } finally {
+      fixture.dispose()
+      clock.dispose()
+      listenerTracker.dispose()
+    }
+  })
+
+  test('FILLET repeats completed pairs until canceled and records independent history entries', async () => {
+    const listenerTracker = installDomListenerTracker()
+    const clock = installClockHarness()
+    const fixture = createDeterministicEditorFixture()
+    const { editor, signalHarness } = fixture
+    const messages = terminalMessages(editor)
+    const firstHorizontal = editor.activeCollection.line(2, 0, 10, 0)
+    const firstVertical = editor.activeCollection.line(0, 2, 0, 10)
+    const secondHorizontal = editor.activeCollection.line(22, 20, 30, 20)
+    const secondVertical = editor.activeCollection.line(20, 22, 20, 30)
+    editor.cmdParams.filletRadius = 0
+    const harnesses = { clock, listenerTracker, signalHarness }
+    const baseline = snapshotInteractionState(editor, harnesses)
+
+    try {
+      commands.FILLET.execute(editor)
+
+      editor.lastClick = { x: 8, y: 0 }
+      editor.signals.toogledSelect.dispatch(firstHorizontal)
+      editor.lastClick = { x: 0, y: 8 }
+      editor.signals.toogledSelect.dispatch(firstVertical)
+
+      expect(editor.history.undos).toHaveLength(1)
+      expect(editor.isInteracting).toBe(true)
+      expect(editor.selectSingleElement).toBe(true)
+
+      editor.lastClick = { x: 28, y: 20 }
+      editor.signals.toogledSelect.dispatch(secondHorizontal)
+      editor.lastClick = { x: 20, y: 28 }
+      editor.signals.toogledSelect.dispatch(secondVertical)
+
+      expect(editor.history.undos).toHaveLength(2)
+      expect(editor.history.undos[0]).not.toBe(editor.history.undos[1])
+      expect(firstHorizontal.array().flat()).toEqual([0, 0, 10, 0])
+      expect(firstVertical.array().flat()).toEqual([0, 0, 0, 10])
+      expect(secondHorizontal.array().flat()).toEqual([20, 20, 30, 20])
+      expect(secondVertical.array().flat()).toEqual([20, 20, 20, 30])
+      expect(messages.filter((message) => message.includes('Select two more lines'))).toHaveLength(2)
+
+      await cancelActiveCommand('FILLET', fixture, clock)
+      expectNoInteractionLeaks(editor, baseline, harnesses)
+      expect(editor.documentState.revision).toBe(2)
+
+      editor.history.undo()
+      expect(firstHorizontal.array().flat()).toEqual([0, 0, 10, 0])
+      expect(firstVertical.array().flat()).toEqual([0, 0, 0, 10])
+      expect(secondHorizontal.array().flat()).toEqual([22, 20, 30, 20])
+      expect(secondVertical.array().flat()).toEqual([20, 22, 20, 30])
+
+      editor.history.undo()
+      expect(firstHorizontal.array().flat()).toEqual([2, 0, 10, 0])
+      expect(firstVertical.array().flat()).toEqual([0, 2, 0, 10])
     } finally {
       fixture.dispose()
       clock.dispose()

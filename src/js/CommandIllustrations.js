@@ -135,15 +135,24 @@ const drawIllustration = Object.freeze({
   },
 
   OFFSET: ({ path, arrow }) => {
-    path('M 22 71 L 66 27 L 116 27', 'source')
-    path('M 31 80 L 72 39 L 138 39')
-    arrow(86, 27, 86, 39, 'annotation', true)
+    path('M 30 72 A 44 44 0 0 1 118 72', 'source')
+    path('M 18 72 A 56 56 0 0 1 130 72')
+    arrow(74, 28, 74, 16, 'annotation', true)
   },
 
-  FILLET: ({ path, point }) => {
-    path('M 22 74 H 80 V 18', 'source')
-    path('M 22 74 H 63 Q 80 74 80 57 V 18')
-    point(80, 74, 'guide', 2.5)
+  FILLET: ({ rect, arrow }) => {
+    rect(18, 27, 46, 42, 'source', { rx: 0 })
+    arrow(70, 48, 89, 48, 'guide')
+    rect(96, 27, 46, 42, 'result', { rx: 10, ry: 10 })
+  },
+
+  JOIN: ({ line, path, point }) => {
+    line(20, 68, 55, 68, 'source')
+    path('M 55 68 A 28 28 0 0 0 83 40', 'source')
+    path('M 83 40 C 102 22 122 58 140 20', 'source')
+    path('M 20 68 L 55 68 A 28 28 0 0 0 83 40 C 102 22 122 58 140 20', 'result')
+    ;[[20, 68], [55, 68], [83, 40], [140, 20]]
+      .forEach(([x, y]) => point(x, y))
   },
 
   MATCH_PROPERTIES: ({ circle, rect, arrow, line }) => {
@@ -214,15 +223,15 @@ const drawIllustration = Object.freeze({
     arrow(116, 76, 136, 85, 'guide')
   },
 
-  HATCH: ({ polygon, line, circle }) => {
-    polygon('22,76 35,23 126,16 141,70 104,82 57,81', 'boundary', {
+  HATCH: ({ rect, line, circle }) => {
+    rect(24, 18, 112, 62, 'boundary', {
       fill: 'currentColor', 'fill-opacity': 0.08,
     })
     ;[
-      [30, 70, 65, 25], [46, 80, 92, 20], [67, 81, 116, 17],
-      [89, 81, 134, 25], [111, 79, 140, 42],
+      [26, 64, 62, 18], [38, 80, 87, 18], [62, 80, 111, 18],
+      [86, 80, 135, 18], [111, 80, 136, 48],
     ].forEach((segment) => line(...segment, 'fill'))
-    circle(91, 50, 10, 'island', { fill: 'var(--command-help-illustration-background, transparent)' })
+    circle(84, 49, 10, 'island', { fill: 'var(--command-help-illustration-background, transparent)' })
   },
 
   TEXT: ({ label, line, point }) => {

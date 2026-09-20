@@ -142,6 +142,8 @@ const TEXT_BASELINES = new Set([
 ])
 const TEXT_DECORATIONS = new Set(['none', 'underline', 'overline', 'line-through'])
 const DIMENSION_MARKERS = new Set(['arrow', 'tick', 'bullet'])
+const DIMENSION_ORIENTATIONS = new Set(['horizontal', 'vertical', 'aligned'])
+const DIMENSION_POSITIONS = new Set(['above', 'below'])
 const PAPER_SIZES = new Set(['A0', 'A1', 'A2', 'A3', 'A4', 'custom'])
 const PAPER_ORIENTATIONS = new Set(['portrait', 'landscape'])
 const DANGEROUS_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
@@ -160,6 +162,8 @@ const DEFAULT_TEXT_STYLE_PROPERTIES = Object.freeze({
 
 const DEFAULT_DIMENSION_STYLE_PROPERTIES = Object.freeze({
   textStyleId: 'Standard',
+  orientation: 'horizontal',
+  position: 'above',
   markerType: 'arrow',
   markerSize: 0.15,
   extensionLineOffset: 0.1,
@@ -302,6 +306,10 @@ function canonicalDimensionStyleProperties(value) {
 
   return {
     textStyleId: textStyleId || DEFAULT_DIMENSION_STYLE_PROPERTIES.textStyleId,
+    orientation: enumValue(source.orientation, DIMENSION_ORIENTATIONS)
+      || DEFAULT_DIMENSION_STYLE_PROPERTIES.orientation,
+    position: enumValue(source.position, DIMENSION_POSITIONS)
+      || DEFAULT_DIMENSION_STYLE_PROPERTIES.position,
     markerType: explicitMarker || (legacyTickSize > 0 ? 'tick' : DEFAULT_DIMENSION_STYLE_PROPERTIES.markerType),
     markerSize: markerSize
       ?? (legacyTickSize > 0
@@ -384,8 +392,26 @@ function validateTextStyleMetadata(value) {
 }
 
 function validateDimensionStyleMetadata(value) {
+  // Orientation is additive metadata. Documents written before the field was
+  // introduced adopt the default without being treated as damaged/recovered.
+  const migrated = isRecord(value) && Array.isArray(value.styles)
+    ? {
+        ...value,
+        styles: value.styles.map(style => {
+          if (!isRecord(style) || !isRecord(style.properties)) return style
+          const properties = { ...style.properties }
+          if (properties.orientation === undefined) {
+            properties.orientation = DEFAULT_DIMENSION_STYLE_PROPERTIES.orientation
+          }
+          if (properties.position === undefined) {
+            properties.position = DEFAULT_DIMENSION_STYLE_PROPERTIES.position
+          }
+          return { ...style, properties }
+        }),
+      }
+    : value
   return validateStyleManagerMetadata(
-    value,
+    migrated,
     canonicalDimensionStyleProperties,
     DEFAULT_DIMENSION_STYLE_PROPERTIES,
   )

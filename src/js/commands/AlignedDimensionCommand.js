@@ -59,27 +59,23 @@ class AlignedDimensionCommand extends Command {
             msg: 'Specify second extension line origin: ',
         })
 
-        this.ghostGroup = this.editor.overlays.group().addClass('measure-ghost-group')
-        this.ghostLine = this.ghostGroup
-            .line(point.x, point.y, point.x, point.y)
-            .addClass('measure-ghost')
-            
-        // Initial ghost line styling
-        const activeStyleId = this.editor.dimensionManager.activeStyleId
-        const activeStyle = this.editor.dimensionManager.getStyle(activeStyleId)
-        this.ghostLine.stroke({ 
-            color: activeStyle.lineColor && activeStyle.lineColor !== 'inherit' ? activeStyle.lineColor : 'white', 
-            width: 1 / this.editor.svg.zoom() 
-        })
-        this.ghostLine.css('opacity', 0.5)
-
-        this.boundOnMouseMove1 = (e) => {
-            const coords = this.editor.snapPoint || this.editor.svg.point(e.pageX, e.pageY)
-            if (this.ghostLine) {
-                this.ghostLine.plot(this.p1.x, this.p1.y, coords.x, coords.y)
-            }
+        this.ghostGroup = LinearDimensionCommand.createPreviewGroup(this.editor)
+        this.boundOnMouseMove1 = (coords) => {
+            const point = this.editor.snapPoint || coords
+            if (!point || !this.ghostGroup) return
+            const position = this.editor.dimensionManager
+                .getActiveStyle?.()?.properties?.position || 'above'
+            LinearDimensionCommand.renderSecondPointPreview(
+                this.ghostGroup,
+                this.p1,
+                point,
+                'aligned',
+                position,
+                this.editor.svg.zoom()
+            )
         }
-        this.editor.svg.on('mousemove', this.boundOnMouseMove1)
+        this.editor.signals.updatedCoordinates.add(this.boundOnMouseMove1, this)
+        this.boundOnMouseMove1(this.editor.snapPoint || this.editor.coordinates || point)
 
         this.boundOnSecondPoint = (p) => this.onSecondPoint(p)
         this.editor.signals.pointCaptured.addOnce(this.boundOnSecondPoint)
@@ -96,7 +92,7 @@ class AlignedDimensionCommand extends Command {
             this.editor.signals.coordinateInput.remove(this.boundOnSecondCoordinateInput)
         }
         if (this.boundOnMouseMove1) {
-            this.editor.svg.off('mousemove', this.boundOnMouseMove1)
+            this.editor.signals.updatedCoordinates.remove(this.boundOnMouseMove1, this)
             this.boundOnMouseMove1 = null
         }
         this.p2 = point
@@ -110,10 +106,10 @@ class AlignedDimensionCommand extends Command {
         })
 
         // Move ghost line into full measuring preview
-        if (this.ghostLine) {
-            this.ghostLine.remove()
-            this.ghostLine = null
-        }
+        this.ghostGroup.clear()
+        this.ghostGroup.removeClass('dimension-second-point-preview')
+        this.ghostLine = null
+        this.ghostText = null
 
         // Draw temporary dimension group in overlays
         this.boundOnMouseMove2 = (e) => {
@@ -202,7 +198,9 @@ class AlignedDimensionCommand extends Command {
     }
 
     cleanup() {
-        if (this.boundOnMouseMove1) this.editor.svg.off('mousemove', this.boundOnMouseMove1)
+        if (this.boundOnMouseMove1) {
+            this.editor.signals.updatedCoordinates.remove(this.boundOnMouseMove1, this)
+        }
         if (this.boundOnMouseMove2) this.editor.svg.off('mousemove', this.boundOnMouseMove2)
         if (this.ghostGroup) this.ghostGroup.remove()
 

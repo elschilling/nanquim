@@ -632,6 +632,8 @@ describe('DXFLoader SVG sanitization boundary', () => {
           name: 'Safe Dimension',
           properties: {
             textStyleId: 'SafeText',
+            orientation: 'vertical',
+            position: 'below',
             markerType: 'bullet',
             markerSize: 0.2,
             extensionLineOffset: -0.1,
@@ -662,6 +664,8 @@ describe('DXFLoader SVG sanitization boundary', () => {
           name: 'Hostile Dimension',
           properties: {
             textStyleId: 'x'.repeat(129),
+            orientation: 'url(https://attacker.invalid/orientation)',
+            position: 'expression(alert(1))',
             markerType: 'image-set(url(https://attacker.invalid/marker.png) 1x)',
             markerSize: 1000001,
             extensionLineOffset: '1',
@@ -729,6 +733,8 @@ describe('DXFLoader SVG sanitization boundary', () => {
           properties: {
             ...DEFAULT_DIMENSION_STYLE_PROPERTIES,
             textStyleId: 'SafeText',
+            orientation: 'vertical',
+            position: 'below',
             markerType: 'bullet',
             markerSize: 0.2,
             extensionLineOffset: -0.1,

@@ -7,6 +7,7 @@ import { copyCommand } from './CopyCommand'
 import { rotateCommand } from './RotateCommand'
 import { offsetCommand } from './OffsetCommand'
 import { filletCommand } from './FilletCommand'
+import { joinCommand } from './JoinCommand'
 import { scaleCommand } from './ScaleCommand'
 import { matchPropertiesCommand } from './MatchPropertiesCommand'
 import { eraseCommand } from './EraseCommand'
@@ -119,7 +120,14 @@ const commands = {
     execute: filletCommand,
     aliases: ['f'],
     category: 'Modify',
-    description: 'Round the corner between two lines with a radius.',
+    description: 'Round rectangle corners or corners between line pairs until canceled.',
+    modes: MODEL_ONLY,
+  },
+  JOIN: {
+    execute: joinCommand,
+    aliases: ['j'],
+    category: 'Modify',
+    description: 'Join connected open lines, polylines, arcs, splines, and SVG paths.',
     modes: MODEL_ONLY,
   },
   MATCH_PROPERTIES: {
@@ -161,7 +169,7 @@ const commands = {
     execute: measureDistanceCommand,
     aliases: ['d', 'dist'],
     category: 'Measure & Annotate',
-    description: 'Measure distance and X and Y deltas between two points.',
+    description: 'Measure and display distance and X and Y deltas between two points.',
     modes: MODEL_ONLY,
   },
   MIRROR: {
@@ -189,7 +197,7 @@ const commands = {
     execute: hatchCommand,
     aliases: ['h', 'hatch'],
     category: 'Draw',
-    description: 'Fill the closed region under a point with the current hatch pattern.',
+    description: 'Hatch selected rectangles or the closed region under a point.',
     modes: MODEL_ONLY,
   },
   TEXT: {

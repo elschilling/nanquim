@@ -620,6 +620,28 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           pushWorldTarget(rectPoints[key], 'midpoint')
         })
       }
+      if (st.nearest) {
+        let nearestPoint = null
+        let nearestDistance = Infinity
+        getWorldSnapSegments(el, activeSvg, ctm).forEach(({ p1, p2 }) => {
+          const dx = p2.x - p1.x
+          const dy = p2.y - p1.y
+          const lengthSquared = dx * dx + dy * dy
+          if (lengthSquared <= 0) return
+          const projection = (
+            (cursorWorld.x - p1.x) * dx
+            + (cursorWorld.y - p1.y) * dy
+          ) / lengthSquared
+          const t = Math.max(0, Math.min(1, projection))
+          const point = { x: p1.x + t * dx, y: p1.y + t * dy }
+          const distance = Math.hypot(point.x - cursorWorld.x, point.y - cursorWorld.y)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearestPoint = point
+          }
+        })
+        if (nearestPoint) pushWorldTarget(nearestPoint, 'nearest')
+      }
     } else if (el.type === 'image') {
       if (!st.endpoint && !st.midpoint && !st.center) return
       const bounds = getImageVisibleBounds(readImageGripBounds(el))

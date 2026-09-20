@@ -10,8 +10,13 @@ export const HATCH_PATTERNS = {
 }
 
 export function getPatternId(type, colorHex, scale) {
-  const safeColor = colorHex.replace('#', '')
-  return `hatch-${type.toLowerCase()}-${safeColor}-${scale}`
+  const safeToken = value => String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/^#/, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'default'
+  return `hatch-${safeToken(type)}-${safeToken(colorHex)}-${safeToken(scale)}`
 }
 
 // Ensures an SVG <pattern> exists in svgRoot's <defs> and returns its id.

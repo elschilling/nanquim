@@ -11,7 +11,68 @@ import {
   transformedGeometryContainsPoint,
   transformedGeometryIntersectsBoundary,
 } from '../utils/hatchTransformQualification'
+import { hasUnsupportedGeometryTransform } from '../utils/geometryTransformQualification'
 import { ensurePattern, getPatternId, HATCH_PATTERNS } from '../utils/hatchPatterns'
+import { MAX_SVG_GEOMETRY_MAGNITUDE } from '../utils/svgNumericBounds'
+
+const RECTANGLE_EPSILON = 1e-9
+
+function finiteRectangleValue(value) {
+  return Number.isFinite(value) && Math.abs(value) <= MAX_SVG_GEOMETRY_MAGNITUDE
+}
+
+function rectangleHatchBoundary(rectangle) {
+  const x = Number(rectangle.attr('x'))
+  const y = Number(rectangle.attr('y'))
+  const width = Number(rectangle.attr('width'))
+  const height = Number(rectangle.attr('height'))
+  const rawRx = rectangle.attr('rx')
+  const rawRy = rectangle.attr('ry')
+  const hasRx = rawRx !== undefined && rawRx !== null && rawRx !== ''
+  const hasRy = rawRy !== undefined && rawRy !== null && rawRy !== ''
+  let rx = hasRx ? Number(rawRx) : (hasRy ? Number(rawRy) : 0)
+  let ry = hasRy ? Number(rawRy) : (hasRx ? Number(rawRx) : 0)
+
+  if (![x, y, width, height, rx, ry].every(finiteRectangleValue)
+    || width <= RECTANGLE_EPSILON || height <= RECTANGLE_EPSILON
+    || rx < 0 || ry < 0
+    || !finiteRectangleValue(x + width) || !finiteRectangleValue(y + height)) return null
+
+  rx = Math.min(rx, width / 2)
+  ry = Math.min(ry, height / 2)
+  const right = x + width
+  const bottom = y + height
+  const point = { x: x + width / 2, y: y + height / 2 }
+
+  if (rx <= RECTANGLE_EPSILON || ry <= RECTANGLE_EPSILON) {
+    return {
+      pathD: `M ${x} ${y} L ${right} ${y} L ${right} ${bottom} L ${x} ${bottom} Z`,
+      point,
+    }
+  }
+
+  return {
+    pathD: [
+      `M ${x + rx} ${y}`,
+      `H ${right - rx}`,
+      `A ${rx} ${ry} 0 0 1 ${right} ${y + ry}`,
+      `V ${bottom - ry}`,
+      `A ${rx} ${ry} 0 0 1 ${right - rx} ${bottom}`,
+      `H ${x + rx}`,
+      `A ${rx} ${ry} 0 0 1 ${x} ${bottom - ry}`,
+      `V ${y + ry}`,
+      `A ${rx} ${ry} 0 0 1 ${x + rx} ${y}`,
+      'Z',
+    ].join(' '),
+    point,
+  }
+}
+
+function selectedRectangles(selection) {
+  if (!Array.isArray(selection) || selection.length === 0
+    || selection.some(element => element?.type !== 'rect')) return null
+  return [...new Map(selection.map(element => [element.node, element])).values()]
+}
 
 function childIndex(element) {
   const parent = element.parent()
@@ -53,9 +114,14 @@ class HatchCommand extends Command {
 
     const patternLabel = HATCH_PATTERNS[this.patternType]?.label || this.patternType
     this.editor.signals.terminalLogged.dispatch({ type: 'strong', msg: 'HATCH ' })
+    const rectangles = selectedRectangles(this.editor.selected)
+    if (rectangles) {
+      this.hatchSelectedRectangles(rectangles)
+      return
+    }
     this.editor.signals.terminalLogged.dispatch({
       type: 'span',
-      msg: `[${patternLabel} / scale ${this.hatchScale}] Click inside a closed region to hatch.`,
+      msg: `[${patternLabel} / scale ${this.hatchScale}] Select rectangles first or click inside a closed region to hatch.`,
     })
 
     this.editor.isInteracting = true
@@ -63,6 +129,37 @@ class HatchCommand extends Command {
     this.editor.selectSingleElement = true
     this.editor.signals.commandCancelled.addOnce(this.cleanup, this)
     this.editor.signals.pointCaptured.addOnce(this.onPointClicked, this)
+  }
+
+  hatchSelectedRectangles(rectangles) {
+    if (rectangles.some(rectangle => (
+      hasUnsupportedGeometryTransform(rectangle, this.editor.drawing)
+    ))) {
+      this.editor.signals.terminalLogged.dispatch({ msg: HATCH_TRANSFORM_DIAGNOSTIC })
+      this.cleanup()
+      return
+    }
+
+    const boundaries = rectangles.map(rectangleHatchBoundary)
+    if (boundaries.some(boundary => !boundary)) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'HATCH requires selected rectangles with finite positive dimensions.',
+      })
+      this.cleanup()
+      return
+    }
+
+    this.pendingHatch = {
+      boundaryCount: rectangles.length * 4,
+      fillColor: this.getFillColor(),
+      fillRule: 'nonzero',
+      parent: this.editor.activeCollection || this.editor.drawing,
+      pathD: boundaries.map(boundary => boundary.pathD).join(' '),
+      point: { ...boundaries[0].point },
+    }
+    this.interactiveExecutionDone = true
+    this.cleanup()
+    this.editor.execute(this)
   }
 
   onPointClicked(point) {
@@ -107,19 +204,9 @@ class HatchCommand extends Command {
       pathD += ` ${islandPath}`
     })
 
-    const collection = this.editor.activeCollection
-    let fillColor = '#888888'
-    if (collection) {
-      const collectionData = this.editor.collections?.get(collection.attr('id'))
-      if (collectionData?.style?.stroke) fillColor = collectionData.style.stroke
-      else if (collection.attr('stroke') && collection.attr('stroke') !== 'none') {
-        fillColor = collection.attr('stroke')
-      }
-    }
-
     this.pendingHatch = {
       boundaryCount: boundaryEdges.length,
-      fillColor,
+      fillColor: this.getFillColor(),
       parent: this.editor.activeCollection || this.editor.drawing,
       pathD,
       point: { x: point.x, y: point.y },
@@ -127,6 +214,15 @@ class HatchCommand extends Command {
     this.interactiveExecutionDone = true
     this.cleanup()
     this.editor.execute(this)
+  }
+
+  getFillColor() {
+    const collection = this.editor.activeCollection
+    if (!collection) return '#888888'
+    const collectionData = this.editor.collections?.get(collection.attr('id'))
+    if (collectionData?.style?.stroke) return collectionData.style.stroke
+    const stroke = collection.attr('stroke')
+    return stroke && stroke !== 'none' ? stroke : '#888888'
   }
 
   rejectTransformedBoundary() {
@@ -169,7 +265,7 @@ class HatchCommand extends Command {
       this.hatchElement = this.hatchParent.path(this.pendingHatch.pathD)
       this.hatchElement.fill(fillValue)
       this.hatchElement.attr({
-        'fill-rule': 'evenodd',
+        'fill-rule': this.pendingHatch.fillRule || 'evenodd',
         id: editor.elementIndex++,
         name: 'Hatch',
       })

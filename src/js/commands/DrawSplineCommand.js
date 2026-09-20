@@ -51,6 +51,17 @@ function catmullRomToBezierPath(points) {
     return d
 }
 
+function constrainSplinePoint(point, referencePoint, ortho) {
+    const constrained = { x: point.x, y: point.y }
+    if (!ortho || !referencePoint) return constrained
+
+    const dx = constrained.x - referencePoint.x
+    const dy = constrained.y - referencePoint.y
+    if (Math.abs(dx) > Math.abs(dy)) constrained.y = referencePoint.y
+    else constrained.x = referencePoint.x
+    return constrained
+}
+
 class DrawSplineCommand extends Command {
     constructor(editor) {
         super(editor)
@@ -63,6 +74,8 @@ class DrawSplineCommand extends Command {
         this.boundHandleClick = this.handleClick.bind(this)
         this.boundHandleRightClick = this.handleRightClick.bind(this)
         this.boundHandleKeyDown = this.handleKeyDown.bind(this)
+        this.boundHandleOrthoChange = this.handleOrthoChange.bind(this)
+        this.boundHandleCoordinatesUpdated = this.handleCoordinatesUpdated.bind(this)
         this.boundCancelDrawing = () => this.cleanup()
     }
 
@@ -80,7 +93,9 @@ class DrawSplineCommand extends Command {
         document.addEventListener('mousemove', this.boundHandleMove)
         document.addEventListener('contextmenu', this.boundHandleRightClick, true)
         document.addEventListener('keydown', this.boundHandleKeyDown)
+        this.editor.signals.updatedCoordinates.add(this.boundHandleCoordinatesUpdated)
 
+        activeSvg.on('orthoChange.spline', this.boundHandleOrthoChange)
         activeSvg.on('cancelDrawing.spline', this.boundCancelDrawing)
     }
 
@@ -107,7 +122,8 @@ class DrawSplineCommand extends Command {
         if (e.button !== 0) return
 
         const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
-        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+        const rawPoint = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+        const point = constrainSplinePoint(rawPoint, this.points.at(-1), this.editor.ortho)
         this.points.push({ x: point.x, y: point.y })
 
         if (this.points.length === 1) {
@@ -136,12 +152,31 @@ class DrawSplineCommand extends Command {
         if (this.points.length === 0 || !this.splinePath) return
 
         const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
-        const point = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+        const rawPoint = this.editor.snapPoint || activeSvg.point(e.pageX, e.pageY)
+        const point = constrainSplinePoint(rawPoint, this.points.at(-1), this.editor.ortho)
 
+        this.updateCursorPreview(point)
+    }
+
+    updateCursorPreview(point) {
         // Preview with cursor as virtual next point
         const previewPoints = [...this.points, { x: point.x, y: point.y }]
         const d = catmullRomToBezierPath(previewPoints)
         if (d) this.splinePath.plot(d)
+    }
+
+    handleOrthoChange() {
+        if (this.points.length === 0 || !this.splinePath) return
+        const rawPoint = this.editor.snapPoint || this.editor.coordinates
+        if (!rawPoint) return
+        const point = constrainSplinePoint(rawPoint, this.points.at(-1), this.editor.ortho)
+        this.updateCursorPreview(point)
+    }
+
+    handleCoordinatesUpdated(rawPoint) {
+        if (this.points.length === 0 || !this.splinePath || !rawPoint) return
+        const point = constrainSplinePoint(rawPoint, this.points.at(-1), this.editor.ortho)
+        this.updateCursorPreview(point)
     }
 
     updatePreview() {
@@ -181,10 +216,12 @@ class DrawSplineCommand extends Command {
     cleanupListeners() {
         const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
         activeSvg.off('mousedown.spline')
+        activeSvg.off('orthoChange.spline')
         activeSvg.off('cancelDrawing.spline')
         document.removeEventListener('mousemove', this.boundHandleMove)
         document.removeEventListener('contextmenu', this.boundHandleRightClick, true)
         document.removeEventListener('keydown', this.boundHandleKeyDown)
+        this.editor.signals.updatedCoordinates.remove(this.boundHandleCoordinatesUpdated)
     }
 
     cleanup() {
@@ -204,4 +241,4 @@ function drawSplineCommand(editor) {
     cmd.execute()
 }
 
-export { drawSplineCommand, catmullRomToBezierPath }
+export { DrawSplineCommand, catmullRomToBezierPath, constrainSplinePoint, drawSplineCommand }

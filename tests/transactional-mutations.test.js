@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { copyCommand } from '../src/js/commands/CopyCommand.js'
 import { AddElementCommand } from '../src/js/commands/AddElementCommand.js'
+import { catmullRomToBezierPath } from '../src/js/commands/DrawSplineCommand.js'
 import { mirrorCommand, MirrorCommand } from '../src/js/commands/MirrorCommand.js'
 import { moveCommand } from '../src/js/commands/MoveCommand.js'
 import { offsetCommand } from '../src/js/commands/OffsetCommand.js'
@@ -396,6 +397,63 @@ describe('transactional modification commands', () => {
       expect(source.node.isConnected).toBe(false)
       expect(mirrored.node.parentNode).toBe(sourceParent.node)
       expectPointsClose(points(mirrored), [[-1, 1], [-3, 1]])
+      expectIndexInvalidations(editor, 3)
+    } finally {
+      fixture.dispose()
+    }
+  })
+
+  test('MIRROR rebuilds spline geometry from reflected fit points with Undo/Redo', () => {
+    const fixture = createDeterministicEditorFixture()
+    const { editor } = fixture
+    const sourcePoints = [
+      { x: 1, y: 1 },
+      { x: 3, y: 4 },
+      { x: 6, y: 2 },
+      { x: 8, y: 5 },
+    ]
+    const reflectedPoints = sourcePoints.map(point => ({ x: -point.x, y: point.y }))
+    const source = editor.activeCollection.path(catmullRomToBezierPath(sourcePoints))
+      .attr({ id: 'mirror-spline', name: 'Mirrored spline' })
+      .data('splineData', { points: sourcePoints })
+    editor.selected = [source]
+    seedRedo(editor)
+
+    try {
+      mirrorCommand(editor)
+      editor.signals.pointCaptured.dispatch({ x: 0, y: 0 })
+      editor.signals.pointCaptured.dispatch({ x: 0, y: 10 })
+
+      const preview = editor.activeCollection.find('[data-nanquim-transient="true"]')[0]
+      expect(preview.attr('d')).toBe(catmullRomToBezierPath(reflectedPoints))
+      expect(preview.data('splineData')).toEqual({ points: reflectedPoints })
+      expect(source.attr('d')).toBe(catmullRomToBezierPath(sourcePoints))
+
+      editor.signals.inputValue.dispatch('n')
+      vi.runOnlyPendingTimers()
+
+      const command = editor.history.undos[0]
+      const mirrored = command.copiedElements[0]
+      const mirroredNode = mirrored.node
+      expect(editor.history.undos).toHaveLength(1)
+      expect(editor.history.redos).toHaveLength(0)
+      expect(mirrored.attr('d')).toBe(catmullRomToBezierPath(reflectedPoints))
+      expect(mirrored.data('splineData')).toEqual({ points: reflectedPoints })
+      expect(mirrored.attr('name')).toBe('Mirrored spline')
+      expect(source.node.isConnected).toBe(true)
+      expectIndexInvalidations(editor, 1)
+
+      editor.history.undo()
+      expect(mirrored.node.isConnected).toBe(false)
+      expect(source.attr('d')).toBe(catmullRomToBezierPath(sourcePoints))
+      expect(source.data('splineData')).toEqual({ points: sourcePoints })
+      expectIndexInvalidations(editor, 2)
+
+      editor.history.redo()
+      expect(mirrored.node).toBe(mirroredNode)
+      expect(mirrored.node.isConnected).toBe(true)
+      expect(mirrored.attr('d')).toBe(catmullRomToBezierPath(reflectedPoints))
+      expect(mirrored.data('splineData')).toEqual({ points: reflectedPoints })
       expectIndexInvalidations(editor, 3)
     } finally {
       fixture.dispose()

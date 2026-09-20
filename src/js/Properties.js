@@ -725,6 +725,49 @@ function Properties(editor) {
       tsRow.appendChild(tsLabel)
       tsRow.appendChild(tsSelect)
       accordionBody.appendChild(tsRow)
+
+      const orientationRow = document.createElement('div')
+      orientationRow.className = 'property-row'
+      const orientationLabel = document.createElement('label')
+      orientationLabel.className = 'property-label'
+      orientationLabel.textContent = 'Orientation'
+      const orientationSelect = document.createElement('select')
+      orientationSelect.className = 'property-input property-select'
+      ;['horizontal', 'vertical', 'aligned'].forEach((orientation) => {
+        const opt = document.createElement('option')
+        opt.value = orientation
+        opt.textContent = orientation.charAt(0).toUpperCase() + orientation.slice(1)
+        if (orientation === (props.orientation || 'horizontal')) opt.selected = true
+        orientationSelect.appendChild(opt)
+      })
+      orientationSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { orientation: e.target.value })
+      })
+      orientationRow.appendChild(orientationLabel)
+      orientationRow.appendChild(orientationSelect)
+      accordionBody.appendChild(orientationRow)
+
+      const positionRow = document.createElement('div')
+      positionRow.className = 'property-row'
+      const positionLabel = document.createElement('label')
+      positionLabel.className = 'property-label'
+      positionLabel.textContent = 'Position'
+      const positionSelect = document.createElement('select')
+      positionSelect.className = 'property-input property-select'
+      ;['above', 'below'].forEach((position) => {
+        const opt = document.createElement('option')
+        opt.value = position
+        opt.textContent = position.charAt(0).toUpperCase() + position.slice(1)
+        if (position === (props.position || 'above')) opt.selected = true
+        positionSelect.appendChild(opt)
+      })
+      positionSelect.addEventListener('change', (e) => {
+        dm.updateStyle(sId, { position: e.target.value })
+      })
+      positionRow.appendChild(positionLabel)
+      positionRow.appendChild(positionSelect)
+      accordionBody.appendChild(positionRow)
+
       // Marker type dropdown
       const markerRow = document.createElement('div')
       markerRow.className = 'property-row'

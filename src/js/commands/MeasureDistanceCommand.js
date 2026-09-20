@@ -57,8 +57,9 @@ class MeasureDistanceCommand extends Command {
             msg: 'Specify second point: ',
         })
 
-        // Create ghost line group in overlays
-        this.ghostGroup = this.editor.overlays.group().addClass('measure-ghost-group')
+        // Keep active command feedback independent from the optional F3
+        // overlays group. This root is transient and never enters the drawing.
+        this.ghostGroup = this.createViewportLayer('measure-ghost-group')
         this.ghostLine = this.ghostGroup
             .line(point.x, point.y, point.x, point.y)
             .addClass('measure-ghost')
@@ -69,7 +70,6 @@ class MeasureDistanceCommand extends Command {
             .attr('font-family', "'JetBrains Mono', 'Fira Code', monospace")
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'middle')
-            .fill('#cccccc')
 
         // Live update ghost line and distance label on mouse move
         this.boundOnMouseMove = (e) => {
@@ -123,6 +123,7 @@ class MeasureDistanceCommand extends Command {
             this.ghostGroup.remove()
             this.ghostGroup = null
             this.ghostLine = null
+            this.ghostText = null
         }
 
         this.secondPoint = point
@@ -156,7 +157,7 @@ class MeasureDistanceCommand extends Command {
         // pattern are already screen-space values and must not be divided by zoom.
         const strokeWidth = 1.5
 
-        this.measureGroup = this.editor.overlays.group().addClass('measure-overlay')
+        this.measureGroup = this.createViewportLayer('measure-overlay')
 
         // Dashed line between points
         this.measureGroup
@@ -188,12 +189,22 @@ class MeasureDistanceCommand extends Command {
             .attr('font-size', fontSize)
             .attr('text-anchor', 'middle')
             .attr('dominant-baseline', 'middle')
-            .fill('#cccccc')
             .attr('transform', `translate(${offsetX}, ${offsetY}) rotate(${angleDeg})`)
 
         // Register cleanup on next command or cancel
         this.boundOnClearMeasure = () => this.clearMeasurement()
         this.editor.signals.commandCancelled.addOnce(this.boundOnClearMeasure, this)
+    }
+
+    createViewportLayer(className) {
+        return this.editor.svg
+            .group()
+            .addClass(className)
+            .attr({
+                'aria-hidden': 'true',
+                'data-nanquim-transient': 'true',
+                'pointer-events': 'none',
+            })
     }
 
     drawCross(group, point, size, strokeWidth) {
@@ -228,6 +239,7 @@ class MeasureDistanceCommand extends Command {
             this.ghostGroup.remove()
             this.ghostGroup = null
             this.ghostLine = null
+            this.ghostText = null
         }
 
         // Remove signal listeners

@@ -46,7 +46,7 @@ limitations.
 
 ### Editing and modification
 
-- Move, Copy, Rotate, Scale, Offset, Fillet, Mirror, Erase, Trim, and Extend.
+- Move, Copy, Rotate, Scale, Offset, Fillet, Join, Mirror, Erase, Trim, and Extend.
 - Group and Ungroup for ordinary SVG geometry.
 - Directional window/crossing selection, multi-selection, and disambiguation when elements overlap.
 - Direct editing grips for supported element types, including transformed geometry.
@@ -128,7 +128,7 @@ category. Use **Tools** in the application bar or press `F4` to show or hide it.
 | --- | --- |
 | General | `HELP (?)` |
 | Draw | `LINE (L)`, `CIRCLE (C)`, `ELLIPSE (EL)`, `RECTANGLE (REC)`, `ARC (A)`, `POLYLINE (PL)`, `SPLINE (SP)`, `TEXT (T)`, `HATCH (H)`, `IMAGE (IMG, IMAGEATTACH)` |
-| Modify | `MOVE (M)`, `COPY (CO)`, `ROTATE (R)`, `SCALE (S)`, `OFFSET (O)`, `FILLET (F)`, `MIRROR (MI)`, `TRIM (TR)`, `EXTEND (EX)`, `ERASE (E)` |
+| Modify | `MOVE (M)`, `COPY (CO)`, `ROTATE (R)`, `SCALE (S)`, `OFFSET (O)`, `FILLET (F)`, `JOIN (J)`, `MIRROR (MI)`, `TRIM (TR)`, `EXTEND (EX)`, `ERASE (E)` |
 | Organize | `GROUP (G)`, `UNGROUP (UG)`, `BLOCK (B)`, `INSERT (I)`, `MATCH_PROPERTIES (MA)` |
 | Measure and annotate | `DIST (D)`, `AREA (AR)`, `DIMLINEAR (DM)`, `DIMALIGNED (DA)` |
 | Paper Space | `VIEWPORT (VP)` |

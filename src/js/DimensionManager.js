@@ -1,3 +1,6 @@
+const DIMENSION_ORIENTATIONS = new Set(['horizontal', 'vertical', 'aligned'])
+const DIMENSION_POSITIONS = new Set(['above', 'below'])
+
 function markDocumentChanged(editor, reason) {
   if (editor.documentState) editor.documentState.markChanged(reason)
 }
@@ -16,6 +19,8 @@ export class DimensionStyle {
     // Default properties for a newly created style
     this.properties = {
       textStyleId: config.textStyleId || 'Standard',
+      orientation: DIMENSION_ORIENTATIONS.has(config.orientation) ? config.orientation : 'horizontal',
+      position: DIMENSION_POSITIONS.has(config.position) ? config.position : 'above',
       markerType: config.markerType || 'arrow', // 'arrow' | 'tick' | 'bullet'
       markerSize: config.markerSize !== undefined ? config.markerSize : 0.15,
       extensionLineOffset: config.extensionLineOffset !== undefined ? config.extensionLineOffset : 0.1,
@@ -106,6 +111,10 @@ export class DimensionManager {
   updateStyle(id, newProperties) {
     const style = this.styles.get(id)
     if (!style) return
+    if (Object.hasOwn(newProperties, 'orientation')
+      && !DIMENSION_ORIENTATIONS.has(newProperties.orientation)) return
+    if (Object.hasOwn(newProperties, 'position')
+      && !DIMENSION_POSITIONS.has(newProperties.position)) return
     const changed = Object.entries(newProperties).some(
       ([property, value]) => !Object.is(style.properties[property], value),
     )

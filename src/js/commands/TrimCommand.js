@@ -320,6 +320,19 @@ class TrimCommand extends Command {
                         }
                     })
                 }
+            } else if (boundary.type === 'path' && boundary.data('splineData')) {
+                getPathSegments(boundary).forEach(segment => {
+                    const intersect = getLineIntersection(lineEq, segment)
+                    if (!intersect) return
+                    const minX = Math.min(segment.x1, segment.x2) - 1e-4
+                    const maxX = Math.max(segment.x1, segment.x2) + 1e-4
+                    const minY = Math.min(segment.y1, segment.y2) - 1e-4
+                    const maxY = Math.max(segment.y1, segment.y2) + 1e-4
+                    if (intersect.x >= minX && intersect.x <= maxX
+                        && intersect.y >= minY && intersect.y <= maxY) {
+                        checkAndAddIntersection(intersect)
+                    }
+                })
             } else if (boundary.type === 'path') {
                 getPathIntersections(el, boundary).forEach(checkAndAddIntersection)
             } else if (boundary.type === 'polyline' || boundary.type === 'polygon') {
