@@ -332,7 +332,11 @@ class RotateCommand extends Command {
     }
 
     const explicitTransform = element.attr('transform')
-    const usesTransformForRotation = ['g', 'text', 'use'].includes(element.type)
+    // A polygon cannot retain rectangle corner radii. Keep the rect geometry
+    // intact, including a single authored radius, percentages, or length units.
+    const roundedRectangle = element.type === 'rect'
+      && ['rx', 'ry'].some(radius => parseFloat(element.attr(radius)) > 0)
+    const usesTransformForRotation = roundedRectangle || ['g', 'text', 'use'].includes(element.type)
     if ((explicitTransform && explicitTransform.trim() !== '')
       || usesTransformForRotation
       || hasUnsupportedGeometryTransform(element, this.editor.svg)) {

@@ -119,7 +119,8 @@ integration. GitHub Actions verifies the source but does not deploy it.
 
 1. Confirm that CI succeeded for the exact commit merged to `master`.
 2. In Vercel, confirm that the production deployment uses that same commit and
-   that the `nanquim.vercel.app` alias points to it.
+   that the official domain [nanquim.schilling.arq.br](https://nanquim.schilling.arq.br/)
+   points to it.
 3. Open the production site in a clean browser session and check:
 
    - The page title and status bar show the package version being released.
@@ -183,8 +184,9 @@ Do not rewrite `master` or move a published tag.
    `vercel rollback <deployment-url-or-id>`. Use **Promote to Production** only
    for a separately qualified preview or staged deployment that has not already
    served production.
-2. Confirm that `nanquim.vercel.app` now serves the known-good deployment and
-   repeat the critical smoke checks above.
+2. Confirm that [nanquim.schilling.arq.br](https://nanquim.schilling.arq.br/)
+   now serves the known-good deployment and repeat the critical smoke checks
+   above.
 3. Revert the faulty source change on `master` with `git revert`, qualify the
    revert through CI, and let Vercel deploy that new commit normally.
 4. If a GitHub release was already published, add a prominent known-issue note.

@@ -158,6 +158,268 @@ afterEach(() => {
 })
 
 describe('ROTATE transformed geometry', () => {
+  test('moves a transformed group and its selected child only once', () => {
+    const { activeCollection, editor } = createFixture()
+    const group = activeCollection.group().attr('transform', 'translate(10 5)')
+    const rectangle = group.rect(10, 6).attr({ rx: 2, transform: 'rotate(37)' })
+    const groupMarkup = group.node.outerHTML
+    const originalPoints = drawingPoints(rectangle, editor.drawing)
+    const expectedPoints = originalPoints.map(([x, y]) => [x + 12, y - 7])
+    editor.selected = [rectangle, group]
+    moveCommand(editor)
+    editor.signals.pointCaptured.dispatch({ x: 0, y: 0 })
+    expect(editor.signals.moveGhostingStarted.dispatch).toHaveBeenCalledWith([group], { x: 0, y: 0 })
+    editor.signals.pointCaptured.dispatch({ x: 12, y: -7 })
+
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), expectedPoints)
+    const movedMarkup = group.node.outerHTML
+    editor.history.undo()
+    expect(group.node.outerHTML).toBe(groupMarkup)
+    editor.history.redo()
+    expect(group.node.outerHTML).toBe(movedMarkup)
+  })
+
+  test('moves a transformed primitive while keeping its geometry and metadata local', () => {
+    const { activeCollection, editor } = createFixture()
+    const line = activeCollection.line(1, 2, 5, 2).attr({
+      id: 'transformed-move-line', transform: 'rotate(37 4 -3)',
+    })
+    const arcData = {
+      p1: { x: 1, y: 2 }, p2: { x: 3, y: 2 }, p3: { x: 5, y: 2 },
+    }
+    line.data('arcData', arcData)
+    const originalMarkup = line.node.outerHTML
+    const originalPoints = drawingPoints(line, editor.drawing)
+    const expectedPoints = originalPoints.map(([x, y]) => [x + 12, y - 7])
+    editor.selected = [line]
+    moveCommand(editor)
+    editor.signals.pointCaptured.dispatch({ x: 0, y: 0 })
+    editor.signals.pointCaptured.dispatch({ x: 12, y: -7 })
+
+    expectPointsClose(drawingPoints(line, editor.drawing), expectedPoints)
+    expect(localPoints(line)).toEqual([[1, 2], [5, 2]])
+    expect(line.data('arcData')).toEqual(arcData)
+    const movedMarkup = line.node.outerHTML
+    editor.history.undo()
+    expect(line.node.outerHTML).toBe(originalMarkup)
+    editor.history.redo()
+    expect(line.node.outerHTML).toBe(movedMarkup)
+    expect(line.data('arcData')).toEqual(arcData)
+  })
+
+  test('rolls back a transformed MOVE that fails after changing its matrix', () => {
+    const { activeCollection, editor } = createFixture()
+    const rectangle = activeCollection.rect(10, 6).move(11, 6).attr({
+      rx: 2, ry: 1, transform: 'rotate(37 4 -3)',
+    })
+    const originalMarkup = rectangle.node.outerHTML
+    const selection = [rectangle]
+    editor.selected = selection
+    const redoSentinel = { execute: vi.fn(), undo: vi.fn() }
+    editor.history.redos.push(redoSentinel)
+    moveCommand(editor)
+    editor.signals.pointCaptured.dispatch({ x: 0, y: 0 })
+    const transform = rectangle.transform.bind(rectangle)
+    const failure = new Error('synthetic transformed MOVE failure')
+    vi.spyOn(rectangle, 'transform').mockImplementationOnce((matrix) => {
+      transform(matrix)
+      throw failure
+    })
+
+    expect(() => editor.signals.pointCaptured.dispatch({ x: 12, y: -7 })).toThrow(failure)
+    expect(rectangle.node.outerHTML).toBe(originalMarkup)
+    expect(editor.selected).toBe(selection)
+    expect(editor.history.undos).toHaveLength(0)
+    expect(editor.history.redos).toEqual([redoSentinel])
+    expect(editor.documentState.revision).toBe(0)
+    expect(editor.isInteracting).toBe(false)
+    expect(editor.suppressHandlers).toBe(false)
+    expect(editor.selectSingleElement).toBe(false)
+    expect(editor.signals.commandCancelled.getNumListeners()).toBe(0)
+  })
+
+  test('rejects unresolved MOVE transforms before preview or History', () => {
+    const { activeCollection, editor } = createFixture()
+    const parent = activeCollection.group().attr('transform', 'matrix(0 0 0 1 0 0)')
+    const rectangle = parent.rect(10, 6).attr({ rx: 2, transform: 'rotate(37)' })
+    const originalMarkup = editor.drawing.node.outerHTML
+    editor.selected = [rectangle]
+
+    moveCommand(editor)
+
+    expect(terminalMessages(editor)).toContain('MOVE could not resolve the selected geometry transform.')
+    expect(editor.drawing.node.outerHTML).toBe(originalMarkup)
+    expect(editor.history.undos).toHaveLength(0)
+    expect(editor.documentState.revision).toBe(0)
+    expect(editor.signals.moveGhostingStarted.dispatch).not.toHaveBeenCalled()
+    expect(editor.signals.pointCaptured.getNumListeners()).toBe(0)
+    expect(editor.signals.coordinateInput.getNumListeners()).toBe(0)
+    expect(editor.signals.commandCancelled.getNumListeners()).toBe(0)
+    expect(editor.isInteracting).toBe(false)
+    expect(editor.suppressHandlers).toBe(false)
+    expect(editor.selectSingleElement).toBe(false)
+  })
+
+  test.each([
+    { label: 'typed relative offset', typed: true },
+    { label: 'captured points', typed: false },
+    {
+      label: 'non-uniform transformed ancestry',
+      typed: true,
+      parentTransform: 'matrix(2 0.5 0.25 0.75 20 -10)',
+    },
+  ])('moves a rotated rounded rectangle by the drawing-space offset using $label', ({ typed, parentTransform }) => {
+    const { activeCollection, editor } = createFixture()
+    installProductionSelectionCleanup(editor)
+    const parent = activeCollection.group()
+    if (parentTransform) parent.attr('transform', parentTransform)
+    parent.line(-2, 0, -1, 0).attr('id', 'move-before')
+    const rectangle = parent.rect(10, 6).move(11, 6).attr({
+      id: 'rounded-move', rx: 2, ry: 1, name: 'Rounded panel', 'data-part': 'A',
+    })
+    parent.line(25, 0, 26, 0).attr('id', 'move-after')
+    const unrotatedMarkup = rectangle.node.outerHTML
+    commitRotation(editor, rectangle, { angle: 37, center: { x: 4, y: -3 } })
+    const rotatedMarkup = rectangle.node.outerHTML
+    const { transform: originalTransform, ...localAttributes } = rectangle.attr()
+    const originalOrder = childIds(parent)
+    const originalPoints = drawingPoints(rectangle, editor.drawing)
+    const delta = { x: 12, y: -7 }
+    const expectedPoints = originalPoints.map(([x, y]) => [x + delta.x, y + delta.y])
+    editor.ortho = false
+    editor.selected = [rectangle]
+    moveCommand(editor)
+    editor.signals.pointCaptured.dispatch({ x: 5, y: 8 })
+    if (typed) {
+      editor.inputCoord = delta
+      editor.inputCoordMode = 'relative'
+      editor.signals.coordinateInput.dispatch()
+    } else {
+      editor.signals.pointCaptured.dispatch({ x: 17, y: 1 })
+    }
+    vi.runOnlyPendingTimers()
+
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), expectedPoints)
+    const { transform: movedTransform, ...movedAttributes } = rectangle.attr()
+    expect(movedTransform).not.toBe(originalTransform)
+    expect(movedAttributes).toEqual(localAttributes)
+    expect(rectangle.parent()).toBe(parent)
+    expect(childIds(parent)).toEqual(originalOrder)
+    expect(editor.history.undos).toHaveLength(2)
+    expect(editor.documentState.revision).toBe(2)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(2)
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledTimes(2)
+    expect(editor.isInteracting).toBe(false)
+    expect(editor.selectSingleElement).toBe(false)
+    expect(editor.suppressHandlers).toBe(false)
+    expect(editor.signals.pointCaptured.getNumListeners()).toBe(0)
+    expect(editor.signals.coordinateInput.getNumListeners()).toBe(0)
+    expect(editor.signals.inputValue.getNumListeners()).toBe(0)
+    expect(editor.signals.commandCancelled.getNumListeners()).toBe(0)
+    const movedMarkup = rectangle.node.outerHTML
+
+    editor.history.undo()
+    expect(rectangle.node.outerHTML).toBe(rotatedMarkup)
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), originalPoints)
+    editor.history.redo()
+    expect(rectangle.node.outerHTML).toBe(movedMarkup)
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), expectedPoints)
+    editor.history.undo()
+    editor.history.undo()
+    expect(rectangle.node.outerHTML).toBe(unrotatedMarkup)
+    editor.history.redo()
+    editor.history.redo()
+    expect(rectangle.node.outerHTML).toBe(movedMarkup)
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), expectedPoints)
+  })
+
+  test.each([
+    { label: 'equal radii', radii: { rx: 2, ry: 2 } },
+    { label: 'rx alone', radii: { rx: 2 } },
+    { label: 'ry alone', radii: { ry: 1 } },
+    { label: 'elliptical radii by reference', radii: { rx: 2, ry: 1 }, reference: true },
+    { label: 'clamped radii', radii: { rx: 30, ry: 30 } },
+    { label: 'percentage radii', radii: { rx: '10%', ry: '5%' } },
+    { label: 'length units', radii: { rx: '2px', ry: '1px' } },
+    {
+      label: 'transformed ancestry',
+      radii: { rx: 2, ry: 1 },
+      parentTransform: 'matrix(2 0.5 0.25 0.75 20 -10)',
+    },
+  ])('preserves a rounded rectangle with $label through rotation and Undo/Redo', ({ radii, reference, parentTransform }) => {
+    const { activeCollection, editor } = createFixture()
+    installProductionSelectionCleanup(editor)
+    const parent = activeCollection.group()
+    if (parentTransform) parent.attr('transform', parentTransform)
+    parent.line(-2, 0, -1, 0).attr('id', 'rounded-before')
+    const rectangle = parent.rect(10, 6).move(11, 6).attr({
+      id: 'rounded-rectangle',
+      name: 'Rounded panel',
+      'data-part': 'A',
+      ...radii,
+    })
+    parent.line(25, 0, 26, 0).attr('id', 'rounded-after')
+    const originalMarkup = rectangle.node.outerHTML
+    const originalAttributes = rectangle.attr()
+    const originalOrder = childIds(parent)
+    const originalLocalPoints = localPoints(rectangle)
+    const originalDrawingPoints = drawingPoints(rectangle, editor.drawing)
+    const center = { x: 4, y: -3 }
+    const angle = 37
+    const expectedDrawingPoints = rotatePoints(originalDrawingPoints, center, angle)
+    rectangle.addClass('elementHover elementSelected').attr('selected', true)
+
+    if (reference) {
+      let previewSnapshot
+      editor.signals.rotateGhostingStarted.add(() => {
+        previewSnapshot = captureTransformPreviewState(rectangle)
+        rectangle.rotate(18, center.x, center.y)
+      })
+      editor.signals.rotateGhostingStopped.add(() => {
+        if (previewSnapshot) restoreTransformPreviewState(rectangle, previewSnapshot)
+      })
+      editor.selected = [rectangle]
+      rotateCommand(editor)
+      editor.signals.pointCaptured.dispatch(center)
+      editor.signals.pointCaptured.dispatch({ x: center.x + 1, y: center.y })
+      const radians = angle * Math.PI / 180
+      editor.signals.pointCaptured.dispatch({
+        x: center.x + Math.cos(radians),
+        y: center.y + Math.sin(radians),
+      })
+      vi.runOnlyPendingTimers()
+    } else {
+      commitRotation(editor, rectangle, { angle, center })
+    }
+
+    const rotated = parent.findOne('[id="rounded-rectangle"]')
+    expectCommittedRotation(editor)
+    expect(rotated.type).toBe('rect')
+    expect(rotated.node).toBe(rectangle.node)
+    expect(rotated.parent()).toBe(parent)
+    const { transform, ...rotatedAttributes } = rotated.attr()
+    expect(transform).toBeTruthy()
+    expect(rotatedAttributes).toEqual(originalAttributes)
+    expect(localPoints(rotated)).toEqual(originalLocalPoints)
+    expectPointsClose(drawingPoints(rotated, editor.drawing), expectedDrawingPoints)
+    expect(childIds(parent)).toEqual(originalOrder)
+    const rotatedMarkup = rotated.node.outerHTML
+
+    editor.history.undo()
+    expect(rectangle.node.outerHTML).toBe(originalMarkup)
+    expect(rectangle.node.hasAttribute('transform')).toBe(false)
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), originalDrawingPoints)
+    expect(childIds(parent)).toEqual(originalOrder)
+
+    editor.history.redo()
+    expect(rectangle.node.outerHTML).toBe(rotatedMarkup)
+    expectPointsClose(drawingPoints(rectangle, editor.drawing), expectedDrawingPoints)
+    expect(childIds(parent)).toEqual(originalOrder)
+    expect(editor.documentState.revision).toBe(3)
+    expect(editor.spatialIndex.markDirty).toHaveBeenCalledTimes(3)
+    expect(editor.fullSpatialIndex.markDirty).toHaveBeenCalledTimes(3)
+  })
+
   test('ghost transform snapshots restore exact transform presence and syntax', () => {
     const { activeCollection } = createFixture()
     const rectangle = activeCollection.rect(4, 2).move(11, 6)

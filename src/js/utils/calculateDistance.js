@@ -90,7 +90,7 @@ export function calculateLocalDelta(el, dx, dy) {
     const svgCTM = el.root().screenCTM()
     if (!parentCTM || !svgCTM) return { dx, dy }
 
-    const m = parentCTM.multiply(svgCTM.inverse())
+    const m = svgCTM.inverse().multiply(parentCTM)
     const mInv = m.inverse()
 
     const localDx = mInv.a * dx + mInv.c * dy

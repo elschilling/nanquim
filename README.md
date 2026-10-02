@@ -2,7 +2,7 @@
 
 **A browser-based 2D CAD editor built around editable SVG.**
 
-[Live demo](https://nanquim.vercel.app/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
+[Live demo](https://nanquim.schilling.arq.br/) · [Report a bug](https://github.com/elschilling/nanquim/issues) · [Source code](https://github.com/elschilling/nanquim)
 
 [Public-beta plan](plans/v0.1-public-beta-plan.md) · [Changelog](CHANGELOG.md) · [Capability status](docs/capabilities.md) · [Visual identity](docs/visual-identity.md) · [Native document format](docs/native-document-format.md) · [Editing transactions](docs/editing-transactions.md) · [Testing](docs/testing.md) · [Browser support](docs/browser-support.md)
 
@@ -136,6 +136,12 @@ category. Use **Tools** in the application bar or press `F4` to show or hide it.
 `MOVE` and `COPY` use the current selection and immediately ask for a base point.
 With no preselection, select the elements and press `Enter` first. Object Snap
 (`F9` or the viewport button) is available when choosing the base and destination points.
+
+`DIST` (`D`) measures two clicked or typed points in Draw or Paper Space. In
+Paper Space, distances and X/Y deltas use Paper SVG units, including inside a
+scaled Model viewport. Divide by the Paper settings' units per centimetre for
+the physical distance in centimetres. The measurement disappears on `Esc`, the
+next command, or a space switch and is excluded from saves and exports.
 
 ### Useful keys
 
