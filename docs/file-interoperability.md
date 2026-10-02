@@ -1,6 +1,6 @@
 # File interoperability and Paper output
 
-Last reviewed: 2026-09-20
+Last reviewed: 2026-10-02
 
 Qualification status: **Partial — Phase 3 is in progress.**
 
@@ -172,9 +172,14 @@ and unsupported entity types are reported through bounded aggregate
 diagnostics. DXF text import and unlisted entities are not part of the qualified
 import profile.
 
+Bulged `LWPOLYLINE` and `POLYLINE` segments become circular SVG arc commands,
+including major arcs and the closing segment of a closed contour. Straight
+segments remain straight. Bounds include the complete visible arc extent.
+
 Layers become direct Model collections. Names are XML-escaped, colors are
-retained where representable, and layer visibility/locking is preserved. The
-millimetre qualification fixture converts with
+retained where representable, and layer visibility/locking is preserved. ACI 7
+remains white in Nanquim, including explicit entity overrides and inheritance
+from hidden or locked layers. The millimetre qualification fixture converts with
 `matrix(0.1,0,0,-0.1,0,0)`, produces viewBox `0 -8 9 8`, and preserves the
 three layer names `A&B`, `Hidden`, and `Locked` with their expected state.
 
@@ -191,8 +196,9 @@ The current export mappings are:
 | Nanquim geometry | DXF result |
 | --- | --- |
 | line, circle, ellipse | `LINE`, `CIRCLE`, or `ELLIPSE` |
-| rectangle | closed `LWPOLYLINE`, reported as an approximation |
+| rectangle | closed `LWPOLYLINE`; numeric circular fillets retain exact bulged arc segments under similarity transforms, with rectangle semantics reported as an approximation |
 | polyline, polygon, straight SVG path | open/closed `LWPOLYLINE` |
+| single-contour circular SVG path (`M/L/H/V/A/Z`) | open/closed `LWPOLYLINE` with bulged circular arc segments |
 | semantic arc path | `ARC` |
 | semantic spline path | sampled `LWPOLYLINE`, reported as an approximation |
 | text | `TEXT`; content is bounded and unsupported shear/nonuniform scale is reported as approximated |
@@ -200,11 +206,34 @@ The current export mappings are:
 | supported transformed geometry | transforms baked into a detached clone when the target DXF entity remains exact; circles/arcs require a similarity transform and general ellipses require axis-aligned scaling/translation |
 | unsupported SVG entity/path/affine curve transform, or invalid/out-of-range numeric geometry | skipped before entity emission with a bounded user-visible summary |
 
+Rounded rectangle radii follow SVG's single-radius inheritance and half-size
+clamping rules. Circular corners qualify under translation, rotation, uniform
+scale, and reflection. Unequal effective radii, non-uniform scales, shears,
+and unresolved radius units are skipped with a diagnostic. A rectangle reopens
+from DXF as a path rather than a native SVG rectangle; its qualified circular
+fillets retain their geometry through another DXF export.
+
+Export maps supported paints to the existing limited ACI palette. Layer colors
+remain inherited, authored nested group and entity overrides are retained within
+that mapping, and white uses ACI 7. Full RGB/true-color fidelity remains outside
+this profile.
+
 Export never mutates the live drawing. Diagnostics are aggregated by category
 and bounded, and the terminal summary reports emitted, approximated, and
 skipped counts. DXF remains a lossy exchange format; nested SVG semantics,
 paint servers, arbitrary curves, metadata, Paper, and Geometry Nodes graphs do
 not become native DXF features.
+
+The 2026-10-02 working-tree regression check passed 1,446 Vitest tests and all
+47 production workflows in Chrome 151.0.7922.34 and Firefox 156.0.1. The new
+fixture exports a rotated white rectangle with four circular fillets, reopens
+the DXF, saves/reopens native SVG, and exports again. Independent ezdxf 1.4.4
+checks found zero audit errors or fixes and retained tangent points and radius-2
+arcs in all four downloads. Chromium's initial and repeated exports were
+byte-identical; Firefox differed only by floating-point rounding in one bulge.
+Downloads and reader evidence are under ignored `test-results/browser/dxf-fillets-*` and
+`test-results/interoperability/dxf-circular-fillets/`. This bounded regression
+does not replace the external GUI round-trip gate below.
 
 ### Required LibreCAD round trip
 

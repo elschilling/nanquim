@@ -19,6 +19,19 @@ keep their date, commit-link, and summary columns when adding entries.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pending commit:** DXF export preserves numeric circular rectangle fillets
+  as closed polyline arc segments through translation, rotation, uniform scale,
+  and reflection. Unsupported radii and affine corner shapes are reported and
+  skipped instead of silently becoming square corners.
+- **Pending commit:** Bulged DXF `LWPOLYLINE` and `POLYLINE` segments import as
+  circular SVG arcs, including closing and major arcs; supported circular SVG
+  paths retain their arcs when exported again.
+- **Pending commit:** DXF import retains white ACI 7 colors. Export preserves
+  layer and nested group color inheritance and explicit entity overrides within
+  the existing limited ACI palette.
+
 ## [0.1.0-alpha.2] - 2026-09-20
 
 See the [release notes](docs/releases/v0.1.0-alpha.2.md) for compatibility,

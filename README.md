@@ -85,7 +85,11 @@ limitations.
   transactional replacement, dirty-state protection, and metadata for
   collections, specialized geometry, styles, blocks, Paper Space, and Geometry
   Nodes. Historical schema-v1/v2 documents migrate on Open.
-- Import supported DXF geometry and export common DXF entities, including lines, circles, ellipses, arcs, polylines, and text. DXF text import is not supported yet.
+- Import supported DXF geometry and export common DXF entities, including
+  lines, circles, ellipses, arcs, polylines, and text. Numeric circular rectangle
+  fillets survive exchange as polyline arcs, including after rotation and
+  uniform scale. DXF text import is not supported yet; see the
+  [DXF profile and limits](docs/file-interoperability.md#dxf-export-profile).
 - Insert local PNG, JPEG, GIF, and WebP images with `IMAGE` (`IMG`, `IMAGEATTACH`)
   or drop an image into the Model viewport. Images are embedded in the drawing;
   see the [image workflow and limits](docs/file-interoperability.md#raster-image-insertion).

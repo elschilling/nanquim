@@ -1371,6 +1371,7 @@ async function runWorkflows(activePage) {
   await runPolylineOffsetWorkflows(activePage)
   await runFilletRepeatWorkflows(activePage)
   await runJoinWorkflows(activePage)
+  await runDxfRoundedRectangleWorkflows(activePage)
   await runDistanceMeasurementWorkflows(activePage)
   await runPaperViewportHoverWorkflows(activePage)
   await runDimensionSecondPointPreviewWorkflows(activePage)
@@ -1742,6 +1743,132 @@ async function runJoinWorkflows(activePage) {
       id => window.editor.drawing.findOne(`[id="${id}"]`),
     ))
     trace('join-curves', { joined })
+  })
+}
+
+async function runDxfRoundedRectangleWorkflows(activePage) {
+  await step('round-trip transformed white rectangle fillets through DXF and native SVG', async () => {
+    const result = await activePage.evaluate(async () => {
+      const editor = window.editor
+      const openFile = (source, name, type) => editor.documents.openFile(new File([source], name, { type }))
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 10 35 30"
+        data-nanquim-version="3" data-element-index="1201" data-active-collection-id="dxf-fillet-white">
+        <g id="dxf-fillet-white" data-collection="true" name="White fillets"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <rect id="1200" name="Rounded rectangle" x="0" y="0" width="20" height="12" rx="2" ry="2"
+            transform="matrix(0.8660254037844386 0.5 -0.5 0.8660254037844386 30 15)"/>
+        </g></svg>`
+      const loaded = await openFile(source, 'dxf-white-fillet.svg', 'image/svg+xml')
+      window.switchEditorMode('model')
+      const readDocument = () => {
+        editor.documentState.flushObservedMutations()
+        return { drawing: editor.drawing.node.outerHTML, dirty: editor.documentState.isDirty,
+          revision: editor.documentState.revision, undos: editor.history.undos.length, redos: editor.history.redos.length }
+      }
+      const readGeometry = () => {
+        const paths = editor.drawing.find('path')
+        const bounds = editor.drawing.node.getBBox()
+        return {
+          pathCount: paths.length,
+          arcs: paths.reduce((count, path) => count + path.array().filter(segment => segment[0].toUpperCase() === 'A').length, 0),
+          closed: paths.reduce((count, path) => count + path.array().filter(segment => segment[0].toUpperCase() === 'Z').length, 0),
+          length: paths.reduce((length, path) => length + path.node.getTotalLength(), 0),
+          colors: paths.map(path => getComputedStyle(path.node).stroke),
+          bounds: [bounds.x, bounds.y, bounds.width, bounds.height],
+        }
+      }
+      const describeDxf = source => {
+        const lines = source.replace(/\r/g, '').split('\n')
+        const pairs = []
+        for (let index = 0; index + 1 < lines.length; index += 2) {
+          pairs.push({ code: Number(lines[index].trim()), value: lines[index + 1].trim() })
+        }
+        const entities = []
+        let inEntities = false
+        for (let index = 0; index < pairs.length; index += 1) {
+          const pair = pairs[index]
+          if (pair.code === 0 && pair.value === 'SECTION') {
+            inEntities = pairs[index + 1]?.value === 'ENTITIES'
+          } else if (pair.code === 0 && pair.value === 'ENDSEC') {
+            inEntities = false
+          } else if (inEntities && pair.code === 0) {
+            const entity = { type: pair.value, closed: false, vertices: [] }
+            for (let cursor = index + 1; cursor < pairs.length && pairs[cursor].code !== 0; cursor += 1) {
+              const field = pairs[cursor]
+              if (field.code === 70) entity.closed = (Number(field.value) & 1) === 1
+              if (field.code === 10) entity.vertices.push({ x: Number(field.value), y: 0, bulge: 0 })
+              if (field.code === 20) entity.vertices.at(-1).y = Number(field.value)
+              if (field.code === 42) entity.vertices.at(-1).bulge = Number(field.value)
+            }
+            entities.push(entity)
+          }
+        }
+        return entities
+      }
+      const exportDxf = async () => {
+        const before = readDocument()
+        const downloads = window.__nanquimBrowserDownloads.length
+        window.saveDXF()
+        const download = window.__nanquimBrowserDownloads.at(-1)
+        const source = await download.blob.text()
+        return { source, entities: describeDxf(source), before, after: readDocument(),
+          downloaded: window.__nanquimBrowserDownloads.length === downloads + 1,
+          name: download.name, type: download.blob.type, size: download.blob.size }
+      }
+      const initialExport = await exportDxf()
+      const imported = await openFile(initialExport.source, 'white-fillet.dxf', 'image/vnd.dxf')
+      const importedGeometry = readGeometry()
+      const importedState = readDocument()
+      const saved = await editor.documents.saveAs({ suggestedName: 'white-fillet-native.svg' })
+      const nativeDownload = window.__nanquimBrowserDownloads.at(-1)
+      const nativeSource = await nativeDownload.blob.text()
+      const reopened = await openFile(nativeSource, nativeDownload.name, 'image/svg+xml')
+      const nativeGeometry = readGeometry()
+      const nativeState = readDocument()
+      const nativeExport = await exportDxf()
+      return { loaded, initialExport, imported, importedGeometry, importedState,
+        saved, reopened, nativeGeometry, nativeState, nativeExport }
+    })
+    await writeFile(join(artifactsDirectory, 'white-fillet-initial.dxf'), result.initialExport.source, 'utf8')
+    await writeFile(join(artifactsDirectory, 'white-fillet-native.dxf'), result.nativeExport.source, 'utf8')
+    // Keep traces compact; actual downloads remain available for external CAD checks.
+    delete result.initialExport.source
+    delete result.nativeExport.source
+    trace('dxf-white-fillet-roundtrip', result)
+    assert(result.loaded?.ok && !result.initialExport.before.dirty,
+      'The transformed white rounded-rectangle fixture did not open as a clean native document.')
+    const expectedVertices = [[2, 0], [18, 0], [20, 2], [20, 10], [18, 12], [2, 12], [0, 10], [0, 2]]
+      .map(([x, y]) => ({ x: Math.cos(Math.PI / 6) * x - y / 2 + 30,
+        y: -(x / 2 + Math.cos(Math.PI / 6) * y + 15) }))
+    for (const [stage, exported] of [['initial', result.initialExport], ['native reopen', result.nativeExport]]) {
+      assert(exported.downloaded && exported.name === 'drawing.dxf' && exported.type === 'application/dxf' && exported.size > 100,
+        `The ${stage} rounded-rectangle DXF export did not produce its actual fallback download.`)
+      assert(JSON.stringify(exported.before) === JSON.stringify(exported.after),
+        `The ${stage} DXF export changed live geometry, dirty state, revision, or history.`)
+      const entity = exported.entities[0]
+      assert(exported.entities.length === 1 && entity.type === 'LWPOLYLINE' && entity.closed && entity.vertices.length === 8,
+        `The ${stage} DXF export did not retain one closed rounded-rectangle polyline with eight tangent vertices.`)
+      const bulges = entity.vertices.map(vertex => vertex.bulge).filter(bulge => bulge !== 0)
+      assert(bulges.length === 4, `The ${stage} DXF export squared off one or more filleted corners.`)
+      bulges.forEach(bulge => assertNear(Math.abs(bulge), Math.tan(Math.PI / 8), 1e-9, `${stage} quarter-circle bulge`))
+      expectedVertices.forEach(expected => assert(entity.vertices.some(vertex => Math.hypot(vertex.x - expected.x, vertex.y - expected.y) < 1e-7),
+        `The ${stage} DXF export changed a rotated and translated fillet tangent point.`))
+    }
+    assert(result.imported?.ok && result.imported.kind === 'dxf' && result.importedState.dirty,
+      'Reopening the exported DXF did not adopt a dirty imported document.')
+    assert(result.saved?.ok && result.saved.unverified && result.reopened?.ok && !result.nativeState.dirty,
+      'The curved white DXF could not be saved and reopened as a clean native SVG.')
+    const expectedBounds = [24.732050807568875, 15.732050807568877, 21.856406460551018, 18.928203230275507]
+    for (const [stage, geometry] of [['DXF reopen', result.importedGeometry], ['native reopen', result.nativeGeometry]]) {
+      assert(geometry.pathCount === 1 && geometry.arcs === 4 && geometry.closed === 1,
+        `The ${stage} replaced semantic fillet arcs with straight corners or open geometry.`)
+      assert(geometry.colors.length === 1 && geometry.colors[0] === 'rgb(255, 255, 255)',
+        `The ${stage} changed the white DXF stroke to another computed color.`)
+      assertNear(geometry.length, 48 + 4 * Math.PI, 0.02, `${stage} rounded-rectangle perimeter`)
+      // Browsers approximate circular arc extrema in getBBox; exported tangent
+      // coordinates and bulges above retain the tighter semantic tolerances.
+      geometry.bounds.forEach((value, index) => assertNear(value, expectedBounds[index], 1e-3, `${stage} transformed bound ${index + 1}`))
+    }
   })
 }
 
