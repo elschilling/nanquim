@@ -19,16 +19,22 @@ keep their date, commit-link, and summary columns when adding entries.
 
 ## [Unreleased]
 
+### Dated commits
+
+| Commit date | Commit | Changes |
+| --- | --- | --- |
+| 2026-10-02 | [22f05db](https://github.com/elschilling/nanquim/commit/22f05dbdfdc02fa7d589dfa527d6888ef735a882) | Preserve circular rectangle fillets and polyline arcs through DXF exchange; retain white strokes and inherited colors; add unit and browser regressions. |
+
 ### Fixed
 
-- **Pending commit:** DXF export preserves numeric circular rectangle fillets
+- DXF export preserves numeric circular rectangle fillets
   as closed polyline arc segments through translation, rotation, uniform scale,
   and reflection. Unsupported radii and affine corner shapes are reported and
   skipped instead of silently becoming square corners.
-- **Pending commit:** Bulged DXF `LWPOLYLINE` and `POLYLINE` segments import as
+- Bulged DXF `LWPOLYLINE` and `POLYLINE` segments import as
   circular SVG arcs, including closing and major arcs; supported circular SVG
   paths retain their arcs when exported again.
-- **Pending commit:** DXF import retains white ACI 7 colors. Export preserves
+- DXF import retains white ACI 7 colors. Export preserves
   layer and nested group color inheritance and explicit entity overrides within
   the existing limited ACI palette.
 
