@@ -187,6 +187,111 @@ async function runWorkflows(activePage) {
     await installDeterministicBrowserCapabilities(activePage)
   })
 
+  await step('keep the Spaces menu above the scrollable command tools', async () => {
+    const original = await activePage.evaluate(() => ({
+      mode: window.editor.mode,
+      width: window.editor.toolPalette.width,
+      visible: window.editor.toolPalette.visible,
+      scrollTop: document.getElementById('command-tool-palette-content').scrollTop,
+      storedPalette: localStorage.getItem('nanquim.commandToolPalette'),
+    }))
+    const viewportWidths = browserName === 'chromium' ? [BROWSER_VIEWPORT.width, 720] : [BROWSER_VIEWPORT.width]
+    let pointerDown = false
+    try {
+      await activePage.evaluate(() => window.editor.toolPalette.setVisible(true, { persist: false }))
+      for (const viewportWidth of viewportWidths) {
+        if (browserName === 'chromium') await activePage.setViewport({ ...BROWSER_VIEWPORT, width: viewportWidth })
+        for (const paletteWidth of [48, 88]) {
+          await activePage.evaluate(width => {
+            window.editor.toolPalette.setWidth(width)
+            document.getElementById('command-tool-palette-content').scrollTop = 0
+            document.getElementById('editor-mode-dropdown').classList.remove('show-menu')
+          }, paletteWidth)
+          const overflow = await activePage.evaluate(() => {
+            const content = document.getElementById('command-tool-palette-content')
+            return { clientHeight: content.clientHeight, scrollHeight: content.scrollHeight }
+          })
+          assert(overflow.scrollHeight > overflow.clientHeight,
+            `Command tools do not overflow for the ${viewportWidth}px viewport and ${paletteWidth}px palette.`)
+
+          for (const overlap of ['scrollbar', 'resizer']) {
+            for (const mode of ['paper', 'model']) {
+              await activePage.evaluate(() => document.getElementById('editor-mode-dropdown').classList.remove('show-menu'))
+              await activePage.click('.editor-mode-menu')
+              const target = await activePage.evaluate(({ mode, overlap }) => {
+                const palette = document.getElementById('command-tool-palette').getBoundingClientRect()
+                const resizer = document.getElementById('command-tool-palette-resizer').getBoundingClientRect()
+                const row = document.querySelector(`.editor-mode-item[data-mode="${mode}"]`)
+                const bounds = row.getBoundingClientRect()
+                const x = overlap === 'scrollbar' ? palette.right - 2 : resizer.left + resizer.width / 2
+                const y = bounds.top + bounds.height / 2
+                return {
+                  x, y,
+                  insideRow: x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom,
+                  hitMode: document.elementFromPoint(x, y)?.closest('.editor-mode-item')?.dataset.mode || null,
+                }
+              }, { mode, overlap })
+              trace('spaces-menu-overlap', { viewportWidth, paletteWidth, mode, overlap, ...target })
+              assert(target.insideRow && target.hitMode === mode,
+                `The ${overlap} covers the ${mode} Spaces menu row (${viewportWidth}px viewport, ${paletteWidth}px palette).`)
+              await activePage.mouse.click(target.x, target.y)
+              const selected = await activePage.evaluate(() => ({
+                mode: window.editor.mode,
+                width: window.editor.toolPalette.width,
+                resizing: Boolean(window.editor.toolPalette._resizeState)
+                  || document.getElementById('command-tool-palette-resizer').classList.contains('is-resizing'),
+              }))
+              assert(selected.mode === mode && selected.width === paletteWidth && !selected.resizing,
+                `Clicking the ${mode} Spaces menu row changed the palette instead of selecting its mode.`)
+            }
+          }
+
+          await activePage.evaluate(() => document.getElementById('editor-mode-dropdown').classList.remove('show-menu'))
+          const controls = await activePage.evaluate(() => {
+            const content = document.getElementById('command-tool-palette-content').getBoundingClientRect()
+            const resizer = document.getElementById('command-tool-palette-resizer').getBoundingClientRect()
+            const x = resizer.left + resizer.width / 2
+            const y = resizer.top + resizer.height / 2
+            return {
+              scrollX: content.left + content.width / 2,
+              scrollY: content.top + content.height / 2,
+              resizeX: x, resizeY: y,
+              resizeHit: document.elementFromPoint(x, y)?.id === 'command-tool-palette-resizer',
+            }
+          })
+          assert(controls.resizeHit, 'The command tool resizer is inaccessible after closing Spaces.')
+          await activePage.mouse.move(controls.scrollX, controls.scrollY)
+          await activePage.mouse.wheel({ deltaY: 180 })
+          await activePage.waitForFunction(() => document.getElementById('command-tool-palette-content').scrollTop > 0)
+          await activePage.mouse.move(controls.resizeX, controls.resizeY)
+          await activePage.mouse.down()
+          pointerDown = true
+          await activePage.mouse.move(controls.resizeX + 16, controls.resizeY)
+          await activePage.mouse.up()
+          pointerDown = false
+          const resized = await activePage.evaluate(() => ({
+            width: window.editor.toolPalette.width,
+            resizing: Boolean(window.editor.toolPalette._resizeState),
+          }))
+          assert(resized.width === paletteWidth + 16 && !resized.resizing,
+            'The command tool palette no longer resizes after closing Spaces.')
+        }
+      }
+    } finally {
+      if (pointerDown) await activePage.mouse.up()
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await activePage.evaluate(original => {
+        window.switchEditorMode(original.mode)
+        document.getElementById('editor-mode-dropdown').classList.remove('show-menu')
+        window.editor.toolPalette.setWidth(original.width)
+        window.editor.toolPalette.setVisible(original.visible, { persist: false })
+        document.getElementById('command-tool-palette-content').scrollTop = original.scrollTop
+        if (original.storedPalette === null) localStorage.removeItem('nanquim.commandToolPalette')
+        else localStorage.setItem('nanquim.commandToolPalette', original.storedPalette)
+      }, original)
+    }
+  })
+
   await step('create a rectangle from typed dimensions', async () => {
     await runTerminalCommand(activePage, 'rec')
     const canvasPoint = await canvasScreenPoint(activePage, 0.56, 0.48)
@@ -1266,7 +1371,9 @@ async function runWorkflows(activePage) {
   await runPolylineOffsetWorkflows(activePage)
   await runFilletRepeatWorkflows(activePage)
   await runJoinWorkflows(activePage)
+  await runDxfRoundedRectangleWorkflows(activePage)
   await runDistanceMeasurementWorkflows(activePage)
+  await runPaperViewportHoverWorkflows(activePage)
   await runDimensionSecondPointPreviewWorkflows(activePage)
   await runSplineTrimBoundaryWorkflows(activePage)
   await runTrimBoundarySelectionWorkflows(activePage)
@@ -1639,6 +1746,132 @@ async function runJoinWorkflows(activePage) {
   })
 }
 
+async function runDxfRoundedRectangleWorkflows(activePage) {
+  await step('round-trip transformed white rectangle fillets through DXF and native SVG', async () => {
+    const result = await activePage.evaluate(async () => {
+      const editor = window.editor
+      const openFile = (source, name, type) => editor.documents.openFile(new File([source], name, { type }))
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 10 35 30"
+        data-nanquim-version="3" data-element-index="1201" data-active-collection-id="dxf-fillet-white">
+        <g id="dxf-fillet-white" data-collection="true" name="White fillets"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <rect id="1200" name="Rounded rectangle" x="0" y="0" width="20" height="12" rx="2" ry="2"
+            transform="matrix(0.8660254037844386 0.5 -0.5 0.8660254037844386 30 15)"/>
+        </g></svg>`
+      const loaded = await openFile(source, 'dxf-white-fillet.svg', 'image/svg+xml')
+      window.switchEditorMode('model')
+      const readDocument = () => {
+        editor.documentState.flushObservedMutations()
+        return { drawing: editor.drawing.node.outerHTML, dirty: editor.documentState.isDirty,
+          revision: editor.documentState.revision, undos: editor.history.undos.length, redos: editor.history.redos.length }
+      }
+      const readGeometry = () => {
+        const paths = editor.drawing.find('path')
+        const bounds = editor.drawing.node.getBBox()
+        return {
+          pathCount: paths.length,
+          arcs: paths.reduce((count, path) => count + path.array().filter(segment => segment[0].toUpperCase() === 'A').length, 0),
+          closed: paths.reduce((count, path) => count + path.array().filter(segment => segment[0].toUpperCase() === 'Z').length, 0),
+          length: paths.reduce((length, path) => length + path.node.getTotalLength(), 0),
+          colors: paths.map(path => getComputedStyle(path.node).stroke),
+          bounds: [bounds.x, bounds.y, bounds.width, bounds.height],
+        }
+      }
+      const describeDxf = source => {
+        const lines = source.replace(/\r/g, '').split('\n')
+        const pairs = []
+        for (let index = 0; index + 1 < lines.length; index += 2) {
+          pairs.push({ code: Number(lines[index].trim()), value: lines[index + 1].trim() })
+        }
+        const entities = []
+        let inEntities = false
+        for (let index = 0; index < pairs.length; index += 1) {
+          const pair = pairs[index]
+          if (pair.code === 0 && pair.value === 'SECTION') {
+            inEntities = pairs[index + 1]?.value === 'ENTITIES'
+          } else if (pair.code === 0 && pair.value === 'ENDSEC') {
+            inEntities = false
+          } else if (inEntities && pair.code === 0) {
+            const entity = { type: pair.value, closed: false, vertices: [] }
+            for (let cursor = index + 1; cursor < pairs.length && pairs[cursor].code !== 0; cursor += 1) {
+              const field = pairs[cursor]
+              if (field.code === 70) entity.closed = (Number(field.value) & 1) === 1
+              if (field.code === 10) entity.vertices.push({ x: Number(field.value), y: 0, bulge: 0 })
+              if (field.code === 20) entity.vertices.at(-1).y = Number(field.value)
+              if (field.code === 42) entity.vertices.at(-1).bulge = Number(field.value)
+            }
+            entities.push(entity)
+          }
+        }
+        return entities
+      }
+      const exportDxf = async () => {
+        const before = readDocument()
+        const downloads = window.__nanquimBrowserDownloads.length
+        window.saveDXF()
+        const download = window.__nanquimBrowserDownloads.at(-1)
+        const source = await download.blob.text()
+        return { source, entities: describeDxf(source), before, after: readDocument(),
+          downloaded: window.__nanquimBrowserDownloads.length === downloads + 1,
+          name: download.name, type: download.blob.type, size: download.blob.size }
+      }
+      const initialExport = await exportDxf()
+      const imported = await openFile(initialExport.source, 'white-fillet.dxf', 'image/vnd.dxf')
+      const importedGeometry = readGeometry()
+      const importedState = readDocument()
+      const saved = await editor.documents.saveAs({ suggestedName: 'white-fillet-native.svg' })
+      const nativeDownload = window.__nanquimBrowserDownloads.at(-1)
+      const nativeSource = await nativeDownload.blob.text()
+      const reopened = await openFile(nativeSource, nativeDownload.name, 'image/svg+xml')
+      const nativeGeometry = readGeometry()
+      const nativeState = readDocument()
+      const nativeExport = await exportDxf()
+      return { loaded, initialExport, imported, importedGeometry, importedState,
+        saved, reopened, nativeGeometry, nativeState, nativeExport }
+    })
+    await writeFile(join(artifactsDirectory, 'white-fillet-initial.dxf'), result.initialExport.source, 'utf8')
+    await writeFile(join(artifactsDirectory, 'white-fillet-native.dxf'), result.nativeExport.source, 'utf8')
+    // Keep traces compact; actual downloads remain available for external CAD checks.
+    delete result.initialExport.source
+    delete result.nativeExport.source
+    trace('dxf-white-fillet-roundtrip', result)
+    assert(result.loaded?.ok && !result.initialExport.before.dirty,
+      'The transformed white rounded-rectangle fixture did not open as a clean native document.')
+    const expectedVertices = [[2, 0], [18, 0], [20, 2], [20, 10], [18, 12], [2, 12], [0, 10], [0, 2]]
+      .map(([x, y]) => ({ x: Math.cos(Math.PI / 6) * x - y / 2 + 30,
+        y: -(x / 2 + Math.cos(Math.PI / 6) * y + 15) }))
+    for (const [stage, exported] of [['initial', result.initialExport], ['native reopen', result.nativeExport]]) {
+      assert(exported.downloaded && exported.name === 'drawing.dxf' && exported.type === 'application/dxf' && exported.size > 100,
+        `The ${stage} rounded-rectangle DXF export did not produce its actual fallback download.`)
+      assert(JSON.stringify(exported.before) === JSON.stringify(exported.after),
+        `The ${stage} DXF export changed live geometry, dirty state, revision, or history.`)
+      const entity = exported.entities[0]
+      assert(exported.entities.length === 1 && entity.type === 'LWPOLYLINE' && entity.closed && entity.vertices.length === 8,
+        `The ${stage} DXF export did not retain one closed rounded-rectangle polyline with eight tangent vertices.`)
+      const bulges = entity.vertices.map(vertex => vertex.bulge).filter(bulge => bulge !== 0)
+      assert(bulges.length === 4, `The ${stage} DXF export squared off one or more filleted corners.`)
+      bulges.forEach(bulge => assertNear(Math.abs(bulge), Math.tan(Math.PI / 8), 1e-9, `${stage} quarter-circle bulge`))
+      expectedVertices.forEach(expected => assert(entity.vertices.some(vertex => Math.hypot(vertex.x - expected.x, vertex.y - expected.y) < 1e-7),
+        `The ${stage} DXF export changed a rotated and translated fillet tangent point.`))
+    }
+    assert(result.imported?.ok && result.imported.kind === 'dxf' && result.importedState.dirty,
+      'Reopening the exported DXF did not adopt a dirty imported document.')
+    assert(result.saved?.ok && result.saved.unverified && result.reopened?.ok && !result.nativeState.dirty,
+      'The curved white DXF could not be saved and reopened as a clean native SVG.')
+    const expectedBounds = [24.732050807568875, 15.732050807568877, 21.856406460551018, 18.928203230275507]
+    for (const [stage, geometry] of [['DXF reopen', result.importedGeometry], ['native reopen', result.nativeGeometry]]) {
+      assert(geometry.pathCount === 1 && geometry.arcs === 4 && geometry.closed === 1,
+        `The ${stage} replaced semantic fillet arcs with straight corners or open geometry.`)
+      assert(geometry.colors.length === 1 && geometry.colors[0] === 'rgb(255, 255, 255)',
+        `The ${stage} changed the white DXF stroke to another computed color.`)
+      assertNear(geometry.length, 48 + 4 * Math.PI, 0.02, `${stage} rounded-rectangle perimeter`)
+      // Browsers approximate circular arc extrema in getBBox; exported tangent
+      // coordinates and bulges above retain the tighter semantic tolerances.
+      geometry.bounds.forEach((value, index) => assertNear(value, expectedBounds[index], 1e-3, `${stage} transformed bound ${index + 1}`))
+    }
+  })
+}
+
 async function runDistanceMeasurementWorkflows(activePage) {
   await step('show DIST measurements in the viewport with optional overlays hidden', async () => {
     const initialized = await activePage.evaluate(async () => {
@@ -1712,6 +1945,387 @@ async function runDistanceMeasurementWorkflows(activePage) {
     await activePage.keyboard.press('F3')
     await activePage.waitForFunction(() => getComputedStyle(document.getElementById('Overlays')).display !== 'none')
     trace('distance-measurement', measurement)
+  })
+
+  await step('measure Paper Space points without changing annotations or viewport scale', async () => {
+    const previous = await activePage.evaluate(() => ({
+      mode: window.editor.mode,
+      preferences: localStorage.getItem('nanquim-preferences'),
+      paletteVisible: window.editor.toolPalette.visible,
+      paletteScrollTop: document.getElementById('command-tool-palette-content').scrollTop,
+      toggles: Object.fromEntries(['isSnapping', 'gridSnap', 'polarTracking', 'ortho']
+        .map(name => [name, window.editor[name]])),
+    }))
+    const scenarios = browserName === 'chromium'
+      ? [{ width: BROWSER_VIEWPORT.width, light: false }, { width: 720, light: true }]
+      : [{ width: BROWSER_VIEWPORT.width, light: false }, { width: BROWSER_VIEWPORT.width, light: true }]
+    const waitForCleanup = () => activePage.waitForFunction(() => (
+      !document.querySelector('.measure-ghost-group, .measure-overlay')
+      && !window.editor.isInteracting && !window.editor.selectSingleElement
+      && window.editor.signals.pointCaptured.getNumListeners() === 0
+    ))
+    const readAppearance = selector => activePage.evaluate(selector => {
+      const group = window.editor.paperSvg.node.querySelector(selector)
+      if (!group) return null
+      const line = group.querySelector('line')
+      const text = group.querySelector('.measure-text')
+      const lineStyle = getComputedStyle(line)
+      const textStyle = getComputedStyle(text)
+      const lineBounds = line.getBoundingClientRect()
+      const textBounds = text.getBoundingClientRect()
+      const matrix = text.getScreenCTM()
+      const sheet = window.editor.paperSvg.node.querySelector('#paper-background rect:last-child')
+      const colorToHex = value => {
+        const context = document.createElement('canvas').getContext('2d')
+        context.fillStyle = value
+        return context.fillStyle
+      }
+      return {
+        parentIsPaper: group.parentElement === window.editor.paperSvg.node,
+        transient: group.getAttribute('data-nanquim-transient') === 'true',
+        pointerEvents: getComputedStyle(group).pointerEvents,
+        points: ['x1', 'y1', 'x2', 'y2'].map(name => Number(line.getAttribute(name))),
+        distance: Number(text.textContent),
+        textColor: colorToHex(textStyle.fill),
+        sheetColor: colorToHex(getComputedStyle(sheet).fill),
+        fontPixels: parseFloat(textStyle.fontSize) * Math.hypot(matrix.a, matrix.b),
+        visible: lineStyle.display !== 'none' && lineStyle.visibility !== 'hidden'
+          && lineStyle.stroke !== 'none' && Number(lineStyle.opacity) > 0
+          && (lineBounds.width > 0 || lineBounds.height > 0)
+          && textStyle.display !== 'none' && textStyle.visibility !== 'hidden'
+          && textStyle.fill !== 'none' && Number(textStyle.opacity) > 0
+          && textBounds.width > 0 && textBounds.height > 0,
+      }
+    }, selector)
+    const assertAppearance = (appearance, stage) => {
+      assert(appearance?.parentIsPaper && appearance.transient && appearance.pointerEvents === 'none'
+        && appearance.visible, `Paper DIST ${stage} is hidden or intercepts canvas input.`)
+      assert(appearance.sheetColor === '#ffffff'
+        && themeColorContrast(appearance.textColor, appearance.sheetColor) >= 4.5,
+      `Paper DIST ${stage} text is unreadable on the white sheet.`)
+      assertNear(appearance.distance, 10, 0.15, `Paper DIST ${stage} distance`)
+      assertNear(appearance.fontPixels, 14, 0.1, `Paper DIST ${stage} screen font size`)
+      ;[12, 12, 20, 18].forEach((expected, index) => {
+        assertNear(appearance.points[index], expected, 0.1, `Paper DIST ${stage} coordinate ${index + 1}`)
+      })
+    }
+    try {
+      for (const scenario of scenarios) {
+        if (browserName === 'chromium') await activePage.setViewport({ ...BROWSER_VIEWPORT, width: scenario.width })
+        const initialized = await activePage.evaluate(async ({ light }) => {
+          window.openPreferences()
+          const background = document.getElementById('prefs-background-color')
+          background.value = light ? '#f3f1ea' : '#20252a'
+          background.dispatchEvent(new Event('input', { bubbles: true }))
+          document.querySelector('.prefs-btn-save').click()
+          const config = { size: 'A4', width: 210, height: 297, orientation: 'portrait', unitsPerCm: 2, colorMap: {} }
+          const viewports = [{ id: 'vp-distance', x: 8, y: 8, w: 22, h: 22,
+            scale: 25, modelOriginX: 0, modelOriginY: 0, visible: true, locked: false }]
+          const escapeAttribute = value => JSON.stringify(value).replaceAll('"', '&quot;')
+          const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 500 300"
+            data-nanquim-version="3" data-element-index="1000" data-active-collection-id="distance-paper-model"
+            data-paper-config="${escapeAttribute(config)}" data-paper-viewports="${escapeAttribute(viewports)}">
+            <g id="paper-annotations" data-nanquim-paper-annotations="true" data-collection="true" name="Annotations"/>
+            <g id="distance-paper-model" data-collection="true" name="Distance model" style="stroke:#000000;fill:none">
+              <line id="1000" x1="0" y1="0" x2="200" y2="0"/>
+            </g></svg>`
+          const result = await window.editor.documents.openFile(new File([source], 'distance-paper.svg', { type: 'image/svg+xml' }))
+          window.switchEditorMode('paper')
+          const editor = window.editor
+          editor.paperSvg.viewbox(0, 0, 42, 60)
+          editor.isSnapping = false
+          editor.gridSnap = false
+          editor.polarTracking = false
+          editor.ortho = false
+          editor.snapPoint = null
+          editor.toolPalette.setVisible(true, { persist: false })
+          return result
+        }, scenario)
+        assert(initialized?.ok, 'Could not initialize the Paper DIST fixture.')
+        await activePage.waitForFunction(() => window.editor.mode === 'paper'
+          && !document.querySelector('[data-command="DIST"]').disabled
+          && document.querySelector('[data-command="DIST"]').getAttribute('aria-disabled') === 'false')
+        const readState = () => activePage.evaluate(() => {
+          const editor = window.editor
+          editor.documentState.flushObservedMutations()
+          const viewport = editor.paperViewports[0]
+          return {
+            history: editor.history.undos.length,
+            revision: editor.documentState.revision,
+            dirty: editor.documentState.isDirty,
+            annotations: editor.paperAnnotations.node.innerHTML,
+            viewport: [viewport.x, viewport.y, viewport.w, viewport.h, viewport.scale,
+              viewport.modelOriginX, viewport.modelOriginY],
+            activeForPanning: viewport.activeForPanning,
+          }
+        })
+        const baseline = await readState()
+        assert(!baseline.dirty, 'The Paper DIST fixture did not begin with a clean document.')
+        const points = await activePage.evaluate(() => [new DOMPoint(12, 12), new DOMPoint(20, 18)].map(point => {
+          const screen = point.matrixTransform(window.editor.paperSvg.node.getScreenCTM())
+          return { x: screen.x, y: screen.y,
+            hitsFrame: document.elementFromPoint(screen.x, screen.y)?.classList.contains('vp-frame') }
+        }))
+        assert(points.every(point => point.hitsFrame), 'Paper DIST points do not hit the viewport frame interior.')
+        await runTerminalCommand(activePage, scenario.light ? 'd' : 'dist')
+        await activePage.mouse.click(points[0].x, points[0].y)
+        await activePage.mouse.move(points[1].x, points[1].y)
+        await activePage.waitForFunction(() => Boolean(window.editor.paperSvg.node.querySelector('.measure-ghost-group .measure-text')?.textContent))
+        await activePage.evaluate(() => window.editor.paperViewports[0]._frame.node.dispatchEvent(
+          new MouseEvent('dblclick', { bubbles: true, button: 0 }),
+        ))
+        const preview = await readAppearance('.measure-ghost-group')
+        assertAppearance(preview, 'preview')
+        await activePage.mouse.click(points[1].x, points[1].y)
+        await activePage.waitForFunction(() => !window.editor.isInteracting
+          && Boolean(window.editor.paperSvg.node.querySelector('.measure-overlay')))
+        const completed = await readAppearance('.measure-overlay')
+        assertAppearance(completed, 'result')
+        assert(JSON.stringify(await readState()) === JSON.stringify(baseline),
+          'Paper DIST changed history, dirty state, annotations, or its measured viewport.')
+        await activePage.screenshot({ path: join(artifactsDirectory, `distance-paper-${scenario.width}-${scenario.light ? 'light' : 'dark'}.png`) })
+        const exported = await activePage.evaluate(async () => {
+          const editor = window.editor
+          const native = new DOMParser().parseFromString(editor.documents.serialize(editor), 'image/svg+xml')
+          editor.paperEditor.exportSVG()
+          const source = await window.__nanquimBrowserDownloads.at(-1).blob.text()
+          const paper = new DOMParser().parseFromString(source, 'image/svg+xml')
+          const helperSelector = '[data-nanquim-transient="true"], .measure-overlay, .measure-ghost-group, .measure-text'
+          return {
+            nativeHelpers: native.querySelectorAll(helperSelector).length,
+            paperHelpers: paper.querySelectorAll(helperSelector).length,
+            nativeAnnotations: native.querySelector('#paper-annotations')?.childElementCount,
+            paperAnnotations: paper.querySelector('#paper-annotations')?.childElementCount,
+          }
+        })
+        assert(exported.nativeHelpers === 0 && exported.paperHelpers === 0
+          && exported.nativeAnnotations === 0 && exported.paperAnnotations === 0,
+        'Paper DIST feedback entered the native document or Paper SVG export.')
+
+        // Starting another command clears the previous result; relative input
+        // remains in Paper coordinates even above a scaled Model viewport.
+        await runTerminalCommand(activePage, 'd')
+        assert(await activePage.$('.measure-overlay') === null, 'The next command retained the Paper DIST result.')
+        await typeTerminalValue(activePage, '#12,12')
+        await typeTerminalValue(activePage, '@8,6')
+        await activePage.waitForFunction(() => !window.editor.isInteracting && Boolean(document.querySelector('.measure-overlay')))
+        assertAppearance(await readAppearance('.measure-overlay'), 'typed result')
+        await activePage.keyboard.press('Escape')
+        await waitForCleanup()
+
+        await activePage.$eval('[data-command="DIST"]', button => button.scrollIntoView({ block: 'nearest' }))
+        await activePage.click('[data-command="DIST"]')
+        await activePage.waitForFunction(() => window.editor.isInteracting && window.editor.selectSingleElement)
+        await typeTerminalValue(activePage, '#12,12')
+        await typeTerminalValue(activePage, '@8,6')
+        await activePage.waitForFunction(() => !window.editor.isInteracting && Boolean(document.querySelector('.measure-overlay')))
+        assertAppearance(await readAppearance('.measure-overlay'), 'palette result')
+        await activePage.focus('#terminalInput')
+        await activePage.keyboard.press(' ')
+        await activePage.waitForFunction(() => window.editor.isInteracting
+          && !document.querySelector('.measure-overlay') && window.editor.lastCommand.commandName === 'DIST')
+        await typeTerminalValue(activePage, '#12,12')
+        await activePage.evaluate(() => window.switchEditorMode('model'))
+        await waitForCleanup()
+        await activePage.evaluate(() => window.switchEditorMode('paper'))
+        await runTerminalCommand(activePage, 'd')
+        await typeTerminalValue(activePage, '#12,12')
+        await activePage.keyboard.press('Escape')
+        await waitForCleanup()
+        await runTerminalCommand(activePage, 'dist')
+        await typeTerminalValue(activePage, '#12,12')
+        await typeTerminalValue(activePage, '@8,6')
+        await activePage.waitForFunction(() => Boolean(document.querySelector('.measure-overlay')))
+        await activePage.evaluate(() => window.switchEditorMode('model'))
+        await waitForCleanup()
+        await activePage.evaluate(() => window.switchEditorMode('paper'))
+        assert(JSON.stringify(await readState()) === JSON.stringify(baseline),
+          'Paper DIST cleanup or editor switches changed the document.')
+        trace('distance-paper', { ...scenario, preview, completed, exported, baseline })
+      }
+    } finally {
+      await activePage.keyboard.press('Escape')
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await activePage.evaluate(previous => {
+        if (previous.preferences === null) localStorage.removeItem('nanquim-preferences')
+        else localStorage.setItem('nanquim-preferences', previous.preferences)
+        window.openPreferences()
+        document.querySelector('.prefs-btn-cancel').click()
+        Object.assign(window.editor, previous.toggles)
+        window.editor.toolPalette.setVisible(previous.paletteVisible, { persist: false })
+        document.getElementById('command-tool-palette-content').scrollTop = previous.paletteScrollTop
+        window.switchEditorMode(previous.mode)
+      }, previous)
+    }
+  })
+}
+
+async function runPaperViewportHoverWorkflows(activePage) {
+  await step('confine Paper viewport hover to its visible rectangle', async () => {
+    const previous = await activePage.evaluate(() => ({
+      mode: window.editor.mode,
+      paletteVisible: window.editor.toolPalette.visible,
+      toggles: Object.fromEntries(['isSnapping', 'gridSnap', 'polarTracking', 'ortho']
+        .map(name => [name, window.editor[name]])),
+    }))
+    const widths = browserName === 'chromium' ? [BROWSER_VIEWPORT.width, 720] : [BROWSER_VIEWPORT.width]
+    const readHover = () => activePage.evaluate(() => {
+      const wrapper = document.getElementById('vp-hover-group')
+      const style = getComputedStyle(wrapper)
+      return {
+        ids: window.editor.hoveredElements.map(element => element.node.id),
+        viewportIds: window.editor.hoveredElements
+          .filter(element => element.node.matches('[data-paper-viewport="true"]'))
+          .map(element => element.node.getAttribute('data-vp-id')),
+        painted: Boolean(wrapper.querySelector('.elementHover')),
+        visible: style.display !== 'none' && style.visibility !== 'hidden',
+        opacity: Number(style.opacity),
+      }
+    })
+    const moveAndReadHover = async point => {
+      await activePage.mouse.move(point.x, point.y)
+      // Pointer coordinates and hover are processed in successive animation
+      // frames. Wait for both before asserting an absent hover candidate.
+      await activePage.evaluate(() => new Promise(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      }))
+      return readHover()
+    }
+    try {
+      for (const width of widths) {
+        if (browserName === 'chromium') await activePage.setViewport({ ...BROWSER_VIEWPORT, width })
+        const initialized = await activePage.evaluate(async () => {
+          const config = { size: 'A4', width: 210, height: 297, orientation: 'portrait', unitsPerCm: 2, colorMap: {} }
+          const viewports = [
+            { id: 'vp-hover', x: 14, y: 20, w: 16, h: 12,
+              scale: 2, modelOriginX: 0, modelOriginY: 0, visible: true, locked: false },
+            { id: 'vp-hover-hidden', x: 14, y: 5, w: 16, h: 8,
+              scale: 2, modelOriginX: 0, modelOriginY: 0, visible: false, locked: false },
+            { id: 'vp-hover-locked', x: 14, y: 36, w: 16, h: 8,
+              scale: 2, modelOriginX: 0, modelOriginY: 0, visible: true, locked: true },
+          ]
+          const escapeAttribute = value => JSON.stringify(value).replaceAll('"', '&quot;')
+          const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-210 -210 420 420"
+            data-nanquim-version="3" data-element-index="1103" data-active-collection-id="hover-model"
+            data-paper-config="${escapeAttribute(config)}" data-paper-viewports="${escapeAttribute(viewports)}">
+            <g id="paper-annotations" data-nanquim-paper-annotations="true" data-collection="true" name="Annotations"
+              style="stroke:#000000;fill:none">
+              <line id="1102" x1="8" y1="26" x2="11" y2="26"/>
+            </g>
+            <g id="hover-model" data-collection="true" name="Hover model" style="stroke:#000000;fill:none">
+              <rect id="1100" x="-200" y="-200" width="400" height="400"/>
+              <circle id="1101" cx="4" cy="4" r="1"/>
+            </g></svg>`
+          const result = await window.editor.documents.openFile(new File([source], 'paper-hover.svg', { type: 'image/svg+xml' }))
+          window.switchEditorMode('paper')
+          const editor = window.editor
+          editor.paperSvg.viewbox(0, 0, 42, 48)
+          editor.isSnapping = false
+          editor.gridSnap = false
+          editor.polarTracking = false
+          editor.ortho = false
+          editor.toolPalette.setVisible(false, { persist: false })
+          editor.signals.clearSelection.dispatch()
+          editor.documentState.flushObservedMutations()
+          return { result, dirty: editor.documentState.isDirty }
+        })
+        assert(initialized.result?.ok && !initialized.dirty, 'The Paper hover fixture did not open as a clean document.')
+        const points = await activePage.evaluate(() => {
+          const editor = window.editor
+          const viewport = editor.paperViewports.find(viewport => viewport.id === 'vp-hover')
+          const frame = viewport._frame.node.getBoundingClientRect()
+          const use = viewport._useEl.node
+          const bounds = use.getBBox()
+          const useMatrix = use.getScreenCTM()
+          const corners = [
+            new DOMPoint(bounds.x, bounds.y), new DOMPoint(bounds.x + bounds.width, bounds.y),
+            new DOMPoint(bounds.x + bounds.width, bounds.y + bounds.height), new DOMPoint(bounds.x, bounds.y + bounds.height),
+          ].map(point => point.matrixTransform(useMatrix))
+          const rootMatrix = editor.paperSvg.node.getScreenCTM()
+          const paperPoint = (x, y) => {
+            const point = new DOMPoint(x, y).matrixTransform(rootMatrix)
+            return { x: point.x, y: point.y }
+          }
+          const center = { x: frame.left + frame.width / 2, y: frame.top + frame.height / 2 }
+          return {
+            inside: center,
+            hidden: paperPoint(22, 9),
+            locked: paperPoint(22, 40),
+            annotation: paperPoint(9.5, 26),
+            oversizedUse: Math.min(...corners.map(point => point.x)) < frame.left - 24
+              && Math.max(...corners.map(point => point.x)) > frame.right + 24
+              && Math.min(...corners.map(point => point.y)) < frame.top - 24
+              && Math.max(...corners.map(point => point.y)) > frame.bottom + 24,
+            outside: [4, 24].flatMap(gap => [
+              { edge: 'left', gap, x: frame.left - gap, y: center.y },
+              { edge: 'right', gap, x: frame.right + gap, y: center.y },
+              { edge: 'top', gap, x: center.x, y: frame.top - gap },
+              { edge: 'bottom', gap, x: center.x, y: frame.bottom + gap },
+            ]),
+          }
+        })
+        assert(points.oversizedUse, 'The hover fixture does not extend its clipped Model bounds beyond all four viewport edges.')
+        const interior = await moveAndReadHover(points.inside)
+        assert(interior.viewportIds.includes('vp-hover') && interior.painted && interior.visible && interior.opacity === 0.4,
+          `The blank viewport interior did not hover at ${width}px.`)
+        await activePage.mouse.click(points.inside.x, points.inside.y)
+        assert(await activePage.evaluate(() => window.editor.selected.some(element => element.node.id === 'vp-hover-group')),
+          'A click inside the blank viewport did not select it.')
+        await activePage.keyboard.press('Escape')
+
+        for (const point of points.outside) {
+          const hover = await moveAndReadHover(point)
+          trace('paper-viewport-hover', { width, ...point, ...hover })
+          assert(hover.viewportIds.length === 0 && !hover.painted && hover.visible && hover.opacity === 1,
+            `The clipped viewport hovered ${point.gap}px outside its ${point.edge} edge at ${width}px.`)
+        }
+        const exterior = points.outside[0]
+        await moveAndReadHover(exterior)
+        await activePage.mouse.click(exterior.x, exterior.y)
+        assert(await activePage.evaluate(() => !window.editor.selected.some(
+          element => element.node.matches('[data-paper-viewport="true"]'),
+        ) && !document.querySelector('.disambiguation-menu')),
+        'A click outside the rectangle selected or offered the clipped viewport.')
+        // An empty canvas click starts the editor's two-click rectangle
+        // selection. Cancel it before checking further ordinary pointer hover.
+        await activePage.keyboard.press('Escape')
+        await activePage.waitForFunction(() => !window.editor.isDrawing && !window.editor.isSelecting)
+
+        for (const state of ['hidden', 'locked']) {
+          const hover = await moveAndReadHover(points[state])
+          assert(hover.viewportIds.length === 0,
+            `The ${state} Paper viewport hovered inside its rectangle.`)
+        }
+        const annotation = await moveAndReadHover(points.annotation)
+        trace('paper-viewport-annotation-hover', { width, point: points.annotation, ...annotation,
+          state: await activePage.evaluate(() => {
+            const group = window.editor.paperAnnotations
+            const collection = window.editor.collections.get('paper-annotations')
+            return { content: group.node.innerHTML, transform: group.node.getAttribute('transform'),
+              visible: collection.visible, locked: collection.locked }
+          }),
+        })
+        assert(annotation.ids.includes('1102') && annotation.viewportIds.length === 0,
+          'An ordinary Paper annotation outside the viewport lost hover or also hovered clipped Model content.')
+        await activePage.mouse.click(points.annotation.x, points.annotation.y)
+        assert(await activePage.evaluate(() => window.editor.selected.some(element => element.node.id === '1102')),
+          'The ordinary annotation outside the viewport could not be selected.')
+        const state = await activePage.evaluate(() => {
+          window.editor.documentState.flushObservedMutations()
+          return { dirty: window.editor.documentState.isDirty, history: window.editor.history.undos.length }
+        })
+        assert(!state.dirty && state.history === 0, 'Paper hover or selection changed the document or its history.')
+        trace('paper-viewport-hover-summary', { width, interior, annotation, ...state })
+      }
+    } finally {
+      await activePage.keyboard.press('Escape')
+      if (browserName === 'chromium') await activePage.setViewport(BROWSER_VIEWPORT)
+      await activePage.evaluate(previous => {
+        Object.assign(window.editor, previous.toggles)
+        window.editor.toolPalette.setVisible(previous.paletteVisible, { persist: false })
+        window.switchEditorMode(previous.mode)
+      }, previous)
+    }
   })
 }
 
@@ -1887,13 +2501,15 @@ async function runDimensionSecondPointPreviewWorkflows(activePage) {
 }
 
 async function runFilletRepeatWorkflows(activePage) {
-  await step('fillet a rectangle semantically with Undo/Redo', async () => {
+  await step('fillet, rotate, and move a rectangle semantically with Undo/Redo', async () => {
     const loaded = await activePage.evaluate(async () => {
       const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70"
-        data-nanquim-version="3" data-element-index="976" data-active-collection-id="fillet-rectangle">
+        data-nanquim-version="3" data-element-index="978" data-active-collection-id="fillet-rectangle">
         <g id="fillet-rectangle" data-collection="true" name="Rectangle fillet"
           style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <line id="974" x1="5" y1="5" x2="10" y2="5"/>
           <rect id="975" name="Room" data-zone="A" x="20" y="15" width="50" height="30"/>
+          <line id="977" x1="80" y1="60" x2="85" y2="60"/>
         </g></svg>`
       const result = await window.editor.documents.openFile(
         new File([source], 'fillet-rectangle.svg', { type: 'image/svg+xml' }),
@@ -1965,6 +2581,187 @@ async function runFilletRepeatWorkflows(activePage) {
       && redone.name === 'Room' && redone.zone === 'A',
     'Redo did not restore the same semantic rectangle fillet.')
     trace('fillet-rectangle', { before, filleted, redone, undone })
+
+    const originalNode = await activePage.$('[id="975"]')
+    const readRotationState = () => activePage.evaluate((node) => {
+      const editor = window.editor
+      const observedMutation = editor.documentState.flushObservedMutations()
+      const rectangle = editor.drawing.findOne('[id="975"]')
+      const persistentNode = rectangle.node.cloneNode(true)
+      persistentNode.removeAttribute('selected')
+      persistentNode.classList.remove('elementHover', 'elementSelected')
+      if (!persistentNode.getAttribute('class')?.trim()) persistentNode.removeAttribute('class')
+      const matrix = editor.svg.node.getScreenCTM().inverse()
+        .multiply(rectangle.node.getScreenCTM())
+      const bounds = rectangle.node.getBBox()
+      const corners = [[bounds.x, bounds.y], [bounds.x + bounds.width, bounds.y],
+        [bounds.x + bounds.width, bounds.y + bounds.height], [bounds.x, bounds.y + bounds.height]]
+        .map(([x, y]) => new DOMPoint(x, y).matrixTransform(matrix))
+      return {
+        attributes: Object.fromEntries(Array.from(persistentNode.attributes)
+          .filter(attribute => attribute.name !== 'transform')
+          .map(attribute => [attribute.name, attribute.value])),
+        corners: corners.map(point => ({ x: point.x, y: point.y })),
+        history: editor.history.undos.length,
+        markup: persistentNode.outerHTML,
+        observedMutation,
+        order: Array.from(rectangle.node.parentNode.children, child => child.id),
+        parent: rectangle.node.parentNode.id,
+        rawMarkup: rectangle.node.outerHTML,
+        revision: editor.documentState.revision,
+        sameNode: rectangle.node === node,
+        tag: rectangle.type,
+        transform: rectangle.attr('transform') || null,
+      }
+    }, originalNode)
+    const rounded = await readRotationState()
+    assert(rounded.transform === null, 'FILLET unexpectedly added a rectangle transform.')
+    await activePage.evaluate(() => {
+      window.editor.selected = [window.editor.drawing.findOne('[id="975"]')]
+    })
+    await runTerminalCommand(activePage, 'ROTATE')
+    await waitForTerminalText(activePage, 'Specify center point.')
+    await typeTerminalValue(activePage, '#45,30')
+    await waitForTerminalText(activePage, 'Specify reference point or an angle to rotate.')
+    await typeTerminalValue(activePage, '90')
+    await activePage.waitForFunction(() => !window.editor.isInteracting
+      && window.editor.history.undos.length === 2)
+    const rotated = await readRotationState()
+    assert(rotated.tag === 'rect' && rotated.sameNode && rotated.transform,
+      'ROTATE replaced the rounded rectangle instead of preserving its semantic geometry.')
+    assert(JSON.stringify(rotated.attributes) === JSON.stringify(rounded.attributes),
+      'ROTATE changed the rounded rectangle radii, coordinates, style, or metadata.')
+    assert(rotated.parent === rounded.parent
+      && JSON.stringify(rotated.order) === JSON.stringify(rounded.order),
+    'ROTATE changed the rounded rectangle ownership or sibling order.')
+    assert(rotated.history === rounded.history + 1 && rotated.revision === rounded.revision + 1,
+      'Rounded rectangle ROTATE did not create exactly one document mutation.')
+    const expectedCorners = [{ x: 60, y: 5 }, { x: 60, y: 55 },
+      { x: 30, y: 55 }, { x: 30, y: 5 }]
+    rotated.corners.forEach((point, index) => {
+      assertNear(point.x, expectedCorners[index].x, 1e-4, `Rounded ROTATE corner ${index} x`)
+      assertNear(point.y, expectedCorners[index].y, 1e-4, `Rounded ROTATE corner ${index} y`)
+    })
+
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    const rotationUndone = await readRotationState()
+    assert(rotationUndone.sameNode && rotationUndone.markup === rounded.markup
+      && rotationUndone.parent === rounded.parent
+      && JSON.stringify(rotationUndone.order) === JSON.stringify(rounded.order),
+    'Undo did not restore the exact rounded rectangle node, attributes, and sibling order.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    const rotationRedone = await readRotationState()
+    assert(rotationRedone.sameNode && rotationRedone.markup === rotated.markup
+      && rotationRedone.parent === rotated.parent
+      && JSON.stringify(rotationRedone.order) === JSON.stringify(rotated.order),
+    'Redo did not restore the same rounded rectangle rotation.')
+    trace('fillet-rectangle-rotate', { rounded, rotated, rotationUndone, rotationRedone })
+
+    const moveSettings = await activePage.evaluate(() => {
+      const editor = window.editor
+      const settings = Object.fromEntries(['isSnapping', 'gridSnap', 'polarTracking', 'ortho']
+        .map(name => [name, editor[name]]))
+      for (const name of Object.keys(settings)) editor[name] = false
+      return settings
+    })
+    const beginMove = async () => {
+      await activePage.evaluate(() => {
+        window.editor.selected = [window.editor.drawing.findOne('[id="975"]')]
+      })
+      await runTerminalCommand(activePage, 'MOVE')
+      await waitForTerminalText(activePage, 'Specify base point.')
+      await typeTerminalValue(activePage, '#45,30')
+      await activePage.waitForFunction(() => window.editor.ghostNodes?.has(document.getElementById('975')))
+    }
+    const assertMovedCorners = (state, delta, tolerance, message) => {
+      state.corners.forEach((point, index) => {
+        assertNear(point.x, rotated.corners[index].x + delta.x, tolerance, `${message} corner ${index} x`)
+        assertNear(point.y, rotated.corners[index].y + delta.y, tolerance, `${message} corner ${index} y`)
+      })
+    }
+    try {
+      await beginMove()
+      const pointerTarget = await activePage.evaluate(() => {
+        const matrix = window.editor.svg.node.getScreenCTM()
+        const point = new DOMPoint(57, 23).matrixTransform(matrix)
+        const inverse = matrix.inverse()
+        return { x: point.x, y: point.y, tolerance: Math.max(
+          Math.hypot(inverse.a, inverse.c), Math.hypot(inverse.b, inverse.d),
+        ) }
+      })
+      await activePage.mouse.move(pointerTarget.x, pointerTarget.y)
+      await activePage.waitForFunction(transform => (
+        document.getElementById('975')?.getAttribute('transform') !== transform
+      ), {}, rotated.transform)
+      const movePreview = await readRotationState()
+      const pointer = await activePage.evaluate(() => window.editor.coordinates)
+      const previewDelta = { x: pointer.x - 45, y: pointer.y - 30 }
+      assertNear(previewDelta.x, 12, pointerTarget.tolerance, 'Rounded MOVE preview pointer delta x')
+      assertNear(previewDelta.y, -7, pointerTarget.tolerance, 'Rounded MOVE preview pointer delta y')
+      assertMovedCorners(movePreview, previewDelta, 1e-4, 'Rounded MOVE preview')
+      assert(movePreview.sameNode
+        && JSON.stringify(movePreview.attributes) === JSON.stringify(rotated.attributes)
+        && movePreview.history === rotationRedone.history && movePreview.revision === rotationRedone.revision
+        && movePreview.observedMutation === false,
+      'Rounded MOVE preview changed persistent geometry, History, or DocumentState.')
+      await activePage.keyboard.press('Escape')
+      await activePage.waitForFunction(() => !window.editor.isInteracting && !window.editor.ghostNodes)
+      const moveCancelled = await readRotationState()
+      trace('fillet-rectangle-move-cancel', { rotationRedone, movePreview, moveCancelled })
+      assert(moveCancelled.sameNode && moveCancelled.markup === rotated.markup
+        && moveCancelled.history === rotationRedone.history && moveCancelled.revision === rotationRedone.revision
+        && moveCancelled.parent === rotated.parent
+        && JSON.stringify(moveCancelled.order) === JSON.stringify(rotated.order),
+      'Cancelling MOVE did not restore the exact rotated rounded rectangle.')
+
+      await beginMove()
+      await typeTerminalValue(activePage, '@12,-7')
+      await activePage.waitForFunction(() => !window.editor.isInteracting
+        && !window.editor.ghostNodes && window.editor.history.undos.length === 3)
+      const moved = await readRotationState()
+      assertMovedCorners(moved, { x: 12, y: -7 }, 1e-4, 'Rounded MOVE')
+      moved.corners.forEach((point, index) => {
+        assertNear(point.x, movePreview.corners[index].x, pointerTarget.tolerance, `Rounded MOVE preview/commit corner ${index} x`)
+        assertNear(point.y, movePreview.corners[index].y, pointerTarget.tolerance, `Rounded MOVE preview/commit corner ${index} y`)
+      })
+      assert(moved.sameNode && moved.tag === 'rect'
+        && JSON.stringify(moved.attributes) === JSON.stringify(rotated.attributes)
+        && moved.parent === rotated.parent
+        && JSON.stringify(moved.order) === JSON.stringify(rotated.order),
+      'MOVE changed the rotated rounded rectangle node, radii, attributes, or ownership.')
+      assert(moved.history === rotationRedone.history + 1 && moved.revision === rotationRedone.revision + 1,
+        'Rotated rounded rectangle MOVE did not create exactly one document mutation.')
+
+      await activePage.keyboard.down(controlKey())
+      await activePage.keyboard.press('KeyZ')
+      await activePage.keyboard.up(controlKey())
+      const moveUndone = await readRotationState()
+      assert(moveUndone.sameNode && moveUndone.markup === rotated.markup
+        && moveUndone.parent === rotated.parent
+        && JSON.stringify(moveUndone.order) === JSON.stringify(rotated.order),
+      'Undo did not restore the exact rotated rounded rectangle before MOVE.')
+      await activePage.keyboard.down(controlKey())
+      await activePage.keyboard.down('Shift')
+      await activePage.keyboard.press('KeyZ')
+      await activePage.keyboard.up('Shift')
+      await activePage.keyboard.up(controlKey())
+      const moveRedone = await readRotationState()
+      assert(moveRedone.sameNode && moveRedone.markup === moved.markup
+        && moveRedone.parent === moved.parent
+        && JSON.stringify(moveRedone.order) === JSON.stringify(moved.order),
+      'Redo did not restore the exact moved rounded rectangle.')
+      trace('fillet-rectangle-move', { movePreview, moveCancelled, moved, moveUndone, moveRedone })
+    } finally {
+      await activePage.keyboard.press('Escape')
+      await activePage.evaluate(settings => { Object.assign(window.editor, settings) }, moveSettings)
+      await originalNode.dispose()
+    }
   })
 
   await step('fillet separated lines using their full picked rays', async () => {

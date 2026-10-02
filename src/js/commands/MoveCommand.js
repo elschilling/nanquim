@@ -1,6 +1,24 @@
 import { Command } from '../Command'
 import { calculateDeltaFromBasepoint, calculateLocalDelta } from '../utils/calculateDistance'
 import { resolveInputCoordinate } from '../utils/coordinateInput'
+import { hasOwnGeometryTransform } from '../utils/geometryTransformQualification'
+import {
+  captureRootTransformContext,
+  composeRootTranslation,
+} from '../utils/rootSpaceTransform'
+
+function selectedRoots(elements) {
+  const unique = [...new Map(elements.map(element => [element?.node || element, element])).values()]
+  const nodes = new Set(unique.map(element => element?.node))
+  return unique.filter((element) => {
+    let ancestor = element?.node?.parentNode
+    while (ancestor) {
+      if (nodes.has(ancestor)) return false
+      ancestor = ancestor.parentNode
+    }
+    return true
+  })
+}
 
 class MoveCommand extends Command {
   constructor(editor) {
@@ -10,6 +28,7 @@ class MoveCommand extends Command {
     // Store bound function reference for proper cleanup
     this.boundOnKeyDown = this.onKeyDown.bind(this)
     this.interactiveExecutionDone = false
+    this.selectionSnapshot = []
   }
 
   execute() {
@@ -50,7 +69,9 @@ class MoveCommand extends Command {
   }
 
   onSelectionConfirmed() {
-    const selectedElements = this.editor.selected
+    this.selectionSnapshot = this.editor.selected.slice()
+    this.selectedElements = selectedRoots(this.selectionSnapshot)
+    const selectedElements = this.selectedElements
     if (selectedElements.length === 0) {
       this.editor.signals.terminalLogged.dispatch({ msg: 'No elements selected. Command cancelled.' })
       this.cleanup()
@@ -61,7 +82,16 @@ class MoveCommand extends Command {
     this.editor.selectSingleElement = true
 
     // Store original positions for each element
-    this.originalPositions = this.editor.selected.map((element) => this.getElementPosition(element))
+    try {
+      this.originalPositions = selectedElements.map((element) => this.getElementPosition(element))
+    } catch (_error) {
+      this.editor.signals.terminalLogged.dispatch({
+        msg: 'MOVE could not resolve the selected geometry transform.',
+        type: 'error',
+      })
+      this.cleanup()
+      return
+    }
 
     this.editor.signals.terminalLogged.dispatch({ msg: `Selected ${selectedElements.length} elements.` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify base point.' })
@@ -82,7 +112,7 @@ class MoveCommand extends Command {
     this.basePoint = point
     this.editor.signals.terminalLogged.dispatch({ msg: `Base point: ${this.basePoint.x.toFixed(2)}, ${this.basePoint.y.toFixed(2)}` })
     this.editor.signals.terminalLogged.dispatch({ msg: 'Specify second point, type a distance, @x,y for a relative offset, or #x,y for an absolute destination.' })
-    this.editor.signals.moveGhostingStarted.dispatch(this.editor.selected, this.basePoint)
+    this.editor.signals.moveGhostingStarted.dispatch(this.selectedElements, this.basePoint)
     this.editor.signals.pointCaptured.addOnce(this.onSecondPoint, this)
 
     // Listen for typed distance input — move in current mouse direction by the typed amount
@@ -163,6 +193,18 @@ class MoveCommand extends Command {
       splineData: typeof element.data === 'function' ? element.data('splineData') : null
     }
 
+    if (hasOwnGeometryTransform(element)) {
+      return {
+        type: 'root-transform',
+        context: captureRootTransformContext(
+          element,
+          this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg,
+        ),
+        transformAttribute: element.attr('transform'),
+        ...data,
+      }
+    }
+
     if (element.type === 'line') {
       return {
         type: 'line',
@@ -226,10 +268,9 @@ class MoveCommand extends Command {
   moveElements(dx, dy) {
     this.dx = dx
     this.dy = dy
-    this.selectedElements = this.editor.selected.slice()
     this.localDeltas = this.selectedElements.map((element, index) => {
       const originalPos = this.originalPositions[index]
-      return originalPos.type === 'viewport'
+      return ['viewport', 'root-transform'].includes(originalPos.type)
         ? { dx, dy }
         : calculateLocalDelta(element, dx, dy)
     })
@@ -245,6 +286,14 @@ class MoveCommand extends Command {
       throw error
     }
     this.dispatchSignal('clearSelection')
+    new Set([...this.selectionSnapshot, ...this.selectedElements]).forEach((element) => {
+      element.removeClass?.('elementHover')
+      element.removeClass?.('elementSelected')
+      element.node?.removeAttribute?.('selected')
+      if (!String(element.attr?.('class') || '').trim()) {
+        element.node?.removeAttribute?.('class')
+      }
+    })
     this.editor.selected = []
     this.dispatchSignal('terminalLogged', { msg: 'Elements moved.' })
   }
@@ -273,7 +322,10 @@ class MoveCommand extends Command {
     const originalPos = this.originalPositions[index]
     const { dx: ldx, dy: ldy } = this.localDeltas[index]
 
-    if (originalPos.type === 'line') {
+    if (originalPos.type === 'root-transform') {
+      element.transform(composeRootTranslation(originalPos.context, ldx, ldy))
+      return
+    } else if (originalPos.type === 'line') {
       const newPoints = originalPos.points.map((point) => [point[0] + ldx, point[1] + ldy])
       element.plot(newPoints)
     } else if (originalPos.type === 'center') {
@@ -344,7 +396,13 @@ class MoveCommand extends Command {
     this.selectedElements.forEach((element, index) => {
       const originalPos = this.originalPositions[index]
 
-      if (originalPos.type === 'line') {
+      if (originalPos.type === 'root-transform') {
+        if (originalPos.transformAttribute == null) {
+          element.node.removeAttribute('transform')
+        } else {
+          element.attr('transform', originalPos.transformAttribute)
+        }
+      } else if (originalPos.type === 'line') {
         // For lines, translate all points
         element.plot(originalPos.points)
       } else if (originalPos.type === 'center') {

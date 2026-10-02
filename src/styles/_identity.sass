@@ -668,6 +668,19 @@ button.collection-icon[data-paper-viewport-action]
 .measure-text
   fill: var(--app-foreground-color)
 
+.paper-canvas-svg
+  .measure-ghost,
+  .measure-line
+    stroke: var(--paper-ink-color)
+
+  .measure-text
+    fill: var(--paper-ink-color)
+    stroke: var(--paper-sheet-color)
+    stroke-width: 3px
+    stroke-linejoin: round
+    paint-order: stroke
+    vector-effect: non-scaling-stroke
+
 // Dialog family, including Preferences and block workflows.
 .prefs-overlay,
 .block-modal-overlay

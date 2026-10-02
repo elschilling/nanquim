@@ -31,6 +31,7 @@ function createFixture({ unitsPerCm = 1 } = {}) {
   const editor = {
     drawing,
     isDrawing: false,
+    isInteracting: false,
     mode: 'paper',
     paperConfig: {
       colorMap: {},
@@ -52,6 +53,7 @@ function createFixture({ unitsPerCm = 1 } = {}) {
     spatialIndex: { markDirty: vi.fn() },
     fullSpatialIndex: { markDirty: vi.fn() },
     signals: {
+      pointCaptured: { getNumListeners: vi.fn(() => 0) },
       updatedSelection: { dispatch: vi.fn() },
     },
     svg: modelSvg,
@@ -433,6 +435,128 @@ describe('Paper viewport transforms', () => {
     viewport.setVisible(true)
     expect(viewport._group.attr('data-locked')).toBeUndefined()
     expect(viewport._group.attr('data-hidden')).toBeUndefined()
+  })
+
+  test.each([false, true])('preserves frame selection with isInteracting=%s when no command captures points', (isInteracting) => {
+    const { editor, viewport } = createFixture()
+    const onCanvasMouseDown = vi.fn()
+    editor.isInteracting = isInteracting
+    editor.paperSvg.node.addEventListener('mousedown', onCanvasMouseDown)
+
+    viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      button: 0,
+    }))
+
+    expect(editor.selected).toEqual([viewport._group])
+    expect(editor.signals.updatedSelection.dispatch).toHaveBeenCalledOnce()
+    expect(onCanvasMouseDown).not.toHaveBeenCalled()
+  })
+
+  test('lets a point-capturing interaction receive frame clicks without changing selection', () => {
+    const { editor, viewport } = createFixture()
+    const priorSelection = [editor.drawing]
+    const onCanvasMouseDown = vi.fn()
+    editor.selected = priorSelection
+    editor.isInteracting = true
+    editor.signals.pointCaptured.getNumListeners.mockReturnValue(1)
+    editor.paperSvg.node.addEventListener('mousedown', onCanvasMouseDown)
+
+    viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      button: 0,
+    }))
+
+    expect(onCanvasMouseDown).toHaveBeenCalledOnce()
+    expect(editor.selected).toBe(priorSelection)
+    expect(editor.signals.updatedSelection.dispatch).not.toHaveBeenCalled()
+    expect(viewport.activeForPanning).toBe(false)
+  })
+
+  test('preserves drawing-command frame clicks for the canvas', () => {
+    const { editor, viewport } = createFixture()
+    const onCanvasMouseDown = vi.fn()
+    editor.isDrawing = true
+    editor.paperSvg.node.addEventListener('mousedown', onCanvasMouseDown)
+
+    viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      button: 0,
+    }))
+
+    expect(onCanvasMouseDown).toHaveBeenCalledOnce()
+    expect(editor.selected).toEqual([])
+    expect(editor.signals.updatedSelection.dispatch).not.toHaveBeenCalled()
+  })
+
+  test.each([false, true])('preserves frame double-click activation with isInteracting=%s when no command captures points', (isInteracting) => {
+    const { editor, viewport } = createFixture()
+    const onCanvasDoubleClick = vi.fn()
+    editor.isInteracting = isInteracting
+    editor.paperSvg.node.addEventListener('dblclick', onCanvasDoubleClick)
+
+    try {
+      viewport._frame.node.dispatchEvent(new MouseEvent('dblclick', {
+        bubbles: true,
+        button: 0,
+      }))
+
+      expect(viewport.activeForPanning).toBe(true)
+      expect(onCanvasDoubleClick).not.toHaveBeenCalled()
+    } finally {
+      viewport.deactivate()
+    }
+  })
+
+  test('does not activate viewport panning on double-click during point capture', () => {
+    const { editor, viewport } = createFixture()
+    const onCanvasDoubleClick = vi.fn()
+    editor.isInteracting = true
+    editor.signals.pointCaptured.getNumListeners.mockReturnValue(1)
+    editor.paperSvg.node.addEventListener('dblclick', onCanvasDoubleClick)
+
+    try {
+      viewport._frame.node.dispatchEvent(new MouseEvent('dblclick', {
+        bubbles: true,
+        button: 0,
+      }))
+
+      expect(onCanvasDoubleClick).toHaveBeenCalledOnce()
+      expect(viewport.activeForPanning).toBe(false)
+      expect(viewport._activationTimer).toBeUndefined()
+    } finally {
+      viewport.deactivate()
+    }
+  })
+
+  test('lets the canvas handle middle-clicks without panning viewport contents during point capture', () => {
+    const { editor, viewport } = createFixture()
+    const onCanvasMouseDown = vi.fn()
+    editor.isInteracting = true
+    editor.signals.pointCaptured.getNumListeners.mockReturnValue(1)
+    editor.paperSvg.screenCTM = () => ({ a: 1, d: 1 })
+    viewport.activeForPanning = true
+    editor.paperSvg.node.addEventListener('mousedown', onCanvasMouseDown)
+
+    try {
+      viewport._frame.node.dispatchEvent(new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        button: 1,
+        clientX: 10,
+        clientY: 10,
+      }))
+      document.dispatchEvent(new MouseEvent('mousemove', { clientX: 20, clientY: 15 }))
+      document.dispatchEvent(new MouseEvent('mouseup'))
+
+      expect(onCanvasMouseDown).toHaveBeenCalledOnce()
+      expect(viewport.modelOriginX).toBe(-450)
+      expect(viewport.modelOriginY).toBe(-370)
+      expect(viewport._panState).toBeUndefined()
+      expect(editor.signals.updatedSelection.dispatch).not.toHaveBeenCalled()
+    } finally {
+      viewport.deactivate()
+    }
   })
 
   test('invalidates both spatial indexes only after successful direct viewport changes', () => {

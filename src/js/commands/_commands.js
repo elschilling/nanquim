@@ -169,8 +169,8 @@ const commands = {
     execute: measureDistanceCommand,
     aliases: ['d', 'dist'],
     category: 'Measure & Annotate',
-    description: 'Measure and display distance and X and Y deltas between two points.',
-    modes: MODEL_ONLY,
+    description: 'Measure distance and X/Y deltas between two points in Model or Paper Space.',
+    modes: MODEL_AND_PAPER,
   },
   MIRROR: {
     execute: mirrorCommand,

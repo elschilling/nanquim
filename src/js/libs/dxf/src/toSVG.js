@@ -6,6 +6,7 @@ import getRGBForEntity from './getRGBForEntity'
 import logger from './util/logger'
 import rotate from './util/rotate'
 import rgbToColorAttribute from './util/rgbToColorAttribute'
+import bulgedPolylinePath from './util/bulgedPolylinePath'
 import toPiecewiseBezier, { multiplicity } from './util/toPiecewiseBezier'
 import transformBoundingBoxAndElement from './util/transformBoundingBoxAndElement'
 
@@ -217,9 +218,18 @@ const line = (entity) => {
 }
 
 /**
- * Create a <path /> element. Interpolates curved entities.
+ * Create a <path /> element, preserving circular polyline bulges exactly and
+ * retaining the sampled fallback for other unsupported curved entities.
  */
 const polyline = (entity) => {
+  if ((entity.type === 'LWPOLYLINE' || entity.type === 'POLYLINE')
+    && !entity.polyfaceMesh && !entity.polygonMesh
+    && entity.vertices?.some(vertex => vertex.bulge)) {
+    const { bbox, pathData } = bulgedPolylinePath(entity)
+    // Preserve the existing entity-level extrusion convention for polylines;
+    // INSERT transforms still apply to the entire exact path and its bounds.
+    return transformBoundingBoxAndElement(bbox, `<path d="${pathData}" />`, entity.transforms)
+  }
   const vertices = entityToPolyline(entity)
   const bbox = vertices.reduce(
     (acc, [x, y]) => acc.expandByPoint({ x, y }),
@@ -498,8 +508,8 @@ const bezier = (entity) => {
 }
 
 /**
- * Switcth the appropriate function on entity type. CIRCLE, ARC and ELLIPSE
- * produce native SVG elements, the rest produce interpolated polylines.
+ * Switch the appropriate function on entity type. Circular polyline bulges
+ * remain SVG arcs; unsupported curves retain their interpolated fallback.
  */
 const entityToBoundsAndElement = (entity, report) => {
   switch (entity.type) {

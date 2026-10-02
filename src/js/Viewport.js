@@ -28,6 +28,7 @@ import { canCropImageElement, getImageVisibleBounds, imageBoundsFromGrip, readIm
 import { updateGrid as updateGridDraw } from './utils/gridDraw'
 import { checkSnap as checkSnapSystem, drawSnap, clearSnap, drawExtensionLines } from './utils/snapSystem'
 import { initToolbarHandlers } from './utils/toolbarHandlers'
+import { isPointInsidePaperViewport } from './utils/paperViewportHitTest'
 import { updateEllipseArcData, renderEllipseArc } from './utils/ellipseArcUtils'
 import {
   constrainVertexPointInRoot,
@@ -440,20 +441,24 @@ function Viewport(editor) {
   function onMoveGhostingStopped() {
     isGhostingMove = false
     editor.ghostNodes = null
-    ghostElements.forEach((el) => {
-      const initial = initialTransforms.get(el)
-      if (el._paperVp) {
-        el._paperVp.x = initial.x
-        el._paperVp.y = initial.y
-        el._paperVp.w = initial.w
-        el._paperVp.h = initial.h
-        el._paperVp.refreshGeometry()
-      } else {
-        restoreTransformPreviewState(el, {
-          transformAttribute: initialTransformAttributes.get(el),
-        })
-      }
-    })
+    const restorePreviews = () => {
+      ghostElements.forEach((el) => {
+        const initial = initialTransforms.get(el)
+        if (el._paperVp) {
+          el._paperVp.x = initial.x
+          el._paperVp.y = initial.y
+          el._paperVp.w = initial.w
+          el._paperVp.h = initial.h
+          el._paperVp.refreshGeometry()
+        } else {
+          restoreTransformPreviewState(el, {
+            transformAttribute: initialTransformAttributes.get(el),
+          })
+        }
+      })
+    }
+    if (editor.documentState) editor.documentState.runWithoutTracking(restorePreviews)
+    else restorePreviews()
     ghostElements = []
     basePoint = null
     initialTransforms.clear()
@@ -666,17 +671,21 @@ function Viewport(editor) {
             dx = 0
           }
         }
-        ghostElements.forEach((el) => {
-          const initial = initialTransforms.get(el)
-          if (el._paperVp) {
-            el._paperVp.x = initial.x + dx
-            el._paperVp.y = initial.y + dy
-            el._paperVp.refreshGeometry()
-          } else {
-            const localDelta = calculateLocalDelta(el, dx, dy)
-            el.transform(initial).translate(localDelta.dx, localDelta.dy)
-          }
-        })
+        const updateMovePreviews = () => {
+          ghostElements.forEach((el) => {
+            const initial = initialTransforms.get(el)
+            if (el._paperVp) {
+              el._paperVp.x = initial.x + dx
+              el._paperVp.y = initial.y + dy
+              el._paperVp.refreshGeometry()
+            } else {
+              const localDelta = calculateLocalDelta(el, dx, dy)
+              el.transform(initial).translate(localDelta.dx, localDelta.dy)
+            }
+          })
+        }
+        if (editor.documentState) editor.documentState.runWithoutTracking(updateMovePreviews)
+        else updateMovePreviews()
       }
       if (isGhostingRotate) {
         let rotationAngle = calculateRotationAngle(centerPoint, referencePoint, coordinates)
@@ -1130,6 +1139,17 @@ function Viewport(editor) {
     rtreeCandidates.forEach((item) => {
       const el = item.element
       if (el.hasClass('ghostLine') || el.hasClass('selectionRectangle') || el.hasClass('grid') || el.hasClass('axis')) return
+
+      const ancestor = editor.mode === 'paper' ? findSelectableAncestor(el) : null
+      if (ancestor?._paperVp) {
+        const viewport = ancestor._paperVp
+        // Clipped Model bounds and ordinary edge tolerance must not extend
+        // the viewport's hover target beyond its visible Paper frame.
+        if (isPointInsidePaperViewport(coordinates, viewport, svgCTM, viewport._frame.screenCTM())) {
+          candidates.push({ el, distance: 0 })
+        }
+        return
+      }
 
       // ---- PRECISE DISTANCE ----
       let distance

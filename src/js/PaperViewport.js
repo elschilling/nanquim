@@ -375,10 +375,12 @@ PaperViewport.prototype._persistChange = function (reason, options = {}) {
  */
 PaperViewport.prototype._attachInteractions = function() {
   const { _frame, _editor } = this
+  const isCapturingPoint = () => _editor.isInteracting
+    && (_editor.signals.pointCaptured?.getNumListeners?.() || 0) > 0
 
   this.activeForPanning = false
   this._onDblClick = (e) => {
-    if (_editor.mode !== 'paper' || _editor.isDrawing || this.locked) return
+    if (_editor.mode !== 'paper' || _editor.isDrawing || isCapturingPoint() || this.locked) return
     if (e.button !== 0) return // Only left double click to activate
     e.stopPropagation()
     
@@ -393,8 +395,9 @@ PaperViewport.prototype._attachInteractions = function() {
   }
 
   this._onMouseDown = (e) => {
-    // Only intercept if we are in Paper mode (sanity check) and not actively drawing lines
-    if (_editor.mode !== 'paper' || _editor.isDrawing || this.locked) return
+    // Point-taking commands own canvas clicks; selection-based interactions
+    // continue to use the viewport frame's ordinary selection behavior.
+    if (_editor.mode !== 'paper' || _editor.isDrawing || isCapturingPoint() || this.locked) return
 
     // Standard Select (Left Click)
     if (e.button === 0) {

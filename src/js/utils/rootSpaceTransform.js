@@ -181,8 +181,27 @@ function composeRootRotation(context, angle, centerPoint) {
   )
 }
 
+/** Apply a drawing-root offset without changing element-local geometry. */
+function composeRootTranslation(context, dx, dy) {
+  const x = Number(dx)
+  const y = Number(dy)
+  if (![x, y].every(Number.isFinite)) {
+    throw new Error('Translation offsets must be finite.')
+  }
+
+  const parentInverse = inverse(context?.parentToRoot)
+  const local = matrixValues(context?.local)
+  // P^-1 * T * P * M adds the parent-space offset to M's translation.
+  return matrixValues({
+    ...local,
+    e: local.e + parentInverse.a * x + parentInverse.c * y,
+    f: local.f + parentInverse.b * x + parentInverse.d * y,
+  })
+}
+
 export {
   captureRootTransformContext,
   composeRootRotation,
+  composeRootTranslation,
   getParentToRootMatrix,
 }

@@ -105,7 +105,6 @@ const COMMAND_LIFECYCLE_CONTRACTS = Object.freeze({
   }),
   DIST: contract({
     input: ['pointer', 'coordinate'],
-    modes: MODEL_MODE,
     prompt: 'Specify first point',
   }),
   MIRROR: contract({

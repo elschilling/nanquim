@@ -1,5 +1,6 @@
 import { getArcGeometry } from './arcUtils'
 import { bakeTransforms } from './transformGeometry'
+import { circularPathVertices, rectangleOutline } from './DXFcircularGeometry'
 
 const MAX_DXF_COORDINATE = 1000000000
 
@@ -238,14 +239,26 @@ function isAxisAlignedTransform(matrix, epsilon = 1e-8) {
         && Math.abs(matrix.d) > epsilon
 }
 
-function findUnsupportedDxfTransforms(element, parentMatrix = null, unsupported = new WeakSet()) {
+function findUnsupportedDxfTransforms(element, parentMatrix = null, unsupported = new WeakSet(), unqualifiedCurves = new WeakSet()) {
     const accumulated = multiplyAffine(parentMatrix, element.matrix())
     if (element.type === 'g') {
-        element.children().each(child => findUnsupportedDxfTransforms(child, accumulated, unsupported))
+        element.children().each(child => findUnsupportedDxfTransforms(child, accumulated, unsupported, unqualifiedCurves))
         return unsupported
     }
 
-    const isCircularArc = element.type === 'path' && Boolean(element.data('arcData'))
+    const curve = element.type === 'path' ? circularPathVertices(element.attr('d')) : null
+    if (element.type === 'path' && /[Aa]/.test(element.attr('d') || '') && !curve) {
+        // The generic bake cannot correctly transform arbitrary elliptical
+        // arcs. Qualify the authored path before its radii are changed.
+        unqualifiedCurves.add(element.node)
+        return unsupported
+    }
+    if (curve && /[Aa]/.test(element.attr('d') || '')) {
+        // Bake absolute M/L/A/Z segments. The shared legacy H/V bake uses a
+        // transformed previous point, which would move these fillet endpoints.
+        element.plot(curve.path)
+    }
+    const isCircularArc = element.type === 'path' && (Boolean(element.data('arcData')) || curve?.hasArcs)
     if ((element.type === 'circle' || isCircularArc) && !isSimilarityTransform(accumulated)) {
         unsupported.add(element.node)
     } else if (element.type === 'ellipse') {
@@ -296,6 +309,7 @@ function buildDXFDocument(editor) {
         const lines = []
         const diagnosticCounts = new Map()
         const unsupportedTransformNodes = new WeakSet()
+        const unqualifiedCurveNodes = new WeakSet()
         const counts = {
             emitted: Object.create(null),
             input: 0,
@@ -341,8 +355,17 @@ function buildDXFDocument(editor) {
             emit(100, 'AcDbEntity')
             emit(8, layerName)
             const presentationValue = (property) => {
-                const inline = el?.node?.style?.getPropertyValue(property)?.trim()
-                return inline || el?.attr?.(property)
+                let current = el
+                while (current?.node && current.node.getAttribute('data-collection') !== 'true') {
+                    const inline = current.node.style?.getPropertyValue(property)?.trim()
+                    const value = inline || current.node.getAttribute(property)?.trim()
+                    if (value && !['inherit', 'currentcolor'].includes(value.toLowerCase())) return value
+                    current = current.parent?.()
+                }
+                // The collection's color is already encoded in its DXF layer.
+                // Read authored paints only; SVG.js getters supply defaults
+                // that would incorrectly replace inherited layer colors.
+                return null
             }
             const paint = [presentationValue('stroke'), presentationValue('fill')]
                 .find(value => value && value !== 'none' && value !== 'transparent' && !value.startsWith('url('))
@@ -589,8 +612,31 @@ function buildDXFDocument(editor) {
                         && validDxfNumber(rect.width(), { positive: true })
                         && validDxfNumber(rect.height(), { positive: true })
                     rect.attr('data-dxf-rectangle-source', rawGeometryIsValid ? 'true' : 'invalid')
+                    rect.node.removeAttribute('data-dxf-rounded-rectangle')
+                    const outline = rectangleOutline(rect)
+                    if (outline.status === 'rounded') {
+                        // Convert only the detached export copy. Unlike the
+                        // generic rectangle bake, this outline retains arcs.
+                        const path = rect.parent().path(outline.path)
+                        path.attr(rect.attr())
+                        // Rectangle metadata must not turn its new outline
+                        // into a different semantic arc or spline entity.
+                        for (const attribute of ['data-arc-data', 'data-spline-data', 'data-ellipse-arc-data', 'data-circle-trim-data']) {
+                            path.node.removeAttribute(attribute)
+                        }
+                        for (const key of ['arcData', 'splineData', 'ellipseArcData', 'circleTrimData']) {
+                            path.data(key, null)
+                        }
+                        path.attr('data-dxf-rounded-rectangle', 'true')
+                        rect.node.parentNode.insertBefore(path.node, rect.node)
+                        rect.remove()
+                    } else if (outline.status === 'invalid') {
+                        rect.attr('data-dxf-rectangle-source', 'invalid')
+                    } else if (outline.status === 'unsupported') {
+                        rect.attr('data-dxf-rounded-rectangle', 'unsupported')
+                    }
                 })
-                findUnsupportedDxfTransforms(exportGroup, null, unsupportedTransformNodes)
+                findUnsupportedDxfTransforms(exportGroup, null, unsupportedTransformNodes, unqualifiedCurveNodes)
                 bakeTransforms(exportGroup)
                 walkGroup(exportGroup, layerName)
             } catch (_error) {
@@ -637,6 +683,18 @@ function buildDXFDocument(editor) {
         }
 
         function emitElement(el, layerName) {
+            if (unqualifiedCurveNodes.has(el.node)) {
+                diagnose('unsupported-path', 'Some curved or filled SVG paths could not be represented in DXF and were skipped.')
+                return false
+            }
+            if (el.attr('data-dxf-rectangle-source') === 'invalid') return rejectInvalidGeometry()
+            const roundedRectangle = el.attr('data-dxf-rounded-rectangle')
+            if (roundedRectangle === 'unsupported'
+                || (roundedRectangle === 'true' && unsupportedTransformNodes.has(el.node))) {
+                diagnose('unsupported-rounded-rectangle',
+                    'Rounded rectangles with unresolved radii or elliptical or sheared corners were skipped during DXF export.')
+                return false
+            }
             if (unsupportedTransformNodes.has(el.node)) {
                 diagnose(
                     'unsupported-affine-transform',
@@ -749,6 +807,28 @@ function buildDXFDocument(editor) {
                 return emitArc(el, layerName)
             } else if (el.data('splineData')) {
                 return emitSplinePath(el, layerName)
+            }
+            const curved = circularPathVertices(el.attr('d'))
+            if (curved && (curved.hasArcs || /[Aa]/.test(el.attr('d') || ''))) {
+                if (el.data('hatchData')) {
+                    counts.approximated++
+                    diagnose('hatch-outline-only',
+                        'Hatches were exported as boundary polylines without their SVG fill pattern.')
+                }
+                if (el.attr('data-dxf-rectangle-source') === 'true') {
+                    counts.approximated++
+                    diagnose('rectangle-as-polyline', 'Rectangles were exported as closed DXF polylines.')
+                }
+                beginEntity('LWPOLYLINE', layerName, el)
+                emit(100, 'AcDbPolyline')
+                emit(90, curved.vertices.length)
+                emit(70, curved.closed ? 1 : 0)
+                emit(43, 0)
+                curved.vertices.forEach(point => {
+                    emit(10, point.x); emit(20, fy(point.y))
+                    if (point.bulge) emit(42, point.bulge)
+                })
+                return true
             }
             const straight = straightPathPoints(el.attr('d'))
             if (straight) {
