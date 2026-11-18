@@ -124,6 +124,101 @@ describe('snapSystem transformed geometry qualification', () => {
     })
   })
 
+  test.each([
+    ['endpoint', { x: 10, y: 10 }],
+    ['endpoint', { x: 50, y: 10 }],
+    ['endpoint', { x: 50, y: 50 }],
+    ['endpoint', { x: 90, y: 50 }],
+    ['endpoint', { x: 90, y: 90 }],
+    ['midpoint', { x: 30, y: 10 }],
+    ['midpoint', { x: 50, y: 30 }],
+    ['midpoint', { x: 70, y: 50 }],
+    ['midpoint', { x: 90, y: 70 }],
+  ])('snaps each polyline-path %s at %j without measuring the whole path', (type, point) => {
+    const path = makeElement({
+      array: [['M', 10, 10], ['L', 50, 10], ['L', 50, 50], ['L', 90, 50], ['L', 90, 90]],
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { [type]: true })
+    path.node.getTotalLength = undefined
+
+    expectSnap(fixture, point, { point, type })
+  })
+
+  test('does not label an internal vertex at half the path length as a midpoint', () => {
+    const path = makeElement({
+      array: [['M', 0, 0], ['L', 40, 0], ['L', 40, 40]],
+      pathPoint: length => length <= 40 ? { x: length, y: 0 } : { x: 40, y: length - 40 },
+      totalLength: 80,
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { midpoint: true })
+
+    expect(checkSnap({ x: 40, y: 0 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([
+    [['Z']],
+    [['L', 10, 10]],
+  ])('includes the closing segment of a polyline path ending with %j', closing => {
+    const path = makeElement({
+      array: [['M', 10, 10], ['H', 50], ['V', 50], closing],
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { midpoint: true })
+
+    expectSnap(fixture, { x: 30, y: 30 }, { point: { x: 30, y: 30 }, type: 'midpoint' })
+  })
+
+  test('keeps path subpaths separate and ignores zero-length segments', () => {
+    const path = makeElement({
+      array: [['M', 0, 0], ['L', 20, 0], ['L', 20, 0], ['M', 80, 0], ['L', 100, 0]],
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { endpoint: true, midpoint: true })
+
+    expectSnap(fixture, { x: 80, y: 0 }, { point: { x: 80, y: 0 }, type: 'endpoint' })
+    fixture.editor.snapTypes.endpoint = false
+    expectSnap(fixture, { x: 90, y: 0 }, { point: { x: 90, y: 0 }, type: 'midpoint' })
+    expect(checkSnap({ x: 50, y: 0 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+    expect(checkSnap({ x: 20, y: 0 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([
+    ['endpoint', { x: 180, y: 40 }],
+    ['midpoint', { x: 210, y: 40 }],
+  ])('converts a polyline-path %s through nested transforms', (type, point) => {
+    const path = makeElement({
+      array: [['M', 10, 20], ['L', 20, 20], ['L', 20, 40]],
+      matrix: { a: 0, b: 2, c: -3, d: 0, e: 300, f: 0 },
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { [type]: true })
+
+    expectSnap(fixture, point, { point, type })
+  })
+
+  test.each([
+    [Math.SQRT2 * 5, 0, 1, { x: 5, y: 5 - Math.SQRT2 * 5 }],
+    [Math.SQRT2 * 5, 0, 0, { x: 5, y: Math.SQRT2 * 5 - 5 }],
+    [6.25, 1, 1, { x: 5, y: -10 }],
+    [6.25, 1, 0, { x: 5, y: 10 }],
+    [2, 0, 1, { x: 5, y: -5 }],
+    [0, 0, 1, { x: 5, y: 0 }],
+  ])('snaps to the circular path segment midpoint (radius %s, large %s, sweep %s)', (radius, large, sweep, point) => {
+    const path = makeElement({
+      array: [['M', 0, 0], ['A', radius, radius, 30, large, sweep, 10, 0], ['L', 30, 0]],
+      type: 'path',
+    })
+    const fixture = makeFixture([path], { midpoint: true })
+
+    const result = checkSnap(point, fixture.editor, fixture.activeSvg, 1)
+    expect(result?.snapType).toBe('midpoint')
+    expect(result?.worldPoint.x).toBeCloseTo(point.x, 10)
+    expect(result?.worldPoint.y).toBeCloseTo(point.y, 10)
+    if (radius > 0) expect(checkSnap({ x: 5, y: 0 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+  })
+
   test('snaps to an imported image corner while a command is interacting', () => {
     const image = makeElement({
       attributes: { x: 10, y: 20, width: 80, height: 40 },
@@ -233,6 +328,94 @@ describe('snapSystem transformed geometry qualification', () => {
     const fixture = makeFixture([rectangle], { nearest: true })
 
     expectSnap(fixture, cursor, { point: expected, type: 'nearest' }, tolerance)
+  })
+
+  test.each([
+    { x: 15, y: 20 }, { x: 45, y: 20 },
+    { x: 50, y: 25 }, { x: 50, y: 45 },
+    { x: 45, y: 50 }, { x: 15, y: 50 },
+    { x: 10, y: 45 }, { x: 10, y: 25 },
+  ])('snaps a filleted rectangle to its arc endpoint %j', point => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, rx: 5, ry: 5 },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { endpoint: true })
+
+    expectSnap(fixture, point, { point, type: 'endpoint' })
+  })
+
+  test.each([
+    { x: 10, y: 20 }, { x: 50, y: 20 }, { x: 50, y: 50 }, { x: 10, y: 50 },
+  ])('does not snap to the removed square corner %j after FILLET', point => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, rx: 5, ry: 5 },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { endpoint: true, midpoint: true })
+
+    expect(checkSnap(point, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+  })
+
+  test.each([
+    { x: 30, y: 20 }, { x: 50, y: 35 }, { x: 30, y: 50 }, { x: 10, y: 35 },
+    { x: 45 + 5 * Math.SQRT1_2, y: 25 - 5 * Math.SQRT1_2 },
+    { x: 45 + 5 * Math.SQRT1_2, y: 45 + 5 * Math.SQRT1_2 },
+    { x: 15 - 5 * Math.SQRT1_2, y: 45 + 5 * Math.SQRT1_2 },
+    { x: 15 - 5 * Math.SQRT1_2, y: 25 - 5 * Math.SQRT1_2 },
+  ])('snaps to each straight or curved filleted rectangle midpoint %j', point => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, rx: 5, ry: 5 },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { midpoint: true })
+    const result = checkSnap(point, fixture.editor, fixture.activeSvg, 1)
+
+    expect(result?.snapType).toBe('midpoint')
+    expect(result?.worldPoint.x).toBeCloseTo(point.x, 10)
+    expect(result?.worldPoint.y).toBeCloseTo(point.y, 10)
+  })
+
+  test.each([
+    [{ rx: 5 }, { x: 10, y: 25 }],
+    [{ ry: 5 }, { x: 15, y: 20 }],
+    [{ rx: 'auto', ry: 5 }, { x: 15, y: 20 }],
+    [{ rx: 5, ry: 'auto' }, { x: 10, y: 25 }],
+    [{ rx: 100, ry: 100 }, { x: 30, y: 20 }],
+    [{ rx: 8, ry: 3 }, { x: 18, y: 20 }],
+    [{ rx: 0, ry: 5 }, { x: 10, y: 20 }],
+    [{ rx: 5, ry: 0 }, { x: 10, y: 20 }],
+  ])('uses SVG radius fallback and clamp rules for %j', (radii, point) => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, ...radii },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { endpoint: true })
+
+    expectSnap(fixture, point, { point, type: 'endpoint' })
+  })
+
+  test('does not label a collapsed straight edge as a midpoint', () => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, rx: 20, ry: 5 },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { midpoint: true })
+
+    expect(checkSnap({ x: 30, y: 20 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
+    expectSnap(fixture, { x: 50, y: 35 }, { point: { x: 50, y: 35 }, type: 'midpoint' })
+  })
+
+  test('converts fillet endpoints through a rotated and nonuniformly scaled ancestor', () => {
+    const rectangle = makeElement({
+      attributes: { x: 10, y: 20, width: 40, height: 30, rx: 5, ry: 5 },
+      matrix: { a: 0, b: 2, c: -3, d: 0, e: 300, f: 50 },
+      type: 'rect',
+    })
+    const fixture = makeFixture([rectangle], { endpoint: true })
+
+    expectSnap(fixture, { x: 240, y: 80 }, { point: { x: 240, y: 80 }, type: 'endpoint' })
+    expect(checkSnap({ x: 240, y: 70 }, fixture.editor, fixture.activeSvg, 1)).toBeNull()
   })
 
   test.each([
