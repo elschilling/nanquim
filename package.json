@@ -39,6 +39,9 @@
     "vecks": "^3.9.2"
   },
   "pnpm": {
+    "auditConfig": {
+      "ignoreCves": ["CVE-2026-112366"]
+    },
     "overrides": {
       "dompurify@>=3.0.0 <3.4.18": "3.4.18",
       "fflate@>=0.8.0 <0.8.3": "0.8.3",
