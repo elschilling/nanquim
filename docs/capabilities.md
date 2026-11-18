@@ -67,6 +67,13 @@ web standards or third-party libraries.
 - `tests/dxf-rounded-rectangle.test.js`, `tests/dxf-bulge-import.test.js`,
   `tests/dxf-circular-geometry.test.js`, and `tests/dxf-color-import.test.js`
   protect the bounded circular-arc and color exchange profile.
+- `tests/dxf-polyline-snap.test.js`, `tests/snap-system.test.js`, and the DXF
+  polyline browser workflow protect imported straight/circular path vertex and
+  segment-midpoint snapping, including native save/reopen and Undo/Redo.
+- Native rectangle fillet snapping is covered by `tests/snap-system.test.js`
+  and the semantic FILLET browser workflow: arc joins replace square-corner
+  endpoint targets, circular corners expose arc midpoints, and targets follow
+  Undo/Redo, rotation, and native save/reopen.
 - `docs/performance.md` and `scripts/performance/` define the deterministic
   Phase 3 performance datasets, budgets, and ignored evidence format.
 - `plans/v0.1-public-beta-plan.md` defines the work required to promote partial

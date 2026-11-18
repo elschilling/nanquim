@@ -1372,6 +1372,7 @@ async function runWorkflows(activePage) {
   await runFilletRepeatWorkflows(activePage)
   await runJoinWorkflows(activePage)
   await runDxfRoundedRectangleWorkflows(activePage)
+  await runDxfPolylineSnapWorkflows(activePage)
   await runDistanceMeasurementWorkflows(activePage)
   await runPaperViewportHoverWorkflows(activePage)
   await runDimensionSecondPointPreviewWorkflows(activePage)
@@ -1869,6 +1870,186 @@ async function runDxfRoundedRectangleWorkflows(activePage) {
       // coordinates and bulges above retain the tighter semantic tolerances.
       geometry.bounds.forEach((value, index) => assertNear(value, expectedBounds[index], 1e-3, `${stage} transformed bound ${index + 1}`))
     }
+  })
+}
+
+async function runDxfPolylineSnapWorkflows(activePage) {
+  await step('snap every imported DXF polyline vertex and segment midpoint through native reopen', async () => {
+    const imported = await activePage.evaluate(async () => {
+      const editor = window.editor
+      const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 145 100"
+        data-nanquim-version="3" data-element-index="1224" data-active-collection-id="dxf-polyline-snap">
+        <g id="dxf-polyline-snap" data-collection="true" name="DXF polyline snap"
+          style="stroke:#ffffff;stroke-width:.25;fill:none">
+          <polyline id="1221" points="15,15 45,15 45,35 70,35 70,60"/>
+          <polygon id="1222" points="95,15 125,15 125,50 100,60"/>
+          <path id="1223" d="M 15 75 L 35 75 A 10 10 0 0 1 45 85 L 70 85"/>
+        </g></svg>`
+      const loaded = await editor.documents.openFile(
+        new File([source], 'polyline-snap-source.svg', { type: 'image/svg+xml' }),
+      )
+      window.switchEditorMode('model')
+      editor.documentState.flushObservedMutations()
+      const state = () => {
+        const drawing = editor.drawing.node.cloneNode(true)
+        for (const node of [drawing, ...drawing.querySelectorAll('[class]')]) {
+          node.classList.remove('elementHover', 'elementSelected')
+          if (!node.classList.length) node.removeAttribute('class')
+        }
+        return { drawing: drawing.outerHTML, dirty: editor.documentState.isDirty,
+          revision: editor.documentState.revision, history: editor.history.undos.length,
+          redos: editor.history.redos.length }
+      }
+      const before = state()
+      const downloads = window.__nanquimBrowserDownloads.length
+      window.saveDXF()
+      const download = window.__nanquimBrowserDownloads.at(-1)
+      const dxf = await download.blob.text()
+      editor.documentState.flushObservedMutations()
+      const after = state()
+      const result = await editor.documents.openFile(
+        new File([dxf], 'polyline-snap.dxf', { type: 'image/vnd.dxf' }),
+      )
+      editor.svg.viewbox(0, 0, 145, 100)
+      editor.isSnapping = true
+      editor.gridSnap = false
+      editor.polarTracking = false
+      editor.ortho = false
+      return { loaded, before, after, result,
+        downloaded: window.__nanquimBrowserDownloads.length === downloads + 1,
+        name: download.name, type: download.blob.type,
+        polylines: dxf.match(/\r?\nLWPOLYLINE\r?\n/g)?.length || 0,
+        hasBulge: /\r?\n42\r?\n/.test(dxf),
+        paths: editor.drawing.find('path').length,
+        nativePolylines: editor.drawing.find('polyline, polygon').length }
+    })
+    assert(imported.loaded?.ok && imported.downloaded && imported.name === 'drawing.dxf'
+      && imported.type === 'application/dxf' && imported.polylines === 3 && imported.hasBulge,
+    'The snapping fixture did not export its actual open, closed, and curved DXF polylines.')
+    assert(JSON.stringify(imported.before) === JSON.stringify(imported.after),
+      'Exporting the snapping fixture changed its source document or history.')
+    assert(imported.result?.ok && imported.result.kind === 'dxf'
+      && imported.paths === 3 && imported.nativePolylines === 0,
+    'The snapping fixture did not import the DXF polylines as SVG paths.')
+
+    const readState = () => activePage.evaluate(() => {
+      const editor = window.editor
+      editor.documentState.flushObservedMutations()
+      // Hover/selection classes are transient and can settle in a later frame.
+      const drawing = editor.drawing.node.cloneNode(true)
+      for (const node of [drawing, ...drawing.querySelectorAll('[class]')]) {
+        node.classList.remove('elementHover', 'elementSelected')
+        if (!node.classList.length) node.removeAttribute('class')
+      }
+      return { drawing: drawing.outerHTML, dirty: editor.documentState.isDirty,
+        revision: editor.documentState.revision, history: editor.history.undos.length,
+        redos: editor.history.redos.length }
+    })
+    const pointerNear = (x, y) => activePage.evaluate(point => {
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(window.editor.svg.node.getScreenCTM())
+      return { x: Math.round(screen.x + 6), y: Math.round(screen.y + 4) }
+    }, { x, y })
+    const moveAndAssertSnap = async ([x, y]) => {
+      const pointer = await pointerNear(x, y)
+      await activePage.mouse.move(pointer.x, pointer.y)
+      await activePage.waitForFunction(point => {
+        const marker = document.querySelector('#Snap > *')
+        if (!marker) return false
+        const bounds = marker.getBoundingClientRect()
+        const style = getComputedStyle(marker)
+        return Math.abs(window.editor.snapPoint?.x - point.x) < 1e-5
+          && Math.abs(window.editor.snapPoint?.y - point.y) < 1e-5
+          && bounds.width > 0 && bounds.height > 0 && style.visibility === 'visible'
+          && style.display !== 'none' && style.stroke !== 'none' && Number.parseFloat(style.strokeWidth) > 0
+      }, {}, { x, y }).catch(cause => {
+        throw new Error(`No visible imported polyline snap at (${x}, ${y}).`, { cause })
+      })
+      return pointer
+    }
+    const setSnapType = type => activePage.evaluate(type => {
+      const editor = window.editor
+      for (const name of Object.keys(editor.snapTypes)) editor.snapTypes[name] = name === type
+    }, type)
+    const endpoints = [[15, 15], [45, 15], [45, 35], [70, 35], [70, 60],
+      [95, 15], [125, 15], [125, 50], [100, 60],
+      [15, 75], [35, 75], [45, 85], [70, 85]]
+    const midpoints = [[30, 15], [45, 25], [57.5, 35], [70, 47.5],
+      [110, 15], [125, 32.5], [112.5, 55], [97.5, 37.5],
+      [25, 75], [35 + Math.SQRT1_2 * 10, 85 - Math.SQRT1_2 * 10], [57.5, 85]]
+    const stages = []
+    for (const stage of ['DXF import', 'native reopen']) {
+      if (stage === 'native reopen') {
+        const reopened = await activePage.evaluate(async () => {
+          const editor = window.editor
+          const saved = await editor.documents.saveAs({ suggestedName: 'polyline-snap-native.svg' })
+          const download = window.__nanquimBrowserDownloads.at(-1)
+          const source = await download.blob.text()
+          const result = await editor.documents.openFile(
+            new File([source], download.name, { type: 'image/svg+xml' }),
+          )
+          editor.svg.viewbox(0, 0, 145, 100)
+          return { saved, result, paths: editor.drawing.find('path').length,
+            arcs: editor.drawing.find('path').reduce((count, path) => count
+              + path.array().filter(segment => segment[0].toUpperCase() === 'A').length, 0) }
+        })
+        assert(reopened.saved?.ok && reopened.saved.unverified && reopened.result?.ok
+          && reopened.paths === 3 && reopened.arcs === 1,
+        'Native save/reopen changed the imported polyline segment structure.')
+      }
+      const before = await readState()
+      await runTerminalCommand(activePage, 'l')
+      await setSnapType('endpoint')
+      for (const point of endpoints) await moveAndAssertSnap(point)
+      await setSnapType('midpoint')
+      for (const point of midpoints) await moveAndAssertSnap(point)
+      if (stage === 'DXF import') {
+        await activePage.screenshot({ path: join(artifactsDirectory, 'dxf-polyline-segment-snap.png') })
+      }
+      await activePage.keyboard.press('Escape')
+      await activePage.waitForFunction(() => !window.editor.isDrawing
+        && !window.editor.drawing.node.querySelector('[data-nanquim-transient="true"]'))
+      const after = await readState()
+      assert(JSON.stringify(before) === JSON.stringify(after),
+        `${stage} snapping and cancellation changed document geometry, dirty state, revision, or history.`)
+      stages.push({ stage, endpoints: endpoints.length, midpoints: midpoints.length })
+    }
+
+    const baseline = await readState()
+    await setSnapType('endpoint')
+    await runTerminalCommand(activePage, 'l')
+    const start = await pointerNear(15, 92)
+    await activePage.mouse.click(start.x, start.y)
+    const end = await moveAndAssertSnap([45, 35])
+    await activePage.mouse.click(end.x, end.y)
+    await activePage.keyboard.press('Escape')
+    await activePage.waitForFunction(() => !window.editor.isDrawing
+      && window.editor.history.undos.length === 1)
+    const readLines = () => activePage.evaluate(() => Array.from(
+      window.editor.drawing.node.querySelectorAll('line'), node =>
+        ['x1', 'y1', 'x2', 'y2'].map(name => Number(node.getAttribute(name))),
+    ))
+    const placed = await readLines()
+    assert(placed.length === 1, 'LINE did not commit exactly one line snapped to an imported internal vertex.')
+    assertNear(placed[0][2], 45, 1e-5, 'Imported polyline snapped LINE end x')
+    assertNear(placed[0][3], 35, 1e-5, 'Imported polyline snapped LINE end y')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up(controlKey())
+    await activePage.waitForFunction(() => !window.editor.drawing.node.querySelector('line'))
+    const undone = await readState()
+    assert(undone.drawing === baseline.drawing && undone.history === baseline.history && undone.redos === 1,
+      'Undo of the snapped LINE changed the imported polyline geometry.')
+    await activePage.keyboard.down(controlKey())
+    await activePage.keyboard.down('Shift')
+    await activePage.keyboard.press('KeyZ')
+    await activePage.keyboard.up('Shift')
+    await activePage.keyboard.up(controlKey())
+    await activePage.waitForFunction(() => window.editor.drawing.node.querySelector('line'))
+    assert(JSON.stringify(await readLines()) === JSON.stringify(placed),
+      'Redo changed the LINE snapped to an imported internal vertex.')
+    // Geometry and state above are asserted separately; avoid tracing entire documents.
+    trace('dxf-polyline-segment-snap', { paths: imported.paths, stages: stages.map(({ stage, endpoints, midpoints }) =>
+      ({ stage, endpoints, midpoints })), placed })
   })
 }
 
@@ -2535,6 +2716,97 @@ async function runFilletRepeatWorkflows(activePage) {
       }
     })
 
+    const assertRectangleSnaps = async (rounded, stage) => {
+      const squareCorners = [[20, 15], [70, 15], [70, 45], [20, 45]]
+      const tangentPoints = [[26, 15], [64, 15], [70, 21], [70, 39],
+        [64, 45], [26, 45], [20, 39], [20, 21]]
+      const diagonal = 6 * Math.SQRT1_2
+      const midpoints = [[45, 15], [70, 30], [45, 45], [20, 30],
+        [64 + diagonal, 21 - diagonal], [64 + diagonal, 39 + diagonal],
+        [26 - diagonal, 39 + diagonal], [26 - diagonal, 21 - diagonal]]
+      const readSnapState = () => activePage.evaluate(() => {
+        const editor = window.editor
+        editor.documentState.flushObservedMutations()
+        const drawing = editor.drawing.node.cloneNode(true)
+        for (const node of [drawing, ...drawing.querySelectorAll('[class], [selected]')]) {
+          node.removeAttribute('selected')
+          node.classList.remove('elementHover', 'elementSelected')
+          if (!node.classList.length) node.removeAttribute('class')
+        }
+        return { drawing: drawing.outerHTML, dirty: editor.documentState.isDirty,
+          revision: editor.documentState.revision, history: editor.history.undos.length,
+          redos: editor.history.redos.length }
+      })
+      const beforeSnap = await readSnapState()
+      const settings = await activePage.evaluate(() => {
+        const editor = window.editor
+        const settings = { isSnapping: editor.isSnapping, gridSnap: editor.gridSnap,
+          polarTracking: editor.polarTracking, ortho: editor.ortho, snapTypes: { ...editor.snapTypes } }
+        editor.isSnapping = true
+        editor.gridSnap = false
+        editor.polarTracking = false
+        editor.ortho = false
+        for (const type of Object.keys(editor.snapTypes)) editor.snapTypes[type] = type === 'endpoint'
+        return settings
+      })
+      const moveNearLocalPoint = async ([x, y]) => {
+        const point = await activePage.evaluate(({ x, y }) => {
+          const editor = window.editor
+          const rectangle = editor.drawing.findOne('[id="975"]')
+          const screen = new DOMPoint(x, y).matrixTransform(rectangle.node.getScreenCTM())
+          const world = screen.matrixTransform(editor.svg.node.getScreenCTM().inverse())
+          return { x: world.x, y: world.y, clientX: Math.round(screen.x + 6), clientY: Math.round(screen.y + 4) }
+        }, { x, y })
+        await activePage.mouse.move(point.clientX, point.clientY)
+        return point
+      }
+      const assertTargets = async points => {
+        for (const local of points) {
+          const point = await moveNearLocalPoint(local)
+          await activePage.waitForFunction(point => {
+            const marker = document.querySelector('#Snap > *')
+            if (!marker) return false
+            const bounds = marker.getBoundingClientRect()
+            const style = getComputedStyle(marker)
+            return Math.abs(window.editor.snapPoint?.x - point.x) < 1e-5
+              && Math.abs(window.editor.snapPoint?.y - point.y) < 1e-5
+              && bounds.width > 0 && bounds.height > 0 && style.visibility === 'visible'
+              && style.display !== 'none' && style.stroke !== 'none' && Number.parseFloat(style.strokeWidth) > 0
+          }, {}, point).catch(cause => {
+            throw new Error(`${stage}: no visible rectangle snap for local point (${local.join(', ')}).`, { cause })
+          })
+        }
+      }
+      try {
+        await runTerminalCommand(activePage, 'l')
+        await assertTargets(rounded ? tangentPoints : squareCorners)
+        for (const point of rounded ? squareCorners : tangentPoints) {
+          const world = await moveNearLocalPoint(point)
+          await activePage.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+          // A real endpoint may remain within the viewport's 50px tolerance;
+          // the removed square corner/tangency itself must not be a target.
+          assert(await activePage.evaluate(point => !window.editor.snapPoint
+            || Math.hypot(window.editor.snapPoint.x - point.x, window.editor.snapPoint.y - point.y) > 1e-5, world),
+          `${stage}: rectangle snapped to removed local point (${point.join(', ')}).`)
+        }
+        if (rounded) {
+          await activePage.evaluate(() => {
+            for (const type of Object.keys(window.editor.snapTypes)) window.editor.snapTypes[type] = type === 'midpoint'
+          })
+          await assertTargets(midpoints)
+        }
+      } finally {
+        await activePage.keyboard.press('Escape')
+        await activePage.waitForFunction(() => !window.editor.isDrawing
+          && !window.editor.drawing.node.querySelector('[data-nanquim-transient="true"]'))
+        await activePage.evaluate(settings => Object.assign(window.editor, settings), settings)
+      }
+      assert(JSON.stringify(await readSnapState()) === JSON.stringify(beforeSnap),
+        `${stage}: rectangle snap previews/cancellation changed persistent geometry or history.`)
+      trace('fillet-rectangle-snap', { stage, endpoints: rounded ? tangentPoints.length : squareCorners.length,
+        midpoints: rounded ? midpoints.length : 0 })
+    }
+
     const before = await readState()
     await runTerminalCommand(activePage, 'f')
     await activePage.waitForFunction(() => window.editor.isInteracting
@@ -2563,6 +2835,7 @@ async function runFilletRepeatWorkflows(activePage) {
     await activePage.keyboard.press('Escape')
     await activePage.waitForFunction(() => !window.editor.isInteracting
       && !window.editor.selectSingleElement)
+    await assertRectangleSnaps(true, 'FILLET')
     await activePage.keyboard.down(controlKey())
     await activePage.keyboard.press('KeyZ')
     await activePage.keyboard.up(controlKey())
@@ -2570,6 +2843,7 @@ async function runFilletRepeatWorkflows(activePage) {
     assert(undone.tag === 'rect' && undone.rx === null && undone.ry === null
       && undone.name === 'Room' && undone.zone === 'A',
     'Undo did not restore the exact square rectangle.')
+    await assertRectangleSnaps(false, 'Undo FILLET')
 
     await activePage.keyboard.down(controlKey())
     await activePage.keyboard.down('Shift')
@@ -2580,6 +2854,7 @@ async function runFilletRepeatWorkflows(activePage) {
     assert(redone.tag === 'rect' && redone.rx === 6 && redone.ry === 6
       && redone.name === 'Room' && redone.zone === 'A',
     'Redo did not restore the same semantic rectangle fillet.')
+    await assertRectangleSnaps(true, 'Redo FILLET')
     trace('fillet-rectangle', { before, filleted, redone, undone })
 
     const originalNode = await activePage.$('[id="975"]')
@@ -2642,6 +2917,7 @@ async function runFilletRepeatWorkflows(activePage) {
       assertNear(point.x, expectedCorners[index].x, 1e-4, `Rounded ROTATE corner ${index} x`)
       assertNear(point.y, expectedCorners[index].y, 1e-4, `Rounded ROTATE corner ${index} y`)
     })
+    await assertRectangleSnaps(true, 'rotated FILLET')
 
     await activePage.keyboard.down(controlKey())
     await activePage.keyboard.press('KeyZ')
@@ -2762,6 +3038,24 @@ async function runFilletRepeatWorkflows(activePage) {
       await activePage.evaluate(settings => { Object.assign(window.editor, settings) }, moveSettings)
       await originalNode.dispose()
     }
+    const reopened = await activePage.evaluate(async () => {
+      const editor = window.editor
+      const saved = await editor.documents.saveAs({ suggestedName: 'fillet-rectangle-snap.svg' })
+      const download = window.__nanquimBrowserDownloads.at(-1)
+      const source = await download.blob.text()
+      const result = await editor.documents.openFile(
+        new File([source], download.name, { type: 'image/svg+xml' }),
+      )
+      editor.svg.viewbox(-10, -15, 120, 100)
+      const rectangle = editor.drawing.findOne('[id="975"]')
+      return { saved, result, type: rectangle?.type,
+        rx: Number(rectangle?.attr('rx')), ry: Number(rectangle?.attr('ry')),
+        transform: rectangle?.attr('transform') }
+    })
+    assert(reopened.saved?.ok && reopened.saved.unverified && reopened.result?.ok
+      && reopened.type === 'rect' && reopened.rx === 6 && reopened.ry === 6 && reopened.transform,
+    'Native save/reopen did not preserve the transformed filleted rectangle.')
+    await assertRectangleSnaps(true, 'native reopen FILLET')
   })
 
   await step('fillet separated lines using their full picked rays', async () => {
