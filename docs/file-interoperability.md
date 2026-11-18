@@ -175,6 +175,10 @@ import profile.
 Bulged `LWPOLYLINE` and `POLYLINE` segments become circular SVG arc commands,
 including major arcs and the closing segment of a closed contour. Straight
 segments remain straight. Bounds include the complete visible arc extent.
+Imported straight and circular polyline paths expose every vertex as an
+endpoint snap and each segment's own midpoint, including the closing edge.
+These targets survive native SVG save/reopen; a curve's chord midpoint is not
+used as its arc midpoint.
 
 Layers become direct Model collections. Names are XML-escaped, colors are
 retained where representable, and layer visibility/locking is preserved. ACI 7

@@ -4,6 +4,8 @@ import { getPreferences } from '../Preferences'
 import { getAllDrawingElements } from '../Collection'
 import { pointOnEllipse } from './ellipseArcUtils'
 import { getImageVisibleBounds, readImageGripBounds } from './imageGrips'
+import { polylinePathSnapPoints } from './polylinePathSnapPoints'
+import { rectangleSnapPoints } from './rectangleSnapPoints'
 
 /**
  * Converts a point from SVG world coordinates to screen coordinates.
@@ -607,32 +609,10 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         })
       }
     } else if (el.type === 'rect') {
-      const rx = el.node.x.baseVal.value
-      const ry = el.node.y.baseVal.value
-      const rw = el.node.width.baseVal.value
-      const rh = el.node.height.baseVal.value
-      const rectPoints = {
-        topLeft: { x: rx, y: ry },
-        topRight: { x: rx + rw, y: ry },
-        bottomRight: { x: rx + rw, y: ry + rh },
-        bottomLeft: { x: rx, y: ry + rh },
-        topMidpoint: { x: rx + rw / 2, y: ry },
-        rightMidpoint: { x: rx + rw, y: ry + rh / 2 },
-        bottomMidpoint: { x: rx + rw / 2, y: ry + rh },
-        leftMidpoint: { x: rx, y: ry + rh / 2 },
-      }
-      Object.keys(rectPoints).forEach(key => {
-        rectPoints[key] = localPointToWorld(el, rectPoints[key], activeSvg, ctm)
-      })
-      if (st.endpoint) {
-        ;['topLeft', 'topRight', 'bottomRight', 'bottomLeft'].forEach(key => {
-          pushWorldTarget(rectPoints[key], 'endpoint')
-        })
-      }
-      if (st.midpoint) {
-        ;['topMidpoint', 'rightMidpoint', 'bottomMidpoint', 'leftMidpoint'].forEach(key => {
-          pushWorldTarget(rectPoints[key], 'midpoint')
-        })
+      if (st.endpoint || st.midpoint) {
+        const points = rectangleSnapPoints(el)
+        if (st.endpoint) points.endpoints.forEach(point => pushLocalTarget(el, point, 'endpoint'))
+        if (st.midpoint) points.midpoints.forEach(point => pushLocalTarget(el, point, 'midpoint'))
       }
       if (st.nearest) {
         let nearestPoint = null
@@ -717,13 +697,21 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
         })
       }
     } else if (el.type === 'path' && !el.data('arcData')) {
+      const splineData = el.data('splineData')
+      const ellipseArcData = el.data('ellipseArcData')
+      const polylinePoints = !splineData && !ellipseArcData && (st.endpoint || st.midpoint)
+        ? polylinePathSnapPoints(el.array())
+        : null
+      if (polylinePoints) {
+        if (st.endpoint) polylinePoints.endpoints.forEach(point => pushLocalTarget(el, point, 'endpoint'))
+        if (st.midpoint) polylinePoints.midpoints.forEach(point => pushLocalTarget(el, point, 'midpoint'))
+        if (!st.nearest) return
+      }
       const node = el.node
       if (!node.getTotalLength) return
       const totalLength = node.getTotalLength()
       if (totalLength <= 0) return
       const ptAt = len => { const p = node.getPointAtLength(len); return { x: p.x, y: p.y } }
-      const splineData = el.data('splineData')
-      const ellipseArcData = el.data('ellipseArcData')
 
       if (ellipseArcData && st.center) {
         pushLocalTarget(el, { x: ellipseArcData.cx, y: ellipseArcData.cy }, 'center')
@@ -755,13 +743,13 @@ export function checkSnap(screenCoords, editor, activeSvg, snapTolerance) {
           splineData.points.forEach(sp => {
             pushLocalTarget(el, sp, 'endpoint')
           })
-        } else {
+        } else if (!polylinePoints) {
           pushLocalTarget(el, ptAt(0), 'endpoint')
           pushLocalTarget(el, ptAt(totalLength), 'endpoint')
         }
       }
 
-      if (st.midpoint) {
+      if (st.midpoint && !polylinePoints) {
         pushLocalTarget(el, ptAt(totalLength / 2), 'midpoint')
       }
 
