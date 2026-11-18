@@ -21,14 +21,14 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "4.1.12",
     "@vue/language-plugin-pug": "^1.8.27",
     "jsdom": "^30.0.1",
-    "puppeteer-core": "^25.8.0",
+    "puppeteer-core": "25.13.0",
     "sass": "^1.102.0",
-    "vite": "^6.4.3",
+    "vite": "^6.4.6",
     "vite-plugin-pug": "^0.4.1",
-    "vitest": "^4.1.11"
+    "vitest": "4.1.12"
   },
   "dependencies": {
     "@svgdotjs/svg.js": "^3.2.5",
@@ -40,9 +40,11 @@
   },
   "pnpm": {
     "overrides": {
-      "dompurify@<=3.4.12": "3.4.13",
+      "dompurify@>=3.0.0 <3.4.18": "3.4.18",
+      "fflate@>=0.8.0 <0.8.3": "0.8.3",
       "nanoid@<3.3.18": "3.3.18",
-      "undici@>=8.0.0 <8.10.2": "8.10.2"
+      "source-map-js@>=1.0.0 <1.2.2": "1.2.2",
+      "undici@>=8.0.0 <8.12.4": "8.12.4"
     }
   }
 }
