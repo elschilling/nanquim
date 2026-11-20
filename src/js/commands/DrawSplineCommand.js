@@ -211,6 +211,7 @@ class DrawSplineCommand extends Command {
         this.splinePath = null
         this.cleanupListeners()
         this.editor.setIsDrawing(false)
+        this.complete()
     }
 
     cleanupListeners() {

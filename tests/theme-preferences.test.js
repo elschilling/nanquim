@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { getPreferences, STORAGE_KEY } from '../src/js/Preferences'
+import { getPreferences, normalizePreferences, savePreferences, STORAGE_KEY } from '../src/js/Preferences'
 import { Preferences } from '../src/js/PreferencesUI'
 import {
   DEFAULT_THEME_PREFERENCES,
@@ -108,6 +108,53 @@ describe('Preferences appearance controls', () => {
   afterEach(() => {
     preferences?.dispose()
     delete window.openPreferences
+  })
+
+  test('auto repeat defaults off, accepts only booleans, and preserves older preferences', () => {
+    expect(getPreferences().autoRepeatLastCommand).toBe(false)
+    expect(normalizePreferences({ gridSize: 2 }).autoRepeatLastCommand).toBe(false)
+    for (const value of ['true', 'false', 1, null, {}, []]) {
+      expect(normalizePreferences({ autoRepeatLastCommand: value }).autoRepeatLastCommand).toBe(false)
+    }
+    expect(savePreferences({ autoRepeatLastCommand: true }).autoRepeatLastCommand).toBe(true)
+    expect(getPreferences().autoRepeatLastCommand).toBe(true)
+  })
+
+  test('saves auto repeat locally, restores the checkbox on reopen, and can disable it', () => {
+    preferences.open()
+    const checkbox = document.getElementById('prefs-auto-repeat-last-command')
+    expect(checkbox.type).toBe('checkbox')
+    expect(checkbox.checked).toBe(false)
+    expect(checkbox.labels[0].textContent).toBe('Auto repeat last command')
+    expect(document.getElementById(checkbox.getAttribute('aria-describedby')).textContent).toContain('Esc')
+
+    checkbox.click()
+    expect(getPreferences().autoRepeatLastCommand).toBe(false)
+    document.querySelector('.prefs-btn-save').click()
+    expect(getPreferences().autoRepeatLastCommand).toBe(true)
+    expect(editor.signals.preferencesChanged.dispatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ autoRepeatLastCommand: true }),
+    )
+    preferences.open()
+    expect(checkbox.checked).toBe(true)
+    checkbox.click()
+    document.querySelector('.prefs-btn-save').click()
+    expect(getPreferences().autoRepeatLastCommand).toBe(false)
+    expect(editor.documentState.markChanged).not.toHaveBeenCalled()
+  })
+
+  test.each(['Cancel', 'Escape', 'backdrop'])('%s discards an unsaved auto repeat change', (exit) => {
+    preferences.open()
+    const checkbox = document.getElementById('prefs-auto-repeat-last-command')
+    checkbox.click()
+    if (exit === 'Cancel') document.querySelector('.prefs-btn-cancel').click()
+    else if (exit === 'backdrop') preferences.overlay.click()
+    else checkbox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(getPreferences().autoRepeatLastCommand).toBe(false)
+    expect(editor.signals.preferencesChanged.dispatch).not.toHaveBeenCalled()
+    preferences.open()
+    expect(checkbox.checked).toBe(false)
   })
 
   test('previews a preset without persisting it and Cancel restores the saved theme and focus', () => {

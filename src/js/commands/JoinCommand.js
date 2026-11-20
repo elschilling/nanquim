@@ -509,7 +509,9 @@ class JoinCommand extends Command {
     }
 
     try {
-      return this.editor.execute(mutation)
+      const result = this.editor.execute(mutation)
+      this.complete()
+      return result
     } catch (error) {
       this.dispatchSignal('terminalLogged', { msg: `JOIN failed: ${error.message}` })
       return null

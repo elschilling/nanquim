@@ -56,6 +56,7 @@ limitations.
 ### Precision workflow
 
 - AutoCAD-style command terminal with aliases, autocomplete, prompts, and repeat-last-command behavior.
+- Optional **Preferences → Drawing and interaction → Auto repeat last command** restarts completed drawing, editing, and measurement tools until Escape. It defaults off and is saved in this browser; tools with their own continuous workflow keep it, and dialogs and one-shot actions do not restart.
 - Numeric input plus `@x,y` relative coordinates and `#x,y` absolute coordinates.
 - Ortho and polar tracking with on-canvas guides.
 - Configurable endpoint, midpoint, center, quadrant, intersection, extension, perpendicular, tangent, nearest, and grid snaps.

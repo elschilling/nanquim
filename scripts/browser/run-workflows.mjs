@@ -1384,7 +1384,128 @@ async function runWorkflows(activePage) {
   await runOutlinerCollectionDropWorkflows(activePage)
   await runOutlinerMoveDialogWorkflows(activePage)
   await runOutlinerRangeSelectionWorkflows(activePage)
+  await runCommandAutoRepeatWorkflows(activePage)
   await runWelcomeScreenWorkflows(activePage)
+}
+
+async function runCommandAutoRepeatWorkflows(activePage) {
+  const originalPreferences = await activePage.evaluate(() => localStorage.getItem('nanquim-preferences'))
+  try {
+    await step('save the auto repeat preference with keyboard access at desktop and narrow widths', async () => {
+      const initialized = await activePage.evaluate(() => window.editor.documents.newDocument())
+      assert(initialized?.ok, 'Could not initialize the auto repeat fixture.')
+      for (const width of [1280, 640]) {
+        await activePage.setViewport({ ...BROWSER_VIEWPORT, width })
+        for (const background of ['#101820', '#f3eee7']) {
+          const before = await activePage.evaluate(() => window.editor.documentState.revision)
+          await activePage.focus('#terminalInput')
+          await activePage.evaluate(() => window.openPreferences())
+          await activePage.evaluate(color => {
+            const input = document.getElementById('prefs-background-color')
+            input.value = color
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+          }, background)
+          await activePage.focus('#prefs-auto-repeat-last-command')
+          // Space must toggle the checkbox without entering the CAD terminal.
+          const wasChecked = await activePage.$eval('#prefs-auto-repeat-last-command', input => input.checked)
+          await activePage.keyboard.press(' ')
+          assert(await activePage.$eval('#prefs-auto-repeat-last-command', input => input.checked) !== wasChecked,
+            'Space did not toggle the preference checkbox.')
+          if (wasChecked) await activePage.keyboard.press(' ')
+          const appearance = await activePage.$eval('#prefs-auto-repeat-last-command', input => {
+            const style = getComputedStyle(input)
+            const bounds = input.getBoundingClientRect()
+            const label = input.labels[0].getBoundingClientRect()
+            return {
+              accent: style.accentColor,
+              checked: input.checked,
+              visible: bounds.width >= 16 && bounds.height >= 16 && style.visibility === 'visible',
+              fits: label.left >= 0 && label.right <= bounds.left && bounds.right <= innerWidth,
+            }
+          })
+          assert(appearance.visible && appearance.fits && appearance.checked,
+            'Auto repeat checkbox or its label was hidden, clipped, or overlapped.')
+          assert(appearance.accent !== 'auto', 'Auto repeat checkbox did not use the theme accent.')
+          await activePage.screenshot({ path: join(artifactsDirectory,
+            `auto-repeat-preferences-${width}-${background === '#101820' ? 'dark' : 'light'}.png`) })
+          await activePage.click('.prefs-btn-save')
+          assert(await activePage.evaluate(() => JSON.parse(localStorage.getItem('nanquim-preferences')).autoRepeatLastCommand),
+            'Auto repeat was not saved locally.')
+          assert(await activePage.evaluate(() => window.editor.documentState.revision) === before,
+            'Saving auto repeat dirtied the drawing.')
+          await activePage.evaluate(() => window.openPreferences())
+          assert(await activePage.$eval('#prefs-auto-repeat-last-command', input => input.checked),
+            'Reopening Preferences did not restore auto repeat.')
+          await activePage.focus('#prefs-auto-repeat-last-command')
+          await activePage.keyboard.press(' ')
+          await activePage.keyboard.press('Escape')
+          assert(await activePage.evaluate(() => JSON.parse(localStorage.getItem('nanquim-preferences')).autoRepeatLastCommand),
+            'Escape persisted an unsaved auto repeat change.')
+          assert(await activePage.evaluate(() => document.activeElement?.id === 'terminalInput'),
+            'Preferences did not restore terminal focus.')
+        }
+      }
+      await activePage.setViewport(BROWSER_VIEWPORT)
+    })
+
+    await step('auto repeat completed rectangles until Escape and preserve Undo/Redo', async () => {
+      await activePage.evaluate(() => {
+        window.editor.svg.viewbox(0, 0, 100, 75)
+        window.editor.isSnapping = false
+        window.editor.gridSnap = false
+      })
+      const corners = await activePage.evaluate(() => [[15, 12], [30, 24], [45, 12], [60, 24]].map(([x, y]) => {
+        const point = new DOMPoint(x, y).matrixTransform(window.editor.svg.node.getScreenCTM())
+        return { x: Math.round(point.x), y: Math.round(point.y) }
+      }))
+      await runTerminalCommand(activePage, 'rec')
+      for (let index = 0; index < 2; index += 1) {
+        await activePage.mouse.click(corners[index * 2].x, corners[index * 2].y)
+        await activePage.mouse.move(corners[index * 2 + 1].x, corners[index * 2 + 1].y)
+        await activePage.mouse.click(corners[index * 2 + 1].x, corners[index * 2 + 1].y)
+        await activePage.waitForFunction(count => window.editor.history.undos.length === count
+          && window.editor.isDrawing, {}, index + 1)
+      }
+      await activePage.keyboard.press('Escape')
+      const state = await activePage.evaluate(() => ({
+        drawing: window.editor.isDrawing,
+        count: window.editor.drawing.find('rect').length,
+        helpers: window.editor.drawing.find('[data-nanquim-transient="true"]').length,
+      }))
+      assert(!state.drawing && state.count === 2 && state.helpers === 0,
+        'Escape did not stop repetition and remove the pending rectangle.')
+      await activePage.keyboard.down(controlKey())
+      await activePage.keyboard.press('KeyZ')
+      await activePage.keyboard.up(controlKey())
+      assert(await activePage.evaluate(() => window.editor.drawing.find('rect').length) === 1,
+        'Undo did not remove only the second rectangle.')
+      await activePage.keyboard.down(controlKey())
+      await activePage.keyboard.down('Shift')
+      await activePage.keyboard.press('KeyZ')
+      await activePage.keyboard.up('Shift')
+      await activePage.keyboard.up(controlKey())
+      assert(await activePage.evaluate(() => window.editor.drawing.find('rect').length === 2 && !window.editor.isDrawing),
+        'Redo did not restore the rectangle without restarting the command.')
+
+      await activePage.evaluate(() => window.openPreferences())
+      await activePage.click('#prefs-auto-repeat-last-command')
+      await activePage.click('.prefs-btn-save')
+      await runTerminalCommand(activePage, 'rec')
+      await activePage.mouse.click(corners[0].x, corners[0].y)
+      await activePage.mouse.move(corners[1].x, corners[1].y)
+      await activePage.mouse.click(corners[1].x, corners[1].y)
+      await activePage.waitForFunction(() => window.editor.history.undos.length === 3 && !window.editor.isDrawing)
+    })
+  } finally {
+    await activePage.keyboard.press('Escape')
+    await activePage.setViewport(BROWSER_VIEWPORT)
+    await activePage.evaluate(previous => {
+      if (previous === null) localStorage.removeItem('nanquim-preferences')
+      else localStorage.setItem('nanquim-preferences', previous)
+      window.openPreferences()
+      document.querySelector('.prefs-btn-cancel').click()
+    }, originalPreferences)
+  }
 }
 
 async function runRectangleHatchWorkflows(activePage) {

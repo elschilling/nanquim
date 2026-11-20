@@ -114,6 +114,21 @@ function Preferences(editor) {
   dialog.appendChild(appearanceSection)
 
   const interactionSection = createSection('Drawing and interaction', 'prefs-interaction-title')
+  const autoRepeatInput = document.createElement('input')
+  autoRepeatInput.type = 'checkbox'
+  autoRepeatInput.className = 'prefs-input prefs-checkbox'
+  autoRepeatInput.name = 'autoRepeatLastCommand'
+  autoRepeatInput.setAttribute('aria-describedby', 'prefs-auto-repeat-help')
+  interactionSection.appendChild(createRow({
+    id: 'prefs-auto-repeat-last-command',
+    label: 'Auto repeat last command',
+    input: autoRepeatInput,
+  }))
+  const autoRepeatHelp = document.createElement('p')
+  autoRepeatHelp.id = 'prefs-auto-repeat-help'
+  autoRepeatHelp.className = 'prefs-help'
+  autoRepeatHelp.textContent = 'Restart drawing, editing, and measurement commands after completion. Esc stops repeating. Dialogs and one-shot actions do not repeat.'
+  interactionSection.appendChild(autoRepeatHelp)
   const inputs = {}
   NUMERIC_FIELDS.forEach(({ key, label, step, min }) => {
     const input = document.createElement('input')
@@ -189,6 +204,7 @@ function Preferences(editor) {
     }
     themeSelect.value = theme.themePreset
     setDisplayedTheme(theme.themePreset)
+    autoRepeatInput.checked = preferences.autoRepeatLastCommand
     NUMERIC_FIELDS.forEach(({ key }) => {
       inputs[key].value = preferences[key]
     })
@@ -240,6 +256,7 @@ function Preferences(editor) {
     const current = getPreferences()
     const newPreferences = {
       ...current,
+      autoRepeatLastCommand: autoRepeatInput.checked,
       themePreset: themeSelect.value,
       customAccentColor: customTheme.accentColor,
       customBackgroundColor: customTheme.backgroundColor,

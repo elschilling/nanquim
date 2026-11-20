@@ -72,6 +72,7 @@ class DrawRectangleCommand extends Command {
           this.editor.setIsDrawing(false)
           this.editor.signals.commandCancelled.remove(this._pointerCancelHandler, this)
           this._rect = null
+          this.complete()
         }
       })
   }
@@ -201,6 +202,7 @@ class DrawRectangleCommand extends Command {
       this.editor.execute(new AddElementCommand(this.editor, newRect))
       this.editor.signals.terminalLogged.dispatch({ msg: `Rectangle ${w} × ${h} placed.` })
       this.updatedOutliner()
+      this.complete()
     }
 
     this._pointPlacementHandler = (point) => commit(point, true)

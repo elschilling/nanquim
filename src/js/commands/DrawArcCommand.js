@@ -119,6 +119,7 @@ class DrawArcCommand extends Command {
         // Reset state for another arc or finish
         this.arcPath = null
         this.cleanup()
+        this.complete()
     }
 
     cleanup() {

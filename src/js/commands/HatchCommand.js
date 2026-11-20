@@ -255,6 +255,7 @@ class HatchCommand extends Command {
     this.interactiveExecutionDone = true
     this.cleanup()
     this.editor.execute(this)
+    this.complete()
   }
 
   onPointClicked(point) {
@@ -309,6 +310,7 @@ class HatchCommand extends Command {
     this.interactiveExecutionDone = true
     this.cleanup()
     this.editor.execute(this)
+    this.complete()
   }
 
   getFillColor() {

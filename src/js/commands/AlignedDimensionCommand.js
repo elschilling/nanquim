@@ -195,6 +195,7 @@ class AlignedDimensionCommand extends Command {
         this.editor.signals.terminalLogged.dispatch({ msg: `Aligned dimension created.` })
 
         this.cleanup()
+        this.complete()
     }
 
     cleanup() {

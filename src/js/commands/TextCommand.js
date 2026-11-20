@@ -134,6 +134,7 @@ class TextCommand extends Command {
         this.cleanup()
 
         this.interactiveExecutionDone = true
+        this.complete()
     }
 
     cleanup() {

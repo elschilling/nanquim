@@ -3,6 +3,7 @@ import { DEFAULT_THEME_PREFERENCES, normalizeThemePreferences } from './ThemeCon
 const STORAGE_KEY = 'nanquim-preferences'
 
 const DEFAULTS = {
+  autoRepeatLastCommand: false,
   gridSize: 1,
   handlerSize: 16,
   defaultStrokeWidth: 0.1,
@@ -20,6 +21,7 @@ function normalizePreferences(preferences = {}) {
   return {
     ...DEFAULTS,
     ...source,
+    autoRepeatLastCommand: source.autoRepeatLastCommand === true,
     ...normalizeThemePreferences(source),
   }
 }
