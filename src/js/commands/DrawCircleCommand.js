@@ -62,6 +62,7 @@ class DrawCircleCommand extends Command {
         circle = null
         this.updatedOutliner()
         this.editor.setIsDrawing(false)
+        this.complete()
       })
 
       const activeSvg = this.editor.mode === 'paper' ? this.editor.paperSvg : this.editor.svg
@@ -103,6 +104,7 @@ class DrawCircleCommand extends Command {
               msg: `Circle created with radius ${radius}.`,
             })
             this.editor.setIsDrawing(false)
+            this.complete()
           }
         }
       }

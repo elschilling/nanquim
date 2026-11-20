@@ -412,6 +412,7 @@ class MirrorCommand extends Command {
             this.editor.execute(this)
             this.dispatchSignal('clearSelection')
             this.editor.selected = []
+            this.complete()
         } catch (error) {
             this.editor.selected = this.originalSelection.slice()
             this.dispatchSignal('updatedSelection')

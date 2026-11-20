@@ -142,6 +142,7 @@ class ScaleCommand extends Command {
     this.cleanup()
     this.interactiveExecutionDone = true
     this.editor.execute(this)
+    this.complete()
   }
 
   cleanup() {

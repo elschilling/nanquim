@@ -74,6 +74,12 @@ class Command {
     return this.editor.commandSessionRevision === this.commandSessionRevision
   }
 
+  complete() {
+    if (this.ownsCommandSession()) {
+      this.dispatchSignal('commandCompleted', this.commandSessionRevision)
+    }
+  }
+
   deferSessionTask(callback, delay = 0) {
     return setTimeout(() => {
       if (this.ownsCommandSession()) callback()

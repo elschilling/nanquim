@@ -71,6 +71,7 @@ class EraseCommand extends Command {
 
         this.interactiveExecutionDone = true
         this.cleanup()
+        this.complete()
     }
 
     cleanup() {

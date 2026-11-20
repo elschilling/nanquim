@@ -53,6 +53,13 @@ web standards or third-party libraries.
 - `tests/command-lifecycle-contracts.test.js` checks registry, Help, icon,
   declared-mode, invocation, and cancellation parity for all commands; focused
   command tests provide deeper mutation semantics.
+- `tests/command-auto-repeat.test.js` protects the optional local auto repeat
+  preference: completed drawing, editing, and measurement tools restart with a
+  fresh selection until Escape; invalid input, cancellation, document/space
+  changes, and Undo/Redo do not restart them. Existing continuous workflows are
+  preserved, and dialogs and one-shot actions do not automatically reopen.
+  Production-browser workflows cover the preference at desktop/narrow widths
+  with dark/light backgrounds and repeated Rectangle creation with Undo/Redo.
 - `docs/visual-identity.md`, `tests/theme-preferences.test.js`,
   `tests/theme-styles.test.js`, and `tests/icon-system.test.js` define and
   protect the appearance system.

@@ -245,6 +245,7 @@ class RotateCommand extends Command {
     this.interactiveExecutionDone = true
     this.editor.execute(this)
     this.dispatchSignal('terminalLogged', { msg: `Elements rotated by ${this.angle.toFixed(2)} degrees.` })
+    this.complete()
   }
 
   performRotation({ updateSelection = true } = {}) {

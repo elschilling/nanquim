@@ -123,6 +123,7 @@ class DrawPolylineCommand extends Command {
     this.polyline = null
     this.cleanupListeners()
     this.editor.setIsDrawing(false)
+    this.complete()
   }
 
   cleanupListeners() {

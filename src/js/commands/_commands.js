@@ -30,6 +30,7 @@ import { blockCommand } from './BlockCommand'
 import { insertCommand } from './InsertCommand'
 import { helpCommand } from './HelpCommand'
 import { imageCommand } from './ImageCommand'
+import { armCommandAutoRepeat, stopCommandAutoRepeat } from '../CommandAutoRepeat'
 
 const commandCategories = Object.freeze([
   'General',
@@ -325,6 +326,7 @@ function dispatchCommandCleanup(signal) {
 }
 
 function cancelCommandSession(editor, event = null) {
+  stopCommandAutoRepeat(editor)
   const currentRevision = Number.isSafeInteger(editor.commandSessionRevision)
     ? editor.commandSessionRevision
     : 0
@@ -370,6 +372,7 @@ function executeRegisteredCommand(editor, commandName) {
     commandName: name,
     execute: () => executeRegisteredCommand(editor, name),
   })
+  armCommandAutoRepeat(editor, () => executeRegisteredCommand(editor, name))
 
   try {
     definition.execute(editor)

@@ -168,7 +168,7 @@ class HelpSession {
     const sectionTitle = el('div')
     const commandsHeading = el('h3', '', 'Command terminal')
     commandsHeading.id = 'command-help-command-heading'
-    sectionTitle.append(commandsHeading, el('p', '', 'Type a command name or one of its aliases, then press Space or Enter.'))
+    sectionTitle.append(commandsHeading, el('p', '', 'Type a command name or one of its aliases, then press Space or Enter. Enable Auto repeat last command in Preferences to restart completed tools automatically; Esc stops repeating.'))
     const count = el('span', 'command-help-count')
     count.id = 'command-help-count'
     count.setAttribute('role', 'status')

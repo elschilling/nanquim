@@ -173,6 +173,7 @@ class MoveCommand extends Command {
     this.moveElements(dx, dy)
     this.editor.distance = null
     this.cleanup()
+    this.complete()
   }
 
   // Helper method to get consistent position data for any element type

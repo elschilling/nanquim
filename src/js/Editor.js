@@ -47,6 +47,7 @@ function Editor() {
     vertexEditStopped: new Signal(),
     refreshHandlers: new Signal(),
     commandCancelled: new Signal(),
+    commandCompleted: new Signal(),
     requestHoverCheck: new Signal(),
     updatedCollections: new Signal(),
     preferencesChanged: new Signal(),

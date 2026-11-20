@@ -223,6 +223,7 @@ class DrawEllipseCommand extends Command {
 
         this.editor.isInteracting = false
         this.editor.selectSingleElement = false
+        this.complete()
     }
 }
 

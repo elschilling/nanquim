@@ -83,6 +83,7 @@ class AreaCommand extends Command {
         })
 
         this.cleanup()
+        this.complete()
     }
 
     cleanup() {

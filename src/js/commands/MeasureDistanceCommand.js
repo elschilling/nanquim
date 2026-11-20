@@ -180,6 +180,7 @@ class MeasureDistanceCommand extends Command {
         this.drawMeasurement(this.firstPoint, this.secondPoint, distance)
 
         this.cleanup({ keepMeasurement: true })
+        this.complete()
     }
 
     drawMeasurement(p1, p2, distance) {

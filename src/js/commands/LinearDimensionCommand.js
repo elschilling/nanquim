@@ -200,6 +200,7 @@ class LinearDimensionCommand extends Command {
         this.editor.signals.terminalLogged.dispatch({ msg: `Dimension created.` })
 
         this.cleanup()
+        this.complete()
     }
 
     cleanup() {

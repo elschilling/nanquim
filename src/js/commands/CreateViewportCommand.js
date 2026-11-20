@@ -220,6 +220,7 @@ async function createViewportCommand(editor, args) {
       type: 'span',
       msg: `VP: Created viewport ${vp.id} (${(w / unitsPerCm).toFixed(2)}×${(h / unitsPerCm).toFixed(2)} cm) at 1:${scale}`
     })
+    command.complete()
   } catch (err) {
     if (err.message !== 'cancelled') console.error(err)
   } finally {
